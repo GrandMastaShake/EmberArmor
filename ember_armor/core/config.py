@@ -32,6 +32,7 @@ class EmberSettings(BaseSettings):
         case_sensitive=False,
         # Extra fields are rejected — typos in env vars are caught early.
         extra="forbid",
+        populate_by_name=True,
     )
 
     # ------------------------------------------------------------------
@@ -68,6 +69,30 @@ class EmberSettings(BaseSettings):
     cb_failure_threshold: int = 5
     cb_recovery_timeout: float = 30.0
     cb_window_size: float = 60.0
+
+    # ------------------------------------------------------------------
+    # Sonar (Perplexity) — Live threat intelligence
+    # Optional: if not set, Sonar agent votes REVIEW on all calls (fail-closed).
+    # ------------------------------------------------------------------
+    sonar_api_key: str | None = Field(
+        default=None,
+        description="Perplexity API key for Sonar live threat intelligence",
+        alias="PERPLEXITY_API_KEY",
+    )
+    sonar_model: str = Field(
+        default="sonar-pro",
+        description="Sonar model to use for consensus votes and TTP enrichment",
+    )
+    sonar_enabled: bool = Field(
+        default=True,
+        description="Enable/disable Sonar consensus agent. When disabled, falls back to local-only consensus.",
+    )
+    sonar_agent_weight: float = Field(
+        default=0.40,
+        ge=0.0,
+        le=1.0,
+        description="Voting weight for the Sonar consensus agent in EnsembleConductor",
+    )
 
     # ------------------------------------------------------------------
     # Logging

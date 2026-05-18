@@ -18,6 +18,7 @@ from ember_armor.core.circuit_breaker import CircuitBreaker
 from ember_armor.core.config import SETTINGS
 from ember_armor.core.consensus import EnsembleConductor
 from ember_armor.core.detector import DissonanceDetector
+from ember_armor.core.sonar_agent import SonarConsensusAgent, SONAR_AGENT_WEIGHT
 from ember_armor.security.audit import AuditLogger
 from ember_armor.utils.logging import configure_logging, logger
 
@@ -38,10 +39,32 @@ async def lifespan(app: FastAPI):
     app.state.conductor = EnsembleConductor()
     app.state.audit = AuditLogger()
 
+    # Initialize Sonar consensus agent (load-bearing Perplexity integration)
+    app.state.sonar_agent = SonarConsensusAgent(
+        api_key=SETTINGS.sonar_api_key,
+        model=SETTINGS.sonar_model,
+    )
+    if SETTINGS.sonar_enabled:
+        app.state.conductor.register_agent(
+            "sonar_live_intel",
+            app.state.sonar_agent.vote,
+            weight=SETTINGS.sonar_agent_weight,
+        )
+        logger.info(
+            "sonar.registered",
+            model=SETTINGS.sonar_model,
+            weight=SETTINGS.sonar_agent_weight,
+            api_key_present=bool(SETTINGS.sonar_api_key),
+        )
+    else:
+        logger.warning("sonar.disabled", reason="EMBER_SONAR_ENABLED=false")
+
     app.state.startup_time = time.time()
 
     yield
 
+    # Graceful shutdown — close Sonar HTTP client
+    await app.state.sonar_agent.close()
     logger.info("app.shutdown", uptime=time.time() - app.state.startup_time)
 
 

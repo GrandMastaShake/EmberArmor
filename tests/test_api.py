@@ -36,21 +36,21 @@ from ember_armor.models.responses import DissonanceCheckResponse, SafetyLevel
 class TestHealthEndpoints:
     """Validate the public health, readiness, and metrics probes."""
 
-    def test_health_returns_200(self, client: TestClient) -> None:
+    def test_health_returns_200(self, client: TestClient, auth_headers: dict) -> None:
         """/health must respond with HTTP 200."""
-        response = client.get("/health")
+        response = client.get("/health", headers=auth_headers)
         assert response.status_code == status.HTTP_200_OK
 
-    def test_health_has_status_field(self, client: TestClient) -> None:
+    def test_health_has_status_field(self, client: TestClient, auth_headers: dict) -> None:
         """The health JSON must contain a top-level *status* field."""
-        response = client.get("/health")
+        response = client.get("/health", headers=auth_headers)
         data = response.json()
         assert "status" in data
         assert data["status"] in {"healthy", "degraded", "unhealthy"}
 
-    def test_health_has_components(self, client: TestClient) -> None:
+    def test_health_has_components(self, client: TestClient, auth_headers: dict) -> None:
         """The health JSON must include a *components* list with all subsystems."""
-        response = client.get("/health")
+        response = client.get("/health", headers=auth_headers)
         data = response.json()
         assert "components" in data
         assert isinstance(data["components"], list)
@@ -346,7 +346,7 @@ class TestDissonanceEndpoint:
         rl_mw._requests.clear()
 
         try:
-            path = "/health"  # Public endpoint -- easiest to hammer.
+            path = "/ready"  # Public endpoint -- easiest to hammer.
             responses = [client.get(path) for _ in range(5)]
             status_codes = [r.status_code for r in responses]
 

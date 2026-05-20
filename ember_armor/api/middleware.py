@@ -116,14 +116,20 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
     @staticmethod
     def _get_client_ip(request: Request) -> str:
-        """Safely extract the client IP address.
+        """Safely extract the real client IP address.
 
-        Priority:
-        1. The first entry in the ``X-Forwarded-For`` header (if present).
-           This is checked first so that the middleware works correctly
-           behind a reverse proxy and in TestClient-based tests.
-        2. ``request.client.host`` when the ASGI connection info is present.
-        3. ``"unknown"`` as a safe fallback — never raises.
+        Security note
+        -------------
+        Trusting the *leftmost* entry of ``X-Forwarded-For`` is exploitable:
+        any client can spoof it to bypass rate limiting or impersonate another
+        IP. We use ``request.client.host`` (the TCP peer) as the authoritative
+        source when available. ``X-Forwarded-For`` is only used as a fallback
+        when ``request.client`` is ``None`` (e.g. TestClient), and in that case
+        we take the *rightmost* (last-appended-by-trusted-proxy) entry.
+
+        For production deployments behind a trusted reverse proxy, set
+        ``TRUSTED_PROXIES`` env var and validate the header source before
+        trusting any forwarded IP.
 
         Parameters
         ----------
@@ -135,12 +141,17 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         str
             The client IP address or ``"unknown"``.
         """
-        forwarded: str | None = request.headers.get("x-forwarded-for")
-        if forwarded:
-            return forwarded.split(",")[0].strip()
-
+        # TCP peer is authoritative — cannot be spoofed by the client
         if request.client is not None:
             return request.client.host
+
+        # Fallback for TestClient / proxy environments: use rightmost entry
+        # (the one appended by the outermost trusted proxy, not the client)
+        forwarded: str | None = request.headers.get("x-forwarded-for")
+        if forwarded:
+            entries = [e.strip() for e in forwarded.split(",") if e.strip()]
+            if entries:
+                return entries[-1]  # Rightmost = appended by trusted proxy
 
         return "unknown"
 

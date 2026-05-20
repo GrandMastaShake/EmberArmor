@@ -14,6 +14,7 @@ can detect exfiltration of safety-check metadata.
 
 from __future__ import annotations
 
+import asyncio
 import re
 import time
 from typing import Any, Final
@@ -61,21 +62,33 @@ THRESHOLD_CAUTION: Final[float] = 0.2
 class DissonanceDetector:
     """Detects behavioral contradictions in AI-generated text.
 
-    Thread-safety note
-    ------------------
-    The counters ``_checks_total`` and ``_checks_blocked`` are mutable
-    integers.  In a multi-worker deployment wrap usage in a lock or use
-    atomic counters (e.g. ``asyncio.Lock`` or ``multiprocessing.Value``).
+    Thread-safety
+    -------------
+    ``_checks_total`` and ``_checks_blocked`` are guarded by ``_counter_lock``
+    (an ``asyncio.Lock``). All mutations go through ``_increment_total()`` and
+    ``_increment_blocked()`` which acquire the lock. This prevents lost updates
+    under concurrent async load.
     """
 
     def __init__(self) -> None:
         self._checks_total: int = 0
         self._checks_blocked: int = 0
+        self._counter_lock: asyncio.Lock = asyncio.Lock()
 
         # Health tracking
         self._last_check_time: float | None = None
         self._last_check_result: str | None = None
         self._consecutive_failures: int = 0
+
+    async def _increment_total(self) -> None:
+        """Atomically increment the total check counter."""
+        async with self._counter_lock:
+            self._checks_total += 1
+
+    async def _increment_blocked(self) -> None:
+        """Atomically increment the blocked check counter."""
+        async with self._counter_lock:
+            self._checks_blocked += 1
 
     async def check(
         self,
@@ -99,7 +112,7 @@ class DissonanceDetector:
             canary token.
         """
         start: float = time.perf_counter()
-        self._checks_total += 1
+        await self._increment_total()
 
         try:
             detected_patterns: list[str] = []
@@ -123,7 +136,7 @@ class DissonanceDetector:
             # --- Safety-level determination ---
             if max_score >= THRESHOLD_UNSAFE:
                 level = SafetyLevel.UNSAFE
-                self._checks_blocked += 1
+                await self._increment_blocked()
                 self._consecutive_failures += 1
             elif max_score >= THRESHOLD_CAUTION:
                 level = SafetyLevel.CAUTION

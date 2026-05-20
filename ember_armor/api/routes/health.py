@@ -17,8 +17,9 @@ import asyncio
 import time
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Request, status
+from fastapi import APIRouter, Depends, Request, status
 
+from ember_armor.api.auth import get_current_auth
 from ember_armor.models.responses import ComponentHealth, HealthResponse
 from ember_armor.utils.logging import logger
 
@@ -306,14 +307,22 @@ async def _check_detector_deep(request: Request) -> ComponentHealth:
 async def health_check(
     request: Request,
     depth: str = "shallow",
+    _auth: str = Depends(get_current_auth),
 ) -> HealthResponse:
-    """Public health check endpoint.
+    """Health check endpoint.
 
     Parameters
     ----------
     depth:
         ``"shallow"`` for fast liveness probe (default),
-        ``"deep"`` for full component exercise.
+        ``"deep"`` for full component exercise including subsystem metadata.
+
+    Security
+    --------
+    Requires authentication for all depths. The ``deep`` mode returns
+    internal subsystem state (circuit breaker thresholds, detector block
+    rates, consensus agent names) that could allow an attacker to calibrate
+    attacks to stay below detection thresholds. Always auth-gated.
     """
     if depth not in {"shallow", "deep"}:
         depth = "shallow"

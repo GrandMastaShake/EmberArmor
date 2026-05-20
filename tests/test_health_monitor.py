@@ -48,24 +48,24 @@ from ember_armor.models.responses import (
 class TestHealthResponse:
     """Tests for the GET /health endpoint."""
 
-    def test_health_status_is_string(self, client: TestClient) -> None:
+    def test_health_status_is_string(self, client: TestClient, auth_headers: dict) -> None:
         """The top-level status field must be a string."""
-        response = client.get("/health")
+        response = client.get("/health", headers=auth_headers)
         assert response.status_code == 200
         data = response.json()
         assert isinstance(data["status"], str)
 
-    def test_health_version_present(self, client: TestClient) -> None:
+    def test_health_version_present(self, client: TestClient, auth_headers: dict) -> None:
         """The version field must be present and match the app version."""
-        response = client.get("/health")
+        response = client.get("/health", headers=auth_headers)
         assert response.status_code == 200
         data = response.json()
         assert "version" in data
         assert data["version"] == "0.2.0"
 
-    def test_health_timestamp_iso8601(self, client: TestClient) -> None:
+    def test_health_timestamp_iso8601(self, client: TestClient, auth_headers: dict) -> None:
         """The timestamp must be a valid ISO 8601 string."""
-        response = client.get("/health")
+        response = client.get("/health", headers=auth_headers)
         assert response.status_code == 200
         data = response.json()
         ts = data["timestamp"]
@@ -74,27 +74,27 @@ class TestHealthResponse:
         parsed = datetime.fromisoformat(ts)
         assert parsed.tzinfo is not None
 
-    def test_health_uptime_positive(self, client: TestClient) -> None:
+    def test_health_uptime_positive(self, client: TestClient, auth_headers: dict) -> None:
         """Uptime must be a non-negative number."""
-        response = client.get("/health")
+        response = client.get("/health", headers=auth_headers)
         assert response.status_code == 200
         data = response.json()
         uptime = data["uptime_seconds"]
         assert isinstance(uptime, (int, float))
         assert uptime >= 0.0
 
-    def test_health_components_list(self, client: TestClient) -> None:
+    def test_health_components_list(self, client: TestClient, auth_headers: dict) -> None:
         """Components must be a list with at least one element."""
-        response = client.get("/health")
+        response = client.get("/health", headers=auth_headers)
         assert response.status_code == 200
         data = response.json()
         components = data["components"]
         assert isinstance(components, list)
         assert len(components) >= 1
 
-    def test_component_has_required_fields(self, client: TestClient) -> None:
+    def test_component_has_required_fields(self, client: TestClient, auth_headers: dict) -> None:
         """Each component must have the required health fields."""
-        response = client.get("/health")
+        response = client.get("/health", headers=auth_headers)
         assert response.status_code == 200
         data = response.json()
         for comp in data["components"]:
@@ -103,9 +103,9 @@ class TestHealthResponse:
             assert "response_time_ms" in comp
             assert "last_checked" in comp
 
-    def test_component_status_values(self, client: TestClient) -> None:
+    def test_component_status_values(self, client: TestClient, auth_headers: dict) -> None:
         """Each component status must be one of: healthy, degraded, unhealthy."""
-        response = client.get("/health")
+        response = client.get("/health", headers=auth_headers)
         assert response.status_code == 200
         data = response.json()
         valid = {"healthy", "degraded", "unhealthy"}
@@ -114,9 +114,9 @@ class TestHealthResponse:
                 f"Unexpected status {comp['status']!r} for {comp['name']}"
             )
 
-    def test_health_overall_healthy(self, client: TestClient) -> None:
+    def test_health_overall_healthy(self, client: TestClient, auth_headers: dict) -> None:
         """Overall status must be one of the three valid states."""
-        response = client.get("/health")
+        response = client.get("/health", headers=auth_headers)
         assert response.status_code == 200
         data = response.json()
         assert data["status"] in {"healthy", "degraded", "unhealthy"}

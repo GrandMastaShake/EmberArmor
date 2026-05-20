@@ -13,11 +13,11 @@ from fastapi import status
 
 
 # ---------------------------------------------------------------------------
-# 1. Health check — public, no auth required.
+# 1. Health check — requires authentication.
 # ---------------------------------------------------------------------------
-def test_health_public(client, auth_headers) -> None:
-    """/health must be publicly accessible and return a valid status."""
-    response = client.get("/health")
+def test_health_authenticated(client, auth_headers) -> None:
+    """/health requires authentication and must return a valid status."""
+    response = client.get("/health", headers=auth_headers)
     assert response.status_code == status.HTTP_200_OK
 
     data = response.json()
@@ -27,6 +27,12 @@ def test_health_public(client, auth_headers) -> None:
     assert "components" in data
     component_names = {c["name"] for c in data["components"]}
     assert "detector" in component_names
+
+
+def test_health_without_auth_401(client) -> None:
+    """/health must reject unauthenticated requests with 401."""
+    response = client.get("/health")
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
 
 # ---------------------------------------------------------------------------

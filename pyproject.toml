@@ -59,3 +59,9 @@ branch = true
 fail_under = 85
 show_missing = true
 skip_covered = false
+
+[tool.bandit]
+targets = ["ember_armor"]
+exclude_dirs = ["tests", ".venv", "venv"]
+skips = ["B101"]  # assert_used — allowed in production guards
+recursive = true

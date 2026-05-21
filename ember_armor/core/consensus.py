@@ -66,7 +66,11 @@ class EnsembleConductor:
     """
 
     def __init__(self, veto_threshold: float = 0.34) -> None:
-        self.veto_threshold: float = veto_threshold
+        if not (0.0 < veto_threshold <= 1.0):
+            raise ValueError(
+                f"veto_threshold must be in (0.0, 1.0], got {veto_threshold!r}"
+            )
+        self._veto_threshold: float = veto_threshold  # private; exposed via property
         self._agents: dict[str, Callable[..., Any]] = {}
         self._weights: dict[str, float] = {}
 
@@ -74,6 +78,20 @@ class EnsembleConductor:
         self._total_orchestrations: int = 0
         self._total_violations: int = 0
         self._last_orchestration_time: float | None = None
+
+    # ------------------------------------------------------------------
+    # Properties
+    # ------------------------------------------------------------------
+
+    @property
+    def veto_threshold(self) -> float:
+        """Fraction of total weight required to trigger an UNSAFE veto.
+
+        Read-only — prevents accidental or adversarial mutation that would
+        bypass the consensus safety guarantee (e.g.
+        ``conductor.veto_threshold = 999.0``).
+        """
+        return self._veto_threshold
 
     # ------------------------------------------------------------------
     # Registration

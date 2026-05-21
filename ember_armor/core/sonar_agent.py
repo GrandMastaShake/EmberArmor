@@ -157,12 +157,14 @@ class SonarConsensusAgent:
             timeout=self._timeout,
         )
 
-        # Telemetry
+        # Telemetry — guarded by _telem_lock to prevent lost-update races
+        # under concurrent orchestration calls.
         self._votes_cast: int = 0
         self._votes_unsafe: int = 0
         self._votes_review: int = 0
         self._votes_safe: int = 0
         self._sonar_errors: int = 0
+        self._telem_lock: asyncio.Lock = asyncio.Lock()
 
     async def close(self) -> None:
         """Close the HTTP client. Call at app shutdown."""
@@ -193,7 +195,8 @@ class SonarConsensusAgent:
             ``sonar_status``, ``latency_ms``.
         """
         start = time.perf_counter()
-        self._votes_cast += 1
+        async with self._telem_lock:
+            self._votes_cast += 1
 
         # Normalize input
         if isinstance(input_data, dict):
@@ -210,13 +213,14 @@ class SonarConsensusAgent:
         result = await self._query_sonar(text, domain, attack_context)
         result.latency_ms = (time.perf_counter() - start) * 1000
 
-        # Update telemetry
-        if result.decision == "UNSAFE":
-            self._votes_unsafe += 1
-        elif result.decision == "REVIEW":
-            self._votes_review += 1
-        else:
-            self._votes_safe += 1
+        # Update telemetry (lock-protected)
+        async with self._telem_lock:
+            if result.decision == "UNSAFE":
+                self._votes_unsafe += 1
+            elif result.decision == "REVIEW":
+                self._votes_review += 1
+            else:
+                self._votes_safe += 1
 
         logger.info(
             "sonar_agent.voted",
@@ -256,7 +260,8 @@ class SonarConsensusAgent:
             return self._parse_vote_response(response)
 
         except httpx.TimeoutException:
-            self._sonar_errors += 1
+            async with self._telem_lock:
+                self._sonar_errors += 1
             logger.warning("sonar_agent.timeout", domain=domain)
             return SonarVoteResult(
                 decision="REVIEW",
@@ -265,7 +270,8 @@ class SonarConsensusAgent:
                 sonar_status="SONAR_TIMEOUT",
             )
         except _AuthError:
-            self._sonar_errors += 1
+            async with self._telem_lock:
+                self._sonar_errors += 1
             logger.error("sonar_agent.auth_error")
             return SonarVoteResult(
                 decision="REVIEW",
@@ -274,7 +280,8 @@ class SonarConsensusAgent:
                 sonar_status="SONAR_INVALID_KEY",
             )
         except _RateLimitError:
-            self._sonar_errors += 1
+            async with self._telem_lock:
+                self._sonar_errors += 1
             logger.warning("sonar_agent.rate_limited")
             return SonarVoteResult(
                 decision="REVIEW",
@@ -283,7 +290,8 @@ class SonarConsensusAgent:
                 sonar_status="SONAR_RATE_LIMITED",
             )
         except Exception as exc:
-            self._sonar_errors += 1
+            async with self._telem_lock:
+                self._sonar_errors += 1
             logger.error("sonar_agent.error", error=str(exc))
             return SonarVoteResult(
                 decision="REVIEW",

@@ -235,7 +235,7 @@ class TestPrometheusMetrics:
             match = re.match(r"^([a-zA-Z_:][a-zA-Z0-9_:]*)", line)
             assert match is not None, f"Invalid metric line: {line!r}"
 
-    def test_metrics_counter_increment(self) -> None:
+    async def test_metrics_counter_increment(self) -> None:
         """Counters must reflect increments after incrementing."""
         # Reset and increment
         from ember_armor.api.routes import metrics as metrics_module
@@ -243,7 +243,7 @@ class TestPrometheusMetrics:
         original = metrics_module.checks_total
         try:
             metrics_module.checks_total = 0
-            increment_checks_total()
+            await increment_checks_total()
             output = export_prometheus()
             # Find the checks_total line and verify value is 1
             for line in output.strip().split("\n"):

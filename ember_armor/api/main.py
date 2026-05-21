@@ -63,8 +63,10 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # Graceful shutdown — close Sonar HTTP client
-    await app.state.sonar_agent.close()
+    # Graceful shutdown — close Sonar HTTP client (guard against init failure)
+    sonar_agent = getattr(app.state, "sonar_agent", None)
+    if sonar_agent is not None:
+        await sonar_agent.close()
     logger.info("app.shutdown", uptime=time.time() - app.state.startup_time)
 
 

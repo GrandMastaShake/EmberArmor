@@ -27,7 +27,12 @@ class EmberSettings(BaseSettings):
 
     model_config = SettingsConfigDict(
         env_prefix="EMBER_",
-        env_file=".env",
+        # .env file is only loaded when EMBER_ENV=development is set.
+        # In production deployments secrets are injected via environment
+        # variables or a secrets manager — never from a writable .env file.
+        # An attacker who can write .env could escalate privileges by
+        # overriding EMBER_API_KEY or EMBER_TOKEN_SECRET.
+        env_file=(".env" if __import__("os").environ.get("EMBER_ENV") == "development" else None),
         env_file_encoding="utf-8",
         case_sensitive=False,
         # Extra fields are rejected — typos in env vars are caught early.

@@ -19,6 +19,7 @@ EmberArmor-specific counters (independent of prometheus_client):
 
 from __future__ import annotations
 
+import asyncio
 import os
 
 from fastapi import APIRouter, Depends, status
@@ -30,6 +31,9 @@ router = APIRouter()
 
 # ---------------------------------------------------------------------------
 # EmberArmor-specific counters (module-level, prometheus-client independent)
+#
+# All mutations go through asyncio.Lock to prevent lost-update races under
+# concurrent requests.  The same pattern already protects detector.py counters.
 # ---------------------------------------------------------------------------
 
 checks_total: int = 0
@@ -39,6 +43,9 @@ consensus_violations: int = 0
 dissonance_events: int = 0
 requests_total: int = 0
 response_time_ms: float = 0.0
+
+# Single lock guarding all counter mutations
+_counter_lock: asyncio.Lock = asyncio.Lock()
 
 
 # ---------------------------------------------------------------------------
@@ -136,46 +143,53 @@ def export_prometheus() -> str:
 # ---------------------------------------------------------------------------
 
 
-def increment_checks_total() -> None:
-    """Increment the total safety checks counter."""
+async def increment_checks_total() -> None:
+    """Increment the total safety checks counter (lock-protected)."""
     global checks_total
-    checks_total += 1
+    async with _counter_lock:
+        checks_total += 1
 
 
-def increment_checks_blocked() -> None:
-    """Increment the blocked unsafe requests counter."""
+async def increment_checks_blocked() -> None:
+    """Increment the blocked unsafe requests counter (lock-protected)."""
     global checks_blocked
-    checks_blocked += 1
+    async with _counter_lock:
+        checks_blocked += 1
 
 
-def increment_auth_failures() -> None:
-    """Increment the authentication failures counter."""
+async def increment_auth_failures() -> None:
+    """Increment the authentication failures counter (lock-protected)."""
     global auth_failures
-    auth_failures += 1
+    async with _counter_lock:
+        auth_failures += 1
 
 
-def increment_consensus_violations() -> None:
-    """Increment the consensus violations counter."""
+async def increment_consensus_violations() -> None:
+    """Increment the consensus violations counter (lock-protected)."""
     global consensus_violations
-    consensus_violations += 1
+    async with _counter_lock:
+        consensus_violations += 1
 
 
-def increment_dissonance_events() -> None:
-    """Increment the dissonance events counter."""
+async def increment_dissonance_events() -> None:
+    """Increment the dissonance events counter (lock-protected)."""
     global dissonance_events
-    dissonance_events += 1
+    async with _counter_lock:
+        dissonance_events += 1
 
 
-def increment_requests_total() -> None:
-    """Increment the total HTTP requests counter."""
+async def increment_requests_total() -> None:
+    """Increment the total HTTP requests counter (lock-protected)."""
     global requests_total
-    requests_total += 1
+    async with _counter_lock:
+        requests_total += 1
 
 
-def add_response_time_ms(ms: float) -> None:
-    """Add response time to the cumulative counter."""
+async def add_response_time_ms(ms: float) -> None:
+    """Add response time to the cumulative counter (lock-protected)."""
     global response_time_ms
-    response_time_ms += ms
+    async with _counter_lock:
+        response_time_ms += ms
 
 
 # ---------------------------------------------------------------------------

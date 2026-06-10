@@ -115,13 +115,28 @@ if not exist "%ENV_FILE%" (
 
 REM ── Write EmberArmor .env if not present ─────────────────────────────────────
 set ARMOR_ENV=%INSTALL_DIR%\.env
-if not exist "%ARMOR_ENV%" (
-    (
-        echo EMBER_API_KEY=ember-proxy-internal-key
-        echo PERPLEXITY_API_KEY=
-    ) > "%ARMOR_ENV%"
-    echo [NOTE] Add your PERPLEXITY_API_KEY to:
-    echo        %ARMOR_ENV%
+
+echo.
+echo  -- API Key Setup --
+echo.
+echo  Your Perplexity API key powers the Sonar consensus agent in EmberArmor.
+echo  Get one at: https://www.perplexity.ai/settings/api
+echo.
+set /p PPLX_KEY=  Paste your Perplexity API key and press Enter: 
+
+REM Strip accidental quotes
+set PPLX_KEY=%PPLX_KEY:"=%
+
+REM Always write fresh .env so key is applied even on re-runs
+(
+    echo EMBER_API_KEY=ember-proxy-internal-key
+    echo PERPLEXITY_API_KEY=%PPLX_KEY%
+) > "%ARMOR_ENV%"
+
+if not "%PPLX_KEY%"=="" (
+    echo [OK] Perplexity API key saved to %ARMOR_ENV%
+) else (
+    echo [WARN] No key entered -- add PERPLEXITY_API_KEY manually to %ARMOR_ENV%
 )
 
 REM ── Create desktop shortcut via a temp VBScript (reliable on all Windows) ────
@@ -157,11 +172,11 @@ echo.
 echo   Installed to: %INSTALL_DIR%
 echo.
 echo   Next steps:
-echo     1. Add your PERPLEXITY_API_KEY to:
-echo        %ARMOR_ENV%
-echo     2. Double-click "EmberArmor Proxy" on your Desktop
+echo     1. Double-click "EmberArmor Proxy" on your Desktop
 echo        -- or run: %TARGET_PATH%
-echo     3. Open http://localhost:7070 for the live dashboard
+echo     2. Open http://localhost:7070 for the live dashboard
+echo.
+echo   (If you skipped the API key, add PERPLEXITY_API_KEY to %ARMOR_ENV%)
 echo.
 echo   To uninstall the proxy cert later:
 echo     certutil -delstore Root "mitmproxy"

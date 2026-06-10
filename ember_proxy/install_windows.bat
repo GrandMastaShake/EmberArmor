@@ -4,11 +4,11 @@ title EmberArmor Proxy — Windows Installer
 
 echo.
 echo  ======================================================
-echo   EMBERARMOR PROXY — Windows Installer
+echo   EMBERARMOR PROXY -- Windows Installer
 echo  ======================================================
 echo.
 
-REM ── Install dir — everything goes here ──────────────────────────────────────
+REM ── Install dir ──────────────────────────────────────────────────────────────
 set INSTALL_DIR=%USERPROFILE%\EmberArmor
 set REPO_URL=https://github.com/GrandMastaShake/EmberArmor.git
 
@@ -36,7 +36,7 @@ REM ── Clone or update EmberArmor ──────────────
 echo.
 echo [1/5] Fetching EmberArmor from GitHub...
 if exist "%INSTALL_DIR%\.git" (
-    echo       Repo already exists — pulling latest...
+    echo       Repo already exists -- pulling latest...
     cd /d "%INSTALL_DIR%"
     git pull --quiet
 ) else (
@@ -44,10 +44,9 @@ if exist "%INSTALL_DIR%\.git" (
     git clone --quiet "%REPO_URL%" "%INSTALL_DIR%"
     if errorlevel 1 (
         echo.
-        echo [ERROR] Clone failed.
-        echo         The repo is private — you need to be logged in to GitHub.
-        echo         Run:  gh auth login
-        echo         Or set up a personal access token:
+        echo [ERROR] Clone failed. The repo is private.
+        echo         Make sure you are logged in to GitHub via git credential manager,
+        echo         or set up a personal access token at:
         echo         https://github.com/settings/tokens
         pause
         exit /b 1
@@ -59,12 +58,16 @@ REM ── Install Python dependencies ─────────────�
 echo.
 echo [2/5] Installing Python dependencies...
 cd /d "%INSTALL_DIR%"
-pip install -r requirements.txt --quiet
+
+REM Install from pyproject.toml if pip supports it, otherwise install deps directly
+pip install -e . --quiet --disable-pip-version-check >nul 2>&1
 if errorlevel 1 (
-    echo [WARN] requirements.txt install had issues — trying core deps directly...
-    pip install fastapi uvicorn httpx mitmproxy --quiet
+    echo       Falling back to direct dependency install...
+    pip install fastapi "uvicorn[standard]" pydantic pydantic-settings ^
+        prometheus-client structlog httpx python-multipart ^
+        "python-jose[cryptography]" --quiet --disable-pip-version-check
 )
-pip install mitmproxy httpx --quiet
+pip install mitmproxy --quiet --disable-pip-version-check
 echo [OK] Dependencies installed.
 
 REM ── Generate mitmproxy CA cert ───────────────────────────────────────────────
@@ -77,23 +80,23 @@ taskkill /f /im mitmdump.exe >nul 2>&1
 set CERT_PATH=%USERPROFILE%\.mitmproxy\mitmproxy-ca-cert.cer
 if not exist "%CERT_PATH%" (
     echo [ERROR] Could not generate mitmproxy cert.
-    echo         Try running 'mitmdump' once manually in a terminal, then re-run this installer.
+    echo         Try running 'mitmdump' once manually in a terminal, then re-run.
     pause
     exit /b 1
 )
-echo [OK] Certificate generated at %CERT_PATH%
+echo [OK] Certificate generated.
 
 REM ── Trust the cert in Windows ────────────────────────────────────────────────
 echo.
 echo [4/5] Installing cert into Windows Trusted Root store...
-echo       (A UAC security prompt may appear — click Yes to trust the proxy cert)
+echo       (A UAC prompt may appear -- click Yes)
 certutil -addstore -f "Root" "%CERT_PATH%" >nul 2>&1
 if errorlevel 1 (
-    powershell -Command "Start-Process certutil -ArgumentList '-addstore -f Root \"%CERT_PATH%\"' -Verb RunAs -Wait"
+    powershell -Command "Start-Process -FilePath certutil -ArgumentList @('-addstore', '-f', 'Root', '%CERT_PATH%') -Verb RunAs -Wait"
 )
 echo [OK] Certificate trusted by Windows.
 
-REM ── Write .env config ────────────────────────────────────────────────────────
+REM ── Write proxy .env config ──────────────────────────────────────────────────
 echo.
 echo [5/5] Writing config...
 set ENV_FILE=%INSTALL_DIR%\ember_proxy\.env
@@ -107,29 +110,44 @@ if not exist "%ENV_FILE%" (
     ) > "%ENV_FILE%"
     echo [OK] Config written.
 ) else (
-    echo [OK] Config already exists — not overwritten.
+    echo [OK] Config already exists -- not overwritten.
 )
 
-REM ── Write EMBER_API_KEY into EmberArmor .env if not present ─────────────────
+REM ── Write EmberArmor .env if not present ─────────────────────────────────────
 set ARMOR_ENV=%INSTALL_DIR%\.env
 if not exist "%ARMOR_ENV%" (
     (
         echo EMBER_API_KEY=ember-proxy-internal-key
         echo PERPLEXITY_API_KEY=
     ) > "%ARMOR_ENV%"
-    echo [NOTE] Add your PERPLEXITY_API_KEY to %ARMOR_ENV%
+    echo [NOTE] Add your PERPLEXITY_API_KEY to:
+    echo        %ARMOR_ENV%
 )
 
-REM ── Create desktop shortcut for start.bat ────────────────────────────────────
-set SHORTCUT=%USERPROFILE%\Desktop\EmberArmor Proxy.lnk
-powershell -Command ^
-  "$s=(New-Object -COM WScript.Shell).CreateShortcut('%SHORTCUT%');^
-   $s.TargetPath='%INSTALL_DIR%\ember_proxy\start.bat';^
-   $s.WorkingDirectory='%INSTALL_DIR%\ember_proxy';^
-   $s.IconLocation='%SystemRoot%\System32\shell32.dll,44';^
-   $s.Description='Start EmberArmor Proxy';^
-   $s.Save()" >nul 2>&1
-echo [OK] Desktop shortcut created.
+REM ── Create desktop shortcut via a temp VBScript (reliable on all Windows) ────
+set SHORTCUT_PATH=%USERPROFILE%\Desktop\EmberArmor Proxy.lnk
+set TARGET_PATH=%INSTALL_DIR%\ember_proxy\start.bat
+set VBS_FILE=%TEMP%\make_shortcut.vbs
+
+(
+    echo Set oShell = CreateObject("WScript.Shell"^)
+    echo Set oLink = oShell.CreateShortcut("%SHORTCUT_PATH%"^)
+    echo oLink.TargetPath = "%TARGET_PATH%"
+    echo oLink.WorkingDirectory = "%INSTALL_DIR%\ember_proxy"
+    echo oLink.Description = "Start EmberArmor Proxy"
+    echo oLink.IconLocation = "%SystemRoot%\System32\shell32.dll, 44"
+    echo oLink.Save
+) > "%VBS_FILE%"
+
+cscript //nologo "%VBS_FILE%" >nul 2>&1
+del "%VBS_FILE%" >nul 2>&1
+
+if exist "%SHORTCUT_PATH%" (
+    echo [OK] Desktop shortcut created.
+) else (
+    echo [WARN] Shortcut creation failed -- launch manually from:
+    echo        %TARGET_PATH%
+)
 
 REM ── Done ────────────────────────────────────────────────────────────────────
 echo.
@@ -142,10 +160,10 @@ echo   Next steps:
 echo     1. Add your PERPLEXITY_API_KEY to:
 echo        %ARMOR_ENV%
 echo     2. Double-click "EmberArmor Proxy" on your Desktop
-echo        — or run: %INSTALL_DIR%\ember_proxy\start.bat
+echo        -- or run: %TARGET_PATH%
 echo     3. Open http://localhost:7070 for the live dashboard
 echo.
-echo   To uninstall the proxy cert:
+echo   To uninstall the proxy cert later:
 echo     certutil -delstore Root "mitmproxy"
 echo  ======================================================
 echo.

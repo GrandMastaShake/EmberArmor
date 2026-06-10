@@ -1,14 +1,44 @@
 # EmberArmor Proxy
 
-Universal AI traffic interceptor for Windows. Sits between your browser/apps and every AI API you use — Claude, Perplexity, Kimi, Gemini, OpenAI — and runs every prompt through the EmberArmor enforcement engine in real time.
+Universal AI traffic interceptor for Windows. One installer, works for anyone — downloads EmberArmor directly from GitHub, installs everything, and creates a desktop shortcut.
 
-## What it does
+Sits between your browser and every AI API you use — Claude, Perplexity, Kimi, Gemini, OpenAI — and runs every prompt through EmberArmor's enforcement engine in real time.
 
-- Intercepts all outbound AI API traffic transparently
-- Runs each prompt through EmberArmor (DissonanceDetector + EnsembleConductor + Sonar)
-- Logs every decision with full latency telemetry
-- Shows a live dashboard at `http://localhost:7070`
-- Starts in **monitor mode** (log everything, block nothing) — flip `BLOCK_ON_UNSAFE=true` when you're confident in the tuning
+## Setup (anyone, any machine)
+
+**Requirements:** Python 3.11+ · Git
+
+1. **Download just this file:**
+   [`install_windows.bat`](https://raw.githubusercontent.com/GrandMastaShake/EmberArmor/master/ember_proxy/install_windows.bat)
+
+2. **Right-click → Run as Administrator**
+
+   The installer will:
+   - Clone the full EmberArmor repo to `%USERPROFILE%\EmberArmor`
+   - Install all Python dependencies
+   - Generate and trust the mitmproxy CA cert in Windows
+   - Create an **EmberArmor Proxy** shortcut on your Desktop
+
+3. **Add your Perplexity API key** to `%USERPROFILE%\EmberArmor\.env`:
+   ```
+   PERPLEXITY_API_KEY=your-key-here
+   ```
+
+4. **Double-click the Desktop shortcut** — done.
+
+---
+
+## Daily use
+
+| Action | How |
+|--------|-----|
+| Start | Double-click **EmberArmor Proxy** on Desktop |
+| Dashboard | `http://localhost:7070` (opens automatically) |
+| Stop | Close the terminal window |
+
+The system proxy is set automatically on start and restored on stop. Everything else — browsers, VS Code, API scripts — routes through EmberArmor without any configuration.
+
+---
 
 ## Intercepted endpoints
 
@@ -22,104 +52,48 @@ Universal AI traffic interceptor for Windows. Sits between your browser/apps and
 
 Everything else passes through untouched.
 
-## Setup (one time)
+---
 
-1. **Place this folder** next to your `EmberArmor` repo:
-   ```
-   your-projects/
-   ├── EmberArmor/
-   ├── EmberHoneypot/
-   ├── Corporeus/
-   ├── EmberBench/
-   └── ember_proxy/      ← this folder
-   ```
+## Modes
 
-2. **Set your EmberArmor API key** in `.env`:
-   ```
-   EMBER_API_KEY=ember-proxy-internal-key
-   ```
-   And make sure the same key is set in your EmberArmor config.
+**Monitor mode (default)** — logs everything, blocks nothing. Good for real-world tuning.
 
-3. **Run the installer** (once, as Administrator):
-   ```
-   Right-click install_windows.bat → Run as administrator
-   ```
-   This installs the mitmproxy CA cert into Windows Trusted Root so your browser trusts the proxy's TLS.
+**Blocking mode** — UNSAFE decisions return a 403 to the calling app.
 
-4. **Set your Perplexity API key** in EmberArmor's env:
-   ```
-   PERPLEXITY_API_KEY=your-key-here
-   ```
-   (Required for Sonar consensus agent)
-
-## Daily use
-
-**Start:**
+To enable blocking, edit `%USERPROFILE%\EmberArmor\ember_proxy\.env`:
 ```
-Double-click start.bat
+BLOCK_ON_UNSAFE=true
 ```
-Opens the dashboard automatically. Use your AI tools normally.
+Then restart.
 
-**Stop:**
-```
-Double-click stop.bat
-   — or —
-Close the start.bat window
-```
-System proxy is restored automatically on exit.
+---
 
 ## Dashboard
 
 `http://localhost:7070` — auto-refreshes every 3 seconds.
 
-Shows:
-- Total checks, SAFE / REVIEW / UNSAFE counts
+- Total checks · SAFE / REVIEW / UNSAFE counts
 - Average enforcement latency
-- Live feed of last 50 intercepts with host, decision, score, latency, prompt preview
+- Live feed: host, decision, score, latency, prompt preview (first 120 chars)
+- `/api/log` — raw JSON for scripting
 
-## Tuning mode → Blocking mode
-
-Once you've run it for a week and the REVIEW/UNSAFE decisions look right, flip the switch:
-
-Edit `.env`:
-```
-BLOCK_ON_UNSAFE=true
-```
-
-Or edit `addon.py` line:
-```python
-BLOCK_ON_UNSAFE = True
-```
-
-Restart `start.bat`. Now UNSAFE decisions return a 403 to the calling app instead of passing through.
-
-## Adding new AI endpoints
-
-Edit the `AI_HOSTS` set in `addon.py`:
-```python
-AI_HOSTS = {
-    "api.anthropic.com",
-    "api.your-new-service.com",   # add here
-    ...
-}
-```
+---
 
 ## Files
 
 | File | Purpose |
 |------|---------|
+| `install_windows.bat` | One-time setup — clones repo, installs deps, trusts cert, creates shortcut |
+| `start.bat` | Starts EmberArmor API + proxy, sets system proxy, opens dashboard |
+| `stop.bat` | Emergency stop — kills processes, restores system proxy |
 | `addon.py` | mitmproxy interceptor + status dashboard server |
-| `start.bat` | Starts EmberArmor API + proxy, sets system proxy |
-| `stop.bat` | Kills everything, restores system proxy |
-| `install_windows.bat` | One-time: installs cert, pip deps |
-| `.env` | Config (API key, ports, block mode) |
+| `.env` | Local config (gitignored) |
 
-## Latency notes
+---
 
-Current EmberArmor enforcement averages **860ms**. This is acceptable for most chat/coding use. The audit log tracks every request's latency — after real-world usage you'll see the distribution and can decide:
+## Uninstall
 
-- **Fast-path**: Skip full Sonar consensus for short/routine prompts, only invoke it above a length or pattern threshold
-- **Async logging**: Pass through immediately, check in background, flag after the fact
-- **Model swap**: Use a lighter local model for first-pass filtering
-
-These optimizations are best done with real data, which is exactly why we start in monitor mode.
+```bat
+certutil -delstore Root "mitmproxy"
+```
+Then delete `%USERPROFILE%\EmberArmor` and the Desktop shortcut.

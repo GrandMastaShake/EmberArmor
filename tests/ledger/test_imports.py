@@ -60,6 +60,7 @@ def probe(module: str) -> dict[str, list[str]]:
         "ember_armor.ledger.cli",
         "ember_armor.ledger.gate",
         "ember_armor.ledger.lint",
+        "ember_armor.ledger.replay",
         "ember_armor",
     ],
 )

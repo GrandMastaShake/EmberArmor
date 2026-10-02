@@ -1,7 +1,8 @@
 """``ember-gate`` command line.
 
 Subcommands: ``check``, ``rules list|add|confirm|remove``, ``lint``,
-``log tail|verify|stats``, ``hook`` and ``install claude-code --print``.
+``log tail|verify|stats``, ``replay``, ``hook`` and
+``install claude-code --print``.
 """
 
 from __future__ import annotations
@@ -223,6 +224,21 @@ def _cmd_log_stats(args: argparse.Namespace) -> int:
 
 
 # ---------------------------------------------------------------------------
+# replay
+# ---------------------------------------------------------------------------
+def _cmd_replay(args: argparse.Namespace) -> int:
+    """Run recorded tool calls through the ledger and print aggregates."""
+    from ember_armor.ledger.replay import render, replay
+
+    report = replay(args.paths, examples=args.examples)
+    if args.json:
+        _print_json(report.as_dict())
+    else:
+        print(render(report))
+    return EXIT_OK
+
+
+# ---------------------------------------------------------------------------
 # hook / install
 # ---------------------------------------------------------------------------
 def _cmd_hook(args: argparse.Namespace) -> int:
@@ -327,6 +343,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_stats = log_commands.add_parser("stats", help="count decisions, tools and rules")
     p_stats.add_argument("--json", action="store_true", help="print JSON")
     p_stats.set_defaults(func=_cmd_log_stats)
+
+    p_replay = commands.add_parser(
+        "replay", help="run Claude Code transcripts through the ledger (aggregates)"
+    )
+    p_replay.add_argument("paths", nargs="+", help="transcript .jsonl or directory")
+    p_replay.add_argument(
+        "--examples", type=int, default=3, help="example calls per rule (default: 3)"
+    )
+    p_replay.add_argument("--json", action="store_true", help="print JSON")
+    p_replay.set_defaults(func=_cmd_replay)
 
     p_hook = commands.add_parser("hook", help="Claude Code PreToolUse hook (stdin)")
     p_hook.set_defaults(func=_cmd_hook)

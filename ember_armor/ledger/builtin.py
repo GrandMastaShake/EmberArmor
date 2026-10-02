@@ -141,7 +141,7 @@ def _rules(disposable: Sequence[str]) -> list[dict[str, Any]]:
         "type": "path",
         "op": "delete",
         "recursive": True,
-        "not_under": [*DISPOSABLE, *disposable],
+        "not_within": [*DISPOSABLE, *disposable],
     }
     return [
         # -- recursive deletion ----------------------------------------------

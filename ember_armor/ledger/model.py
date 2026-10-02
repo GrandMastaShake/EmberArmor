@@ -69,12 +69,15 @@ class PathPred:
 
     Every field must hold for the same path.  ``recursive`` narrows a
     ``delete`` to recursive (``True``) or non-recursive (``False``)
-    deletions; ``None`` accepts both.
+    deletions; ``None`` accepts both.  ``not_within`` is an exception like
+    ``not_under``, judged from where the call is made: the directory that
+    matches must not be the working directory or a directory above it.
     """
 
     op: str = "any"
     under: tuple[str, ...] = ()
     not_under: tuple[str, ...] = ()
+    not_within: tuple[str, ...] = ()
     glob: tuple[str, ...] = ()
     not_glob: tuple[str, ...] = ()
     recursive: bool | None = None
@@ -305,7 +308,7 @@ def _parse_command(obj: Mapping[str, Any], where: str) -> CommandPred:
 
 
 def _parse_path(obj: Mapping[str, Any], where: str) -> PathPred:
-    lists = ("under", "not_under", "glob", "not_glob")
+    lists = ("under", "not_under", "not_within", "glob", "not_glob")
     _check_keys(obj, where, ("type",), (*lists, "op", "recursive"))
     values = {k: _strings(obj[k], f"{where}.{k}") for k in lists if k in obj}
     recursive = obj.get("recursive")

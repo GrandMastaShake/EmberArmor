@@ -144,6 +144,13 @@ def path_implies(
     a_excluded = texts(a.not_under, base_a)
     if not all(inside(n, a_excluded) for n in texts(b.not_under, base_b)):
         return False
+    # ``not_within`` spares less than ``not_under`` does for the same pattern.
+    a_local = texts(a.not_within, base_a)
+    if not all(
+        n is not None and (n in a_local or inside(n, a_excluded))
+        for n in texts(b.not_within, base_b)
+    ):
+        return False
     a_spared = texts(a.not_glob, base_a, True)
     b_spared = texts(b.not_glob, base_b, True)
     if not all(g is not None and g in a_spared for g in b_spared):

@@ -190,6 +190,15 @@ PATH_CASES = [
         path(under=["src"], not_under=["src/gen"]),
         False,
     ),
+    # not_within spares less than not_under does for the same directory
+    (path(not_within=["**/gen"]), path(not_within=["**/gen"]), True),
+    (path(not_within=["**/gen", "**/x"]), path(not_within=["**/gen"]), True),
+    (path(not_within=["**/gen"]), path(not_within=["**/gen", "**/x"]), False),
+    (path(not_under=["src/gen"]), path(not_within=["src/gen"]), True),
+    (path(not_under=["src/gen"]), path(not_within=["src/gen/deep"]), True),
+    (path(not_within=["src/gen"]), path(not_under=["src/gen"]), False),
+    (path(not_within=["src/gen"]), path(), True),
+    (path(), path(not_within=["src/gen"]), False),
     # globs: only equal patterns, or a literal glob inside a directory
     (path(glob=["**/.env"]), path(glob=["**/.env", "**/*.pem"]), True),
     (path(glob=["**/.env", "**/*.pem"]), path(glob=["**/.env"]), False),

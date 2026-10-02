@@ -187,6 +187,32 @@ def _under_any(path: str, directories: Iterable[str], windows: bool) -> bool:
     return any(is_under(path, directory, windows=windows) for directory in directories)
 
 
+def _within(path: str, cwd: str, directories: list[str], windows: bool) -> bool:
+    """True when *path* is, or is inside, one of *directories* seen from *cwd*.
+
+    A directory counts only when it is not the working directory and not
+    above it: the part of the path it shares with *cwd* is never looked at.
+    ``**/build`` therefore covers ``./build/x`` and ``../build``, and neither
+    a project that lies below some directory named ``build`` nor that
+    directory itself.
+    """
+    if not directories:
+        return False
+    parts, base = path.split("/"), cwd.split("/")
+    if windows:
+        base = [segment.lower() for segment in base]
+    shared = 0
+    for mine, theirs in zip(parts, base, strict=False):
+        if (mine.lower() if windows else mine) != theirs:
+            break
+        shared += 1
+    for end in range(shared + 1, len(parts) + 1):
+        candidate = "/".join(parts[:end])
+        if any(matches_glob(candidate, d, windows=windows) for d in directories):
+            return True
+    return False
+
+
 def _path_holds(pred: PathPred, rule: Rule, facts: Facts) -> bool:
     """True when one path of the call satisfies every field of *pred*."""
     if not facts.paths:
@@ -194,6 +220,7 @@ def _path_holds(pred: PathPred, rule: Rule, facts: Facts) -> bool:
     windows = facts.windows
     under = [_resolve(d, rule, facts) for d in pred.under]
     not_under = [_resolve(d, rule, facts) for d in pred.not_under]
+    not_within = [_resolve(d, rule, facts) for d in pred.not_within]
     globs = [_resolve(g, rule, facts, bare=True) for g in pred.glob]
     not_globs = [_resolve(g, rule, facts, bare=True) for g in pred.not_glob]
 
@@ -210,6 +237,9 @@ def _path_holds(pred: PathPred, rule: Rule, facts: Facts) -> bool:
         if _under_any(
             path.path, (d for d in not_under if located or _anywhere(d)), windows
         ):
+            return False
+        local = [d for d in not_within if located or _anywhere(d)]
+        if _within(path.path, facts.cwd, local, windows):
             return False
         if any(
             matches_glob(path.path, glob, windows=windows)

@@ -118,6 +118,8 @@ def leaf(rng: random.Random, windows: bool) -> dict[str, Any]:
         if rng.random() < 0.3:
             pred["not_under"] = [rng.choice(["src/gen", "src/gen/deep"])]
         if rng.random() < 0.3:
+            pred["not_within"] = [rng.choice(["src/gen", "**/gen", "src/gen/deep"])]
+        if rng.random() < 0.3:
             pred["glob"] = [rng.choice(["*.py", "**/.env"])]
         if rng.random() < 0.2:
             pred["not_glob"] = [rng.choice(["*.py", "**/x.py"])]

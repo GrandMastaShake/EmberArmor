@@ -1,0 +1,1101 @@
+[
+ {
+  "tool": "Bash",
+  "command": "git status"
+ },
+ {
+  "tool": "Bash",
+  "command": "git diff"
+ },
+ {
+  "tool": "Bash",
+  "command": "git log --oneline -5"
+ },
+ {
+  "tool": "Bash",
+  "command": "git add -A"
+ },
+ {
+  "tool": "Bash",
+  "command": "git commit -m \"fix: remove force push docs\""
+ },
+ {
+  "tool": "Bash",
+  "command": "git push"
+ },
+ {
+  "tool": "Bash",
+  "command": "git push origin main"
+ },
+ {
+  "tool": "Bash",
+  "command": "git push -u origin feat/x"
+ },
+ {
+  "tool": "Bash",
+  "command": "git push --tags"
+ },
+ {
+  "tool": "Bash",
+  "command": "git push --follow-tags"
+ },
+ {
+  "tool": "Bash",
+  "command": "git pull --rebase"
+ },
+ {
+  "tool": "Bash",
+  "command": "git fetch --all --prune"
+ },
+ {
+  "tool": "Bash",
+  "command": "git checkout main"
+ },
+ {
+  "tool": "Bash",
+  "command": "git checkout -b feature"
+ },
+ {
+  "tool": "Bash",
+  "command": "git checkout -- src/app.py"
+ },
+ {
+  "tool": "Bash",
+  "command": "git restore --staged ."
+ },
+ {
+  "tool": "Bash",
+  "command": "git restore src/app.py"
+ },
+ {
+  "tool": "Bash",
+  "command": "git reset HEAD~1"
+ },
+ {
+  "tool": "Bash",
+  "command": "git reset --soft HEAD~1"
+ },
+ {
+  "tool": "Bash",
+  "command": "git clean -n"
+ },
+ {
+  "tool": "Bash",
+  "command": "git clean -nd"
+ },
+ {
+  "tool": "Bash",
+  "command": "git clean -nfd"
+ },
+ {
+  "tool": "Bash",
+  "command": "git branch -d merged"
+ },
+ {
+  "tool": "Bash",
+  "command": "git branch -a"
+ },
+ {
+  "tool": "Bash",
+  "command": "git stash"
+ },
+ {
+  "tool": "Bash",
+  "command": "git stash pop"
+ },
+ {
+  "tool": "Bash",
+  "command": "git rebase main"
+ },
+ {
+  "tool": "Bash",
+  "command": "git merge --no-ff feat"
+ },
+ {
+  "tool": "Bash",
+  "command": "git commit -m \"$(cat <<'EOF'\nfix: handle rm -rf edge case (don't delete)\nEOF\n)\""
+ },
+ {
+  "tool": "Bash",
+  "command": "git log --grep=\"reset --hard\""
+ },
+ {
+  "tool": "Bash",
+  "command": "git commit -m \"docs: explain git push --force\""
+ },
+ {
+  "tool": "Bash",
+  "command": "echo \"rm -rf /\""
+ },
+ {
+  "tool": "Bash",
+  "command": "echo 'git push --force is dangerous'"
+ },
+ {
+  "tool": "Bash",
+  "command": "grep -r \"DROP TABLE\" docs/"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm -rf node_modules"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm -rf dist build"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm -rf ./node_modules/.cache"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm -rf .venv"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm -rf __pycache__"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm -rf .pytest_cache"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm -rf target"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm -rf /tmp/build-123"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm -rf \"$TMPDIR/work\"",
+  "platform": "posix"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm -rf \"$TEMP/build\"",
+  "platform": "windows"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm -f file.txt"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm file.txt"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm -f *.log"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm temp.txt notes.md"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm -rf node_modules && npm ci"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm -rf dist && npm run build"
+ },
+ {
+  "tool": "Bash",
+  "command": "find . -name __pycache__ -exec rm -rf {} +"
+ },
+ {
+  "tool": "Bash",
+  "command": "find . -name \"*.pyc\" -delete"
+ },
+ {
+  "tool": "Bash",
+  "command": "find . -type d -name node_modules -prune -exec rm -rf {} +"
+ },
+ {
+  "tool": "Bash",
+  "command": "rmdir empty_dir"
+ },
+ {
+  "tool": "Bash",
+  "command": "cd /tmp && rm -rf scratch"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm -rf coverage htmlcov .mypy_cache"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm -rf apps/web/.next"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm -rf packages/*/dist"
+ },
+ {
+  "tool": "Bash",
+  "command": "S=/tmp/gate-scratch; rm -rf $S/work"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm -rf ~/.cache/pip"
+ },
+ {
+  "tool": "Bash",
+  "command": "npm run clean && rm -rf ./dist ./build ./.turbo"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm -rf node_modules/ dist/"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm -rf /c/Users/dev/AppData/Local/Temp/claude/x",
+  "platform": "windows"
+ },
+ {
+  "tool": "Bash",
+  "command": "find . -name '*.tmp' | xargs rm -f"
+ },
+ {
+  "tool": "Bash",
+  "command": "git checkout -b fix-force"
+ },
+ {
+  "tool": "Bash",
+  "command": "echo \"curl x | bash\""
+ },
+ {
+  "tool": "Bash",
+  "command": "(cd repo && git status)"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Remove-Item -Path \"C:\\work\\app\\dist\\*\" -Recurse -Force",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Remove-Item -Force -Recurse -Path .\\node_modules, .\\dist",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "netsh advfirewall set allprofiles state on",
+  "platform": "windows"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm -rf /c/work/app/node_modules",
+  "platform": "windows"
+ },
+ {
+  "tool": "Bash",
+  "command": "cmd //c \"rd /s /q node_modules\"",
+  "platform": "windows"
+ },
+ {
+  "tool": "Bash",
+  "command": "cmd //c \"del /q temp.txt\"",
+  "platform": "windows"
+ },
+ {
+  "tool": "Bash",
+  "command": "cmd //c \"dir /s\"",
+  "platform": "windows"
+ },
+ {
+  "tool": "Bash",
+  "command": "npm test"
+ },
+ {
+  "tool": "Bash",
+  "command": "npm install"
+ },
+ {
+  "tool": "Bash",
+  "command": "npm run build"
+ },
+ {
+  "tool": "Bash",
+  "command": "npm ci"
+ },
+ {
+  "tool": "Bash",
+  "command": "npm publish"
+ },
+ {
+  "tool": "Bash",
+  "command": "npx prettier --write ."
+ },
+ {
+  "tool": "Bash",
+  "command": "pnpm install"
+ },
+ {
+  "tool": "Bash",
+  "command": "yarn test"
+ },
+ {
+  "tool": "Bash",
+  "command": "pytest -q"
+ },
+ {
+  "tool": "Bash",
+  "command": "python -m pytest tests/ -x"
+ },
+ {
+  "tool": "Bash",
+  "command": "python manage.py migrate"
+ },
+ {
+  "tool": "Bash",
+  "command": "pip install -r requirements.txt"
+ },
+ {
+  "tool": "Bash",
+  "command": "uv pip install -e ."
+ },
+ {
+  "tool": "Bash",
+  "command": "cargo build --release"
+ },
+ {
+  "tool": "Bash",
+  "command": "go test ./..."
+ },
+ {
+  "tool": "Bash",
+  "command": "make test"
+ },
+ {
+  "tool": "Bash",
+  "command": "ruff check ."
+ },
+ {
+  "tool": "Bash",
+  "command": "tsc --noEmit"
+ },
+ {
+  "tool": "Bash",
+  "command": "eslint . --fix"
+ },
+ {
+  "tool": "Bash",
+  "command": "mkdir -p build && cd build && cmake .."
+ },
+ {
+  "tool": "Bash",
+  "command": "tar -xzf a.tar.gz"
+ },
+ {
+  "tool": "Bash",
+  "command": "chmod +x script.sh"
+ },
+ {
+  "tool": "Bash",
+  "command": "mv old.txt new.txt"
+ },
+ {
+  "tool": "Bash",
+  "command": "cp -r src backup"
+ },
+ {
+  "tool": "Bash",
+  "command": "sed -i 's/a/b/' file.txt"
+ },
+ {
+  "tool": "Bash",
+  "command": "echo hi > out.txt"
+ },
+ {
+  "tool": "Bash",
+  "command": "ls -la 2>/dev/null | head"
+ },
+ {
+  "tool": "Bash",
+  "command": "FOO=bar \"$S/.venv/bin/python\" -m pytest -q"
+ },
+ {
+  "tool": "Bash",
+  "command": "docker ps"
+ },
+ {
+  "tool": "Bash",
+  "command": "docker ps -a"
+ },
+ {
+  "tool": "Bash",
+  "command": "docker build -t app ."
+ },
+ {
+  "tool": "Bash",
+  "command": "docker compose up -d"
+ },
+ {
+  "tool": "Bash",
+  "command": "docker logs web"
+ },
+ {
+  "tool": "Bash",
+  "command": "docker system prune"
+ },
+ {
+  "tool": "Bash",
+  "command": "docker system df"
+ },
+ {
+  "tool": "Bash",
+  "command": "docker volume ls"
+ },
+ {
+  "tool": "Bash",
+  "command": "docker run --rm -it --env-file .env app"
+ },
+ {
+  "tool": "Bash",
+  "command": "docker stop web"
+ },
+ {
+  "tool": "Bash",
+  "command": "kubectl get pods"
+ },
+ {
+  "tool": "Bash",
+  "command": "kubectl get pods -n prod"
+ },
+ {
+  "tool": "Bash",
+  "command": "kubectl logs deploy/api"
+ },
+ {
+  "tool": "Bash",
+  "command": "kubectl apply -f k8s/"
+ },
+ {
+  "tool": "Bash",
+  "command": "kubectl describe pod delete-me"
+ },
+ {
+  "tool": "Bash",
+  "command": "terraform plan"
+ },
+ {
+  "tool": "Bash",
+  "command": "terraform apply"
+ },
+ {
+  "tool": "Bash",
+  "command": "terraform init"
+ },
+ {
+  "tool": "Bash",
+  "command": "aws s3 ls"
+ },
+ {
+  "tool": "Bash",
+  "command": "aws s3 cp file s3://bucket/"
+ },
+ {
+  "tool": "Bash",
+  "command": "aws s3 rm s3://bucket/file.txt"
+ },
+ {
+  "tool": "Bash",
+  "command": "aws s3 sync . s3://b"
+ },
+ {
+  "tool": "Bash",
+  "command": "gh pr list"
+ },
+ {
+  "tool": "Bash",
+  "command": "gh repo view"
+ },
+ {
+  "tool": "Bash",
+  "command": "gh pr create --fill"
+ },
+ {
+  "tool": "Bash",
+  "command": "gh repo clone o/r"
+ },
+ {
+  "tool": "Bash",
+  "command": "vercel deploy"
+ },
+ {
+  "tool": "Bash",
+  "command": "vercel --prod"
+ },
+ {
+  "tool": "Bash",
+  "command": "vercel env ls"
+ },
+ {
+  "tool": "Bash",
+  "command": "npm view pkg"
+ },
+ {
+  "tool": "Bash",
+  "command": "psql -c \"SELECT * FROM users\""
+ },
+ {
+  "tool": "Bash",
+  "command": "psql -c \"SELECT count(*) FROM orders WHERE dropped = false\""
+ },
+ {
+  "tool": "Bash",
+  "command": "psql -c \"DELETE FROM sessions WHERE expires < now()\""
+ },
+ {
+  "tool": "Bash",
+  "command": "psql -c \"DELETE FROM t\nWHERE id = 3\""
+ },
+ {
+  "tool": "Bash",
+  "command": "psql -c 'DELETE FROM \"public\".\"users\" WHERE id = 1'"
+ },
+ {
+  "tool": "Bash",
+  "command": "mysql -e \"UPDATE users SET name='x' WHERE id=1\""
+ },
+ {
+  "tool": "Bash",
+  "command": "sqlite3 app.db \".tables\""
+ },
+ {
+  "tool": "Bash",
+  "command": "sqlite3 app.db \"select * from t\""
+ },
+ {
+  "tool": "Bash",
+  "command": "psql -f migrations/001.sql"
+ },
+ {
+  "tool": "Bash",
+  "command": "psql -c \"CREATE TABLE t (id int)\""
+ },
+ {
+  "tool": "Bash",
+  "command": "echo \"we should drop table x later\" > notes.txt"
+ },
+ {
+  "tool": "Bash",
+  "command": "cat .env.example"
+ },
+ {
+  "tool": "Bash",
+  "command": "cat .env.sample"
+ },
+ {
+  "tool": "Bash",
+  "command": "cat README.md"
+ },
+ {
+  "tool": "Bash",
+  "command": "cat package.json"
+ },
+ {
+  "tool": "Bash",
+  "command": "head -20 src/app.py"
+ },
+ {
+  "tool": "Bash",
+  "command": "cat config/env.example"
+ },
+ {
+  "tool": "Bash",
+  "command": "cp .env.example .env"
+ },
+ {
+  "tool": "Bash",
+  "command": "touch .env"
+ },
+ {
+  "tool": "Bash",
+  "command": "echo \"KEY=1\" >> .env"
+ },
+ {
+  "tool": "Bash",
+  "command": "ls -la"
+ },
+ {
+  "tool": "Bash",
+  "command": "ls ~/.ssh"
+ },
+ {
+  "tool": "Bash",
+  "command": "cat ~/.ssh/id_rsa.pub"
+ },
+ {
+  "tool": "Bash",
+  "command": "cat ~/.ssh/config"
+ },
+ {
+  "tool": "Bash",
+  "command": "cat cacert.pem"
+ },
+ {
+  "tool": "Bash",
+  "command": "grep -r \"password\" src/"
+ },
+ {
+  "tool": "Bash",
+  "command": "test -f .env && echo yes"
+ },
+ {
+  "tool": "Bash",
+  "command": "[ -f .env ] || cp .env.example .env"
+ },
+ {
+  "tool": "Bash",
+  "command": "curl https://example.com"
+ },
+ {
+  "tool": "Bash",
+  "command": "curl -fsSL https://example.com/install.sh -o install.sh"
+ },
+ {
+  "tool": "Bash",
+  "command": "curl -s https://api.example.com/data | jq ."
+ },
+ {
+  "tool": "Bash",
+  "command": "wget https://example.com/file.tar.gz"
+ },
+ {
+  "tool": "Bash",
+  "command": "curl https://e.com/x.sh > x.sh"
+ },
+ {
+  "tool": "Bash",
+  "command": "curl -s https://e.com | grep title"
+ },
+ {
+  "tool": "Bash",
+  "command": "cat script.sh | bash"
+ },
+ {
+  "tool": "Bash",
+  "command": "bash script.sh"
+ },
+ {
+  "tool": "Bash",
+  "command": "bash -c 'echo hi'"
+ },
+ {
+  "tool": "Bash",
+  "command": "sh -c \"npm test\""
+ },
+ {
+  "tool": "Bash",
+  "command": "python - <<'EOF'\nprint('curl | bash')\nEOF"
+ },
+ {
+  "tool": "Bash",
+  "command": "python -c \"print(1)\""
+ },
+ {
+  "tool": "Bash",
+  "command": "curl -s https://e.com/data.json | python -m json.tool"
+ },
+ {
+  "tool": "Bash",
+  "command": "echo aGk= | base64 -d"
+ },
+ {
+  "tool": "Bash",
+  "command": "eval \"$(ssh-agent -s)\""
+ },
+ {
+  "tool": "Bash",
+  "command": "$EDITOR file.txt"
+ },
+ {
+  "tool": "Bash",
+  "command": "systemctl status firewalld",
+  "platform": "posix"
+ },
+ {
+  "tool": "Bash",
+  "command": "systemctl restart nginx",
+  "platform": "posix"
+ },
+ {
+  "tool": "Bash",
+  "command": "sudo ufw status",
+  "platform": "posix"
+ },
+ {
+  "tool": "Bash",
+  "command": "sudo ufw enable",
+  "platform": "posix"
+ },
+ {
+  "tool": "Bash",
+  "command": "sc query WinDefend",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Get-ChildItem",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Get-ChildItem -Recurse",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Get-Content README.md",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Get-Content .env.example",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "cat package.json",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "type notes.txt",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Remove-Item temp.txt",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Remove-Item $env:TEMP\\scratch.txt",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Remove-Item -Recurse -Force node_modules",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Remove-Item -Recurse $env:TEMP\\build",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "rm -r dist",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "ri -Recurse -Force .\\.venv",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Remove-Item .\\build -Recurse -Force -ErrorAction SilentlyContinue",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Remove-Item -Recurse -Force src -WhatIf",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Remove-Item Env:\\FOO",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Remove-Item HKCU:\\Software\\MyApp\\Cache -Recurse",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Get-ChildItem -Recurse -Filter *.log | Remove-Item",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "git status",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "git push",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "git push origin main",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "git branch -d merged",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "npm test",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "npm run build",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "docker ps",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Get-Process",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Get-Date",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Set-Location C:\\work; git status",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "$x = Get-Content package.json | ConvertFrom-Json",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Test-Path .env",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Copy-Item .env.example .env",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "New-Item -ItemType Directory build",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Set-Content out.txt \"hello\"",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Write-Host \"rm -rf /\"",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Write-Output \"git push --force\"",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Invoke-WebRequest https://e.com/file.zip -OutFile file.zip",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "iwr https://e.com/api | ConvertFrom-Json",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Invoke-RestMethod https://api.e.com/x",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Get-NetFirewallProfile",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Set-NetFirewallProfile -Enabled True",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Get-MpPreference",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Set-MpPreference -DisableRealtimeMonitoring $false",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Get-Service WinDefend",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "reg query HKLM\\Software\\X",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "reg delete HKCU\\Software\\MyApp /f",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "bcdedit /enum",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "certutil -hashfile file.zip SHA256",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "certutil -addstore My cert.cer",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "python -m pytest",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "psql -c \"SELECT 1\"",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Invoke-Sqlcmd -Query \"SELECT * FROM Users\"",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "kubectl get pods",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "terraform plan",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "cmd /c \"dir\"",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "cmd /c \"rd /s /q node_modules\"",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "powershell -Command \"Get-Process\"",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Stop-Service Spooler",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Get-Process | Format-Table",
+  "platform": "windows"
+ },
+ {
+  "tool": "Read",
+  "input": {
+   "file_path": "README.md"
+  }
+ },
+ {
+  "tool": "Read",
+  "input": {
+   "file_path": ".env.example"
+  }
+ },
+ {
+  "tool": "Read",
+  "input": {
+   "file_path": "/home/dev/.ssh/id_rsa.pub"
+  },
+  "platform": "posix"
+ },
+ {
+  "tool": "Write",
+  "input": {
+   "file_path": ".env",
+   "content": "KEY=value"
+  }
+ },
+ {
+  "tool": "Edit",
+  "input": {
+   "file_path": "src/app.py",
+   "old_string": "a",
+   "new_string": "b"
+  }
+ },
+ {
+  "tool": "Write",
+  "input": {
+   "file_path": "/tmp/x",
+   "content": "rm -rf /"
+  }
+ },
+ {
+  "tool": "NotebookEdit",
+  "input": {
+   "notebook_path": "nb.ipynb",
+   "new_source": "x"
+  }
+ },
+ {
+  "tool": "Grep",
+  "input": {
+   "pattern": "API_KEY",
+   "path": "src"
+  }
+ },
+ {
+  "tool": "Glob",
+  "input": {
+   "pattern": "**/.env"
+  }
+ },
+ {
+  "tool": "WebFetch",
+  "input": {
+   "url": "https://example.com/install.sh",
+   "prompt": "summarise"
+  }
+ },
+ {
+  "tool": "mcp__github__list_issues",
+  "input": {
+   "repo": "o/r",
+   "query": "drop table"
+  }
+ }
+]

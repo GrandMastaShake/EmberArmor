@@ -69,6 +69,8 @@ ARGV_CASES = [
         [[r"C:\Program Files\Git\bin\git.exe", "status"]],
     ),
     ("& git status", [["git", "status"]]),
+    ("npm test & git push --force", [["npm", "test"], ["git", "push", "--force"]]),
+    ("Start-Job { ls } &", [["ls"], ["Start-Job", "{ ls }"]]),
     (". .\\profile.ps1", [[".\\profile.ps1"]]),
     ("& { Get-Date }", [["Get-Date"]]),
     ('"just a string"', []),

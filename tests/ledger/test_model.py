@@ -140,6 +140,10 @@ RULE_ERRORS = [
         "cannot be nested in a history predicate",
     ),
     (rule(when="git push"), "expected a predicate object"),
+    (
+        rule(when={"type": "dynamic_shell", "reason": "download"}),
+        "'download' is not one of parse_error",
+    ),
 ]
 
 

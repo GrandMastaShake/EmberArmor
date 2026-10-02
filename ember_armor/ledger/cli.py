@@ -82,11 +82,14 @@ def _target_ledger(args: argparse.Namespace) -> Path:
     """Ledger file an editing command works on."""
     if args.ledger:
         return Path(args.ledger)
+    user = store.user_ledger_path(os.environ)
     if args.project:
         found = store.find_project_ledger(os.getcwd())
-        return found or Path(os.getcwd()) / ".ember" / store.LEDGER_NAME
+        if found is not None and found.resolve() != user.resolve():
+            return found
+        return Path(os.getcwd()) / ".ember" / store.LEDGER_NAME
     override = os.environ.get("EMBER_LEDGER")
-    return Path(override) if override else store.user_ledger_path(os.environ)
+    return Path(override) if override else user
 
 
 def _cmd_rules_list(args: argparse.Namespace) -> int:
@@ -211,9 +214,16 @@ def _cmd_hook(args: argparse.Namespace) -> int:
 
 
 def claude_code_settings() -> dict[str, Any]:
-    """Settings snippet that registers the gate as a PreToolUse hook."""
+    """Settings snippet that registers the gate as a PreToolUse hook.
+
+    The interpreter path uses forward slashes and is quoted only when it
+    contains a space, so the command reads the same in Git Bash, cmd and
+    PowerShell whenever the path has none.
+    """
     python = Path(sys.executable).as_posix()
-    command = f'"{python}" -m ember_armor.ledger.hook'
+    if " " in python:
+        python = f'"{python}"'
+    command = f"{python} -m ember_armor.ledger.hook"
     entry = {"matcher": "*", "hooks": [{"type": "command", "command": command}]}
     return {"hooks": {"PreToolUse": [entry]}}
 

@@ -335,6 +335,11 @@ class _PowerShell:
                 self._end_pipeline(stages)
                 return
             if isinstance(value, _Word):
+                if value.kind == "call" and words:
+                    # ``a & b``: the first command ends, ``&`` starts the next.
+                    self._end_statement(words, redirects, stages)
+                    self._end_pipeline(stages)
+                    words, redirects, stages = [], [], []
                 words.append(value)
             elif kind == "redirect":
                 self._redirect(bool(value), redirects)

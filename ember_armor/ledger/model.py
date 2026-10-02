@@ -14,6 +14,8 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any
 
+from ember_armor.ledger.shell.core import DYNAMIC_KINDS
+
 LEDGER_VERSION = 1
 EFFECTS = ("warn", "ask", "deny")
 SEVERITY = {"none": 0, "warn": 1, "ask": 2, "deny": 3}
@@ -322,6 +324,8 @@ def _parse_text_regex(obj: Mapping[str, Any], where: str) -> TextRegexPred:
 def _parse_dynamic(obj: Mapping[str, Any], where: str) -> DynamicShellPred:
     _check_keys(obj, where, ("type",), ("reason",))
     reason = _strings(obj["reason"], f"{where}.reason") if "reason" in obj else ()
+    for kind in reason:
+        _one_of(kind, DYNAMIC_KINDS, f"{where}.reason")
     return DynamicShellPred(reason=reason)
 
 

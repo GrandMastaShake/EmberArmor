@@ -112,9 +112,8 @@ def test_enforce_mode_denies_with_the_users_rule_text(gate_env, tmp_path: Path) 
 def test_enforce_mode_denies_protected_deletes_in_powershell(
     gate_env, tmp_path: Path
 ) -> None:
-    call = make_call(
-        "PowerShell", "Remove-Item -Recurse -Force C:\\Users", cwd=str(tmp_path)
-    )
+    # "~" is the home directory on every platform the suite runs on.
+    call = make_call("PowerShell", "Remove-Item -Recurse -Force ~", cwd=str(tmp_path))
     specific = decision_of(hook(gate_env, call, "enforce").stdout)
     assert specific["permissionDecision"] == "deny"
     assert "builtin.delete.protected" in specific["permissionDecisionReason"]

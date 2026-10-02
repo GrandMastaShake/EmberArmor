@@ -19,14 +19,21 @@ Checked against the code on 2026-10-02:
 - Rate limiting is in memory, per peer address, 60 requests per 60 seconds by default. Start uvicorn with `--no-proxy-headers`; without it, uvicorn takes the peer address from `X-Forwarded-For` on connections from 127.0.0.1 and a local client can sidestep the limit.
 - `/docs`, `/redoc` and `/openapi.json` are switched off.
 - `.gitignore` excludes `.env`, `*.pem` and `*.key`. A scan of the git history found no provider API keys and no private keys.
+- The constraint ledger gate (`ember-gate`, `ember_armor/ledger`) can only restrict: there is no `allow` effect, the Claude Code hook never prints `allow`, and a ledger shipped inside a repository cannot grant anything. A rule nobody has confirmed on this machine can do no more than warn.
+- If the gate itself fails (unreadable ledger or configuration, unreadable hook input, internal error), then in `enforce` mode the decision is `ask` with the error as the reason, never silent approval and never a hard block; in `observe` mode the call proceeds and the error is logged.
+- Shell input the gate cannot read in full is marked and asked about, never dropped. More than 32 stacked wrappers, a command string over 200,000 characters, more than 2,000 commands or a brace expansion to more than 64 words are parse errors.
+- The gate asks before an agent writes to or deletes its configuration, ledgers or audit log, confirms or removes rules through `ember-gate`, sets `EMBER_GATE_MODE`, `EMBER_LEDGER`, `EMBER_HOME` or `EMBER_GATE_BUILTIN` in a command, or edits the Claude Code settings files that hold the hook.
+- Every gate evaluation goes to a hash-chained audit log under `~/.ember/audit/`, with secret-shaped values replaced before writing. `ember-gate log verify` detects edits, removed entries and a deleted month file. It is not proof against someone with write access who recomputes the chain.
+- The HTTP ledger routes take no file path from a request and never look for a project ledger. Load and gate failures are answered in fixed words; the details go to the server log.
 
 ## What it does not do
 
 - The detector is four regular expressions. It passes plain prompt-injection text as `SAFE`.
-- `GET /v1/anchor/{id}` returns `"verified": true` for any id. Nothing is stored and nothing is checked.
-- There is no audit log. `AuditLogger` exists, but no route calls it.
+- The gate is built for good-faith agents that drift. An agent that deliberately obfuscates a command (a program named by a variable the gate cannot resolve, `eval` of an expansion, code run through `python -c`) can get past the built-in pack; those forms are marked, and a user rule on `dynamic_shell` can ask about them. The gate also never sees work done inside a tool the host does not report.
+- Redaction in the audit log is by name and shape. A secret with an unremarkable name and shape, passed where nothing marks it, reaches the log.
+- The service has no audit log of its own: `AuditLogger` in `ember_armor/security/` exists, but no route calls it.
 - JWT signing (`ember_armor/security/tokens.py`) and PBKDF2 key derivation (`ember_armor/security/crypto.py`) exist with tests, but no route uses them.
 - There is no Dockerfile and no container configuration in this repository.
 - `ember_proxy/` is experimental and should not be installed. Its installer adds a mitmproxy root certificate to the machine-wide Windows Trusted Root store, its launcher runs `git pull` on every start, and its scripts carry a hardcoded default API key (in `ember_proxy/addon.py`, `ember_proxy/start.bat` and `ember_proxy/install_windows.bat`). If you already ran the installer, follow the removal steps in [ember_proxy/README.md](ember_proxy/README.md).
 
-Other known weaknesses are listed under Known issues in the README.
+Other known weaknesses are listed under Known issues and Known limits in the README, and in [docs/constraint-ledger.md](docs/constraint-ledger.md).

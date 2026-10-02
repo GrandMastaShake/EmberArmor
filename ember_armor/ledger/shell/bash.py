@@ -63,6 +63,7 @@ _SUBSTITUTION_RE = re.compile(r"\$\([^()`]*\)|\$\{[^{}]*\}|`[^`]*`")
 _ANSI_C = {"n": "\n", "t": "\t", "r": "\r", "\\": "\\", "'": "'", '"': '"', "0": "\0"}
 _EXTGLOB = frozenset("?*+@!")
 _MAX_BRACE_WORDS = 64
+_MAX_EXPANSIONS = 4
 #: Where ``mktemp -d`` creates its directory when no template names a place.
 _MKTEMP_DIR = "/tmp/mktemp"  # noqa: S108 - a path pattern, nothing is created
 
@@ -601,12 +602,22 @@ class _Bash:
 
     @staticmethod
     def _opens_case(words: list[_Word]) -> bool:
+        """True when *words* end a ``case WORD in`` header.
+
+        Also behind a keyword: ``for f in *; do case "$f" in a) ...``.
+        """
+        start = 0
+        while start < len(words) and not words[start].quoted:
+            if words[start].text not in _SKIP_WORDS:
+                break
+            start += 1
+        rest = words[start:]
         return (
-            len(words) >= 3
-            and words[0].text == "case"
-            and not words[0].quoted
-            and words[-1].text == "in"
-            and not words[-1].quoted
+            len(rest) >= 3
+            and rest[0].text == "case"
+            and not rest[0].quoted
+            and rest[-1].text == "in"
+            and not rest[-1].quoted
         )
 
     def _open_paren(self, cur: _Pending, stages: list[_Stage]) -> _Pending:
@@ -701,14 +712,27 @@ class _Bash:
         """
         if not head.tail_dynamic or head.opaque:
             return head
+        text = self._expand(head.text)
+        # A variable left in the directory part does not hide the program.
+        named = "$" not in text.rsplit("/", 1)[-1]
+        return _Word(text=text, quoted=True) if named else head
+
+    def _expand(self, text: str, depth: int = 0) -> str:
+        """*text* with each ``$NAME`` that was given known text filled in.
+
+        A value may itself name variables (``PY=$VENV/bin/python``); they
+        are filled in too, a bounded number of times.
+        """
         variables = self.out.variables
 
         def value(match: re.Match[str]) -> str:
             known = variables.get(match.group().strip("${}"))
-            return match.group() if known is None else known
+            if known is None:
+                return match.group()
+            deeper = "$" in known and depth < _MAX_EXPANSIONS
+            return self._expand(known, depth + 1) if deeper else known
 
-        text = _PLAIN_VAR_RE.sub(value, head.text)
-        return head if "$" in text else _Word(text=text, quoted=True)
+        return _PLAIN_VAR_RE.sub(value, text)
 
     def _exec_command(self, argv: tuple[str, ...]) -> None:
         """Add a command that ``find -exec`` runs (wrappers and shells followed)."""
@@ -746,6 +770,7 @@ class _Bash:
         for word in words:
             match = _ONLY_VAR_RE.fullmatch(word.text) if word.expands else None
             value = self.out.variables.get(match.group(1)) if match else None
+            value = None if value is None else self._expand(value)
             if value is None or "$" in value:
                 result.append(word)
             else:

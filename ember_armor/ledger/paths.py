@@ -236,9 +236,18 @@ def matches_glob(path: str, pattern: str, *, windows: bool) -> bool:
     return _glob_regex(pattern, windows, False).fullmatch(path) is not None
 
 
-def _names_overlap(a: str, b: str) -> bool:
-    """True when some file name fits both single-segment patterns."""
-    a, b = _CLASS_RE.sub("?", a), _CLASS_RE.sub("?", b)
+def _abbreviates(operand: str, pattern: str) -> bool:
+    """True when the wildcarded *operand* abbreviates a name *pattern* describes.
+
+    Some file name must fit both, and the operand's own literal text must
+    fall on literal text of the pattern: ``.env*`` and ``.env.*`` abbreviate
+    ``.env.local``, ``id_*`` abbreviates ``id_rsa``.  ``readme*`` does not
+    abbreviate ``*key*.pem``, although ``readme-key.pem`` would fit both: its
+    text says nothing about keys.  A pattern that is only wildcards (every
+    file of a directory) is abbreviated by any operand.
+    """
+    a, b = _CLASS_RE.sub("?", operand), _CLASS_RE.sub("?", pattern)
+    anything = not b.strip("*?")
     seen: set[tuple[int, int]] = set()
     todo = [(0, 0)]
     while todo:
@@ -255,7 +264,7 @@ def _names_overlap(a: str, b: str) -> bool:
                 todo.append((i, j + 1))
         elif y == "*":
             todo.append((i, j + 1))
-            if x:
+            if x and (anything or x == "?"):
                 todo.append((i + 1, j))
         elif x and y and (x == y or "?" in (x, y)):
             todo.append((i + 1, j + 1))
@@ -267,9 +276,10 @@ def may_match(path: str, pattern: str, *, windows: bool) -> bool:
 
     A shell operand can still hold wildcards (``cat .env*``).  When its last
     segment starts with literal text and holds a wildcard, the question is
-    whether some name fits both that segment and the pattern's.  A segment
-    that is only an extension (``*.json``) or only wildcards is too
-    unspecific to count.  The directory part matches as written.
+    whether that segment abbreviates a name the pattern describes (see
+    :func:`_abbreviates`).  A segment that is only an extension (``*.json``)
+    or only wildcards is too unspecific to count.  The directory part matches
+    as written.
     """
     if matches_glob(path, pattern, windows=windows):
         return True
@@ -281,7 +291,7 @@ def may_match(path: str, pattern: str, *, windows: bool) -> bool:
         return False
     if windows:
         name, pattern_name = name.lower(), pattern_name.lower()
-    return _names_overlap(name, pattern_name)
+    return _abbreviates(name, pattern_name)
 
 
 def is_under(path: str, directory: str, *, windows: bool) -> bool:

@@ -2262,5 +2262,69 @@
  {
   "tool": "Bash",
   "command": "supabase db push"
+ },
+ {
+  "tool": "Bash",
+  "command": "for f in */data/*.jsonl; do case \"$f\" in *old*) ;; *tmp*) ;; *) n=$(wc -l < \"$f\"); echo \"$f $n\";; esac; done | awk '{s+=$2} END {print s}'"
+ },
+ {
+  "tool": "Bash",
+  "command": "cat readme*"
+ },
+ {
+  "tool": "Bash",
+  "command": "head -40 vite.config.*"
+ },
+ {
+  "tool": "Bash",
+  "command": "ls docs/first* && cat docs/first*"
+ },
+ {
+  "tool": "Bash",
+  "command": "grep -n TODO 'Startup Notes'*.txt Key\\ Documents/AI*"
+ },
+ {
+  "tool": "Bash",
+  "command": "git add app/index.html assets/songs/defiant-*"
+ },
+ {
+  "tool": "Bash",
+  "command": "cat out/plan*"
+ },
+ {
+  "tool": "Bash",
+  "command": "cat server*.log"
+ },
+ {
+  "tool": "Grep",
+  "input": {
+   "path": ".",
+   "pattern": "password",
+   "glob": "!**/.env"
+  }
+ },
+ {
+  "tool": "Grep",
+  "input": {
+   "path": "src",
+   "pattern": "TODO",
+   "glob": "!*.min.js"
+  }
+ },
+ {
+  "tool": "PowerShell",
+  "command": "$body = @{ jsonrpc=\"2.0\"; id=1; method=\"tools/call\"\n  params=@{ name=$tool; arguments=$args } } | ConvertTo-Json -Depth 10"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Invoke-RestMethod -Uri http://127.0.0.1:8080/mcp -Method Post -Body (@{a=1;b=@{c=\"x\"}} | ConvertTo-Json)"
+ },
+ {
+  "tool": "Bash",
+  "command": "S=/x/scratch; PY=$S/.venv/Scripts/python.exe; $PY -m pytest -q; $PY -m ruff check ."
+ },
+ {
+  "tool": "Bash",
+  "command": "sudo DEBIAN_FRONTEND=noninteractive apt-get install -y jq"
  }
 ]

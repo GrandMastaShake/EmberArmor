@@ -308,8 +308,9 @@ def extract(
         key, op = FILE_TOOLS[tool]
         target = tool_input.get(key)
         pattern = tool_input.get("glob") if tool == "Grep" else None
-        if isinstance(pattern, str) and pattern:
-            # Grep with a glob reads every file of that name below the path.
+        if isinstance(pattern, str) and pattern and not pattern.startswith("!"):
+            # Grep with a glob reads every file of that name below the path
+            # (``!name`` leaves files out instead).
             start = target if isinstance(target, str) and target else "."
             target = f"{start}/**/{pattern}"
         if isinstance(target, str) and target:

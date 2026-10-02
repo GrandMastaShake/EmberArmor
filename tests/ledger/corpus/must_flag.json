@@ -3622,5 +3622,69 @@
   "command": "terragrunt run-all destroy",
   "effect": "ask",
   "rule": "builtin.cloud.terraform-destroy"
+ },
+ {
+  "tool": "Bash",
+  "command": "for f in *; do case \"$f\" in keep*) ;; *) git reset --hard ;; esac; done",
+  "effect": "ask",
+  "rule": "builtin.git.reset-hard"
+ },
+ {
+  "tool": "Bash",
+  "command": "cat ~/.ssh/id*",
+  "effect": "ask",
+  "rule": "builtin.secrets.read"
+ },
+ {
+  "tool": "Bash",
+  "command": "head -3 ~/.aws/cred*",
+  "effect": "ask",
+  "rule": "builtin.secrets.read"
+ },
+ {
+  "tool": "Bash",
+  "command": "cat certs/private*",
+  "effect": "ask",
+  "rule": "builtin.secrets.read"
+ },
+ {
+  "tool": "Bash",
+  "command": "diff .env* /tmp/ref",
+  "effect": "ask",
+  "rule": "builtin.secrets.read"
+ },
+ {
+  "tool": "Bash",
+  "command": "S=/opt/tools; G=$S/git; $G reset --hard",
+  "effect": "ask",
+  "rule": "builtin.git.reset-hard"
+ },
+ {
+  "tool": "Bash",
+  "command": "PY=$HOME/venv/bin/python; $PY -m ember_armor.ledger.cli rules confirm x",
+  "effect": "ask",
+  "rule": "builtin.gate.rules"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "$v = 'C:\\venv'; $py = \"$v\\python.exe\"; & $py -m ember_armor.ledger.cli rules remove x",
+  "effect": "ask",
+  "rule": "builtin.gate.rules"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "$b = @{a=@{b=(git reset --hard)}}",
+  "effect": "ask",
+  "rule": "builtin.git.reset-hard"
+ },
+ {
+  "tool": "Grep",
+  "input": {
+   "path": ".",
+   "pattern": "KEY",
+   "glob": ".env*"
+  },
+  "effect": "ask",
+  "rule": "builtin.secrets.read"
  }
 ]

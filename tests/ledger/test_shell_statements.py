@@ -213,6 +213,63 @@ def test_a_program_named_through_known_variables_is_resolved() -> None:
     assert kinds(bash("T=$(which git); $T reset --hard")) == ["variable_command"]
 
 
+def test_a_value_that_names_other_known_variables_is_resolved() -> None:
+    result = bash("S=/x/scratch; PY=$S/venv/bin/python; $PY -m pytest; ls $PY")
+    assert argvs(result) == [
+        ["/x/scratch/venv/bin/python", "-m", "pytest"],
+        ["ls", "/x/scratch/venv/bin/python"],
+    ]
+    assert result.dynamic == []
+    # A variable left in the directory part does not hide the program.
+    result = bash("PY=$HOME/venv/bin/python; $PY -m pytest")
+    assert argvs(result) == [["$HOME/venv/bin/python", "-m", "pytest"]]
+    assert result.dynamic == []
+    # A value that names itself is filled in a bounded number of times.
+    loop = bash("P=$P:x; $P")
+    assert len(loop.commands) == 1
+    assert kinds(loop) == ["variable_command"]
+    result = powershell(
+        "$v = 'C:\\venv'; $py = \"$v\\Scripts\\python.exe\"; & $py -m pytest"
+    )
+    assert argvs(result) == [["C:\\venv\\Scripts\\python.exe", "-m", "pytest"]]
+    assert result.dynamic == []
+    result = powershell('$py = "$env:LOCALAPPDATA\\Python\\python.exe"; & $py -V')
+    assert result.dynamic == []
+    assert result.commands[0].argv[1:] == ("-V",)
+
+
+def test_sudo_takes_assignments_like_env() -> None:
+    result = bash("sudo DEBIAN_FRONTEND=noninteractive apt-get install -y x")
+    assert argvs(result) == [["apt-get", "install", "-y", "x"]]
+    assert result.assigned == ["DEBIAN_FRONTEND"]
+    assert bash("sudo -u root ls").assigned == []
+
+
+def test_a_case_statement_behind_a_keyword() -> None:
+    result = bash(
+        'for f in *.md; do case "$f" in a*) ;; b*|c*) echo b ;; *) wc -l "$f";; '
+        "esac; done | sort"
+    )
+    assert argvs(result) == [["echo", "b"], ["wc", "-l", "$f"], ["sort"]]
+    assert result.dynamic == []
+    nested = bash('if true; then case "$1" in x) git reset --hard ;; esac; fi')
+    assert argvs(nested) == [["true"], GIT]
+    assert nested.dynamic == []
+
+
+def test_a_hashtable_inside_a_word_and_keys_without_spaces() -> None:
+    result = powershell(
+        '$b = @{ jsonrpc="2.0"; id=1; method="tools/call"\n'
+        "  params=@{ name=$tool; arguments=$args } } | ConvertTo-Json -Depth 10"
+    )
+    assert argvs(result) == [["ConvertTo-Json", "-Depth", "10"]]
+    assert result.dynamic == []
+    assert GIT in argvs(powershell("$b = @{a=@{b=(git reset --hard)}}"))
+    assert GIT in argvs(powershell("$b = @{a=git reset --hard}"))
+    # outside a table a word keeps its "="
+    assert argvs(powershell("git log --format=%h")) == [["git", "log", "--format=%h"]]
+
+
 def test_stacked_wrappers_beyond_the_cap_are_a_parse_error() -> None:
     result = bash("sudo " * 40 + "git reset --hard")
     assert kinds(result) == ["parse_error"]

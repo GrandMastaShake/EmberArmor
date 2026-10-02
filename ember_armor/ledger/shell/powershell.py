@@ -98,6 +98,7 @@ _DOWNLOAD_RE = re.compile(
 )
 _DECODE_RE = re.compile(r"frombase64string", re.IGNORECASE)
 _CLOSERS = {"(": ")", "[": "]", "{": "}"}
+_MAX_EXPANSIONS = 4
 _DASHES = "\u2013\u2014\u2015"
 _MODULE_RE = re.compile(r"[\w.]+\\([A-Za-z]+-[A-Za-z]+)")
 _SET_ENV_RE = re.compile(r"SetEnvironmentVariable\(\s*['\"](\w+)['\"]", re.IGNORECASE)
@@ -211,6 +212,8 @@ class _PowerShell:
         self.depth = depth
         self.recurse = recurse
         self.out = out
+        # True while the next word is the key of a hashtable entry.
+        self.at_key = False
 
     # -- lexer --------------------------------------------------------------
     def _skip_space(self) -> None:
@@ -446,10 +449,13 @@ class _PowerShell:
             # PowerShell reads an en dash or em dash as the parameter hyphen.
             parts.append("-")
             self.i += 1
+        key = self.at_key
         while self.i < n:
             char = s[self.i]
             if char in _BARE_END or char == "{" or s.startswith("&&", self.i):
                 break
+            if key and char == "=" and parts:
+                break  # ``@{name="x"}``: the key ends at the ``=``
             if char == "`":
                 if s.startswith(("`\n", "`\r\n"), self.i):
                     break
@@ -461,10 +467,13 @@ class _PowerShell:
                 parts.append(self._double(word))
             elif char == "$" and self._expansion(word, parts):
                 continue
-            elif char == "(":
+            elif char == "(" or s.startswith("@{", self.i):
+                # ``params=@{ name = $x }``: a table is parsed as one, also
+                # when it stands inside a word.
                 begin = self.i
-                self.i += 1
-                word.spans.append(self._nested(")"))
+                self.i += 1 if char == "(" else 2
+                table = char != "("
+                word.spans.append(self._nested("}" if table else ")", table=table))
                 parts.append(s[begin : self.i])
             else:
                 parts.append(char)
@@ -488,6 +497,7 @@ class _PowerShell:
             self._end_statement(body, redirects, stages)
 
         while True:
+            self.at_key = table and not words
             kind, value = self._token()
             if kind == "eof" or value in (")", "}"):
                 if value != (closer or ""):
@@ -597,12 +607,33 @@ class _PowerShell:
         self.out.assign(_variable_key(words[0].text), value)
         return items
 
-    def _known(self, word: _Word) -> str | None:
-        """Literal text a plain ``$name`` was assigned earlier, if any."""
+    def _known(self, word: _Word, *, program: bool = False) -> str | None:
+        """Literal text a plain ``$name`` was assigned earlier, if any.
+
+        For a *program* a variable left in the directory part is accepted:
+        the program is still named.
+        """
         if word.kind != "var" or not _PLAIN_VAR_RE.fullmatch(word.text):
             return None
         known = self.out.variables.get(_variable_key(word.text))
-        return None if known is None or "$" in known else known
+        if known is None:
+            return None
+        known = self._expand(known)
+        tail = known.replace("\\", "/").rsplit("/", 1)[-1] if program else known
+        return None if "$" in tail else known
+
+    def _expand(self, text: str, depth: int = 0) -> str:
+        """*text* with each ``$name`` that was given known text filled in."""
+        variables = self.out.variables
+
+        def value(match: re.Match[str]) -> str:
+            known = variables.get(_variable_key(match.group()))
+            if known is None:
+                return match.group()
+            deeper = "$" in known and depth < _MAX_EXPANSIONS
+            return self._expand(known, depth + 1) if deeper else known
+
+        return _PLAIN_VAR_RE.sub(value, text)
 
     def _expression(
         self, redirects: list[Redirect], stages: list[_Stage], raw: str
@@ -637,10 +668,10 @@ class _PowerShell:
                 self._add(SimpleCommand((), "powershell", tuple(redirects)))
             return
         first = words[0]
-        known = self._known(first) if called else None
+        known = self._known(first, program=True) if called else None
         if known is not None:
             # ``$exe = 'C:\tool.exe'; & $exe run`` reads as the command it is.
-            first = _Word(known, "string")
+            first = _Word(known, "string", literal="$" not in known)
             words = [first, *words[1:]]
         if first.kind in ("var", "group", "expr") and called:
             self.out.dynamic.append(Dynamic("variable_command", first.text[:200]))

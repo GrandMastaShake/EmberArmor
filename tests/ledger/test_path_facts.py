@@ -314,6 +314,19 @@ MAY_MATCH = [
     ("/w/**/.env*", "**/.env", True),
     ("/w/.envrc*", "**/.env", False),
     ("/w/other/cred*", "**/.aws/credentials", False),
+    # the operand's own text must fall on the pattern's text: an unrelated
+    # name whose wildcard could cover a secret name is not an abbreviation
+    ("/w/readme*", "**/*key*.pem", False),
+    ("/w/vite.config.*", "**/*.key", False),
+    ("/w/first*", "**/*private*.pem", False),
+    ("/w/server*.pem", "**/*key*.pem", False),
+    ("/w/private*", "**/*private*.pem", True),
+    ("/w/id_*", "**/id_rsa", True),
+    ("/w/id_ed*", "**/id_ed25519", True),
+    ("/w/.env.prod*", "**/.env.production", True),
+    # every file of the directory is meant: any operand abbreviates it
+    ("/home/dev/.ssh/id*", "**/.ssh/*", True),
+    ("/home/dev/.ssh/work_*", "**/.ssh/*", True),
     # only an extension, or only wildcards: too unspecific
     ("/w/*.json", "**/credentials.json", False),
     ("/w/*", "**/id_rsa", False),

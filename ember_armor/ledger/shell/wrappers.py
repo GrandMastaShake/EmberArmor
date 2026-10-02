@@ -124,7 +124,8 @@ def _wrapped_at(
     texts: Sequence[str], start: int, spec: Wrapper, assigned: list[str]
 ) -> int | None:
     """Index of the command a wrapper at *start* runs, or ``None`` if none."""
-    env = program_name(texts[start]) == "env"
+    wrapper = program_name(texts[start])
+    env = wrapper in ("env", "sudo", "gsudo")  # they take NAME=value first
     lead: tuple[str, ...] = ()
     pending = bool(spec.leads)
     skip = spec.skip
@@ -143,7 +144,7 @@ def _wrapped_at(
         elif text.startswith("-") and text != "-":
             if spec.only_flags is not None and text not in spec.only_flags:
                 return None
-            if env and text in ("-u", "--unset"):
+            if wrapper == "env" and text in ("-u", "--unset"):
                 names += texts[i + 1 : i + 2]
             i += 2 if text in spec.value_flags else 1
         elif pending:

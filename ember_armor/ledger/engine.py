@@ -249,12 +249,18 @@ def _past_matches(pred: Predicate, facts: Facts, ctx: _Context) -> list[PastCall
     """Earlier calls of the session on which *pred* holds."""
     if ctx.history is None:
         return []
-    env = {"windows": facts.windows, "home": facts.home, "variables": facts.variables}
     inner = replace(ctx, history=None)
+
+    def as_now(past: Facts) -> Facts:
+        # Judge the earlier call with the path flavour and home of this one.
+        return replace(
+            past, windows=facts.windows, home=facts.home, variables=facts.variables
+        )
+
     return [
         past
         for past in ctx.history.earlier(facts.session)
-        if _holds(pred, replace(past.facts, **env), inner)
+        if _holds(pred, as_now(past.facts), inner)
     ]
 
 

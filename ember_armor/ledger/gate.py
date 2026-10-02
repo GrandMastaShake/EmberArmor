@@ -53,7 +53,9 @@ def _failure(mode: str, error: str, earlier: Decision | None = None) -> Decision
     return Decision(effect="ask", fired=fired, error=error)
 
 
-def _record(call: Any, facts: Facts | None, decision: Decision, mode: str) -> dict:
+def _record(
+    call: Any, facts: Facts | None, decision: Decision, mode: str
+) -> dict[str, Any]:
     source = call if isinstance(call, Mapping) else {}
     record: dict[str, Any] = {
         "session": str(source.get("session_id") or ""),

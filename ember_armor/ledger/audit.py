@@ -14,6 +14,7 @@ import contextlib
 import hashlib
 import json
 import os
+import sys
 import time
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
@@ -27,7 +28,7 @@ from ember_armor.ledger.redact import MAX_ITEMS, redact_argv, redact_value
 from ember_armor.ledger.shell import Dynamic, SimpleCommand
 from ember_armor.ledger.shellpaths import PathFact
 
-if os.name == "nt":
+if sys.platform == "win32":
     import msvcrt
 else:
     import fcntl
@@ -155,7 +156,7 @@ def _last_line(path: Path) -> bytes | None:
 
 def _try_lock(handle: Any) -> bool:
     try:
-        if os.name == "nt":
+        if sys.platform == "win32":
             handle.seek(0)
             msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
         else:
@@ -166,7 +167,7 @@ def _try_lock(handle: Any) -> bool:
 
 
 def _unlock(handle: Any) -> None:
-    if os.name == "nt":
+    if sys.platform == "win32":
         handle.seek(0)
         msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
     else:
@@ -214,7 +215,9 @@ class AuditLog:
                 return _link_after(line)
         return GENESIS
 
-    def append(self, record: Mapping[str, Any], when: datetime | None = None) -> dict:
+    def append(
+        self, record: Mapping[str, Any], when: datetime | None = None
+    ) -> dict[str, Any]:
         """Append one entry and return it with ``ts``, ``prev`` and ``hash``.
 
         Raises

@@ -432,7 +432,8 @@ class _PowerShell:
         if program == "invoke-expression":
             if not rest:
                 return True
-            fetched = self._spans_download(rest) or _DOWNLOAD_RE.search(raw)
+            pattern = _DOWNLOAD_RE.search(raw) is not None
+            fetched = pattern or self._spans_download(rest)
             self.out.dynamic.append(
                 Dynamic("download_pipe" if fetched else "eval", raw[:200])
             )

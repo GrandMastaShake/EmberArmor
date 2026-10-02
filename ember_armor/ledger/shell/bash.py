@@ -561,10 +561,12 @@ class _Bash:
         """Parse a script handed to a shell by here-document or here-string."""
         if not shell:
             return
-        if cur.herestring is not None and cur.herestring.expands:
-            self.out.dynamic.append(Dynamic("nested_dynamic", program))
-            return
-        text = cur.heredocs[-1].body if cur.heredocs else cur.herestring.text
+        text = cur.heredocs[-1].body if cur.heredocs else ""
+        if cur.herestring is not None:
+            if cur.herestring.expands:
+                self.out.dynamic.append(Dynamic("nested_dynamic", program))
+                return
+            text = cur.herestring.text
         self.out.merge(self.recurse(text, shell, self.depth + 1))
 
     def _end_pipeline(self, stages: list[tuple[str, bool]]) -> None:

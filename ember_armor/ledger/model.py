@@ -8,8 +8,9 @@ a rule that silently matches nothing.
 
 from __future__ import annotations
 
+import dataclasses
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any
@@ -86,7 +87,7 @@ class TextRegexPred:
 
     field: str
     pattern: str
-    regex: re.Pattern[str] = field(compare=False, repr=False)
+    regex: re.Pattern[str] = dataclasses.field(compare=False, repr=False)
 
 
 @dataclass(frozen=True)
@@ -362,7 +363,7 @@ def _parse_history(obj: Mapping[str, Any], where: str, history: bool) -> Predica
     return CountExceedsPred(predicate=inner, max=limit, within_seconds=within)
 
 
-_LEAF_PARSERS = {
+_LEAF_PARSERS: dict[str, Callable[[Mapping[str, Any], str], Predicate]] = {
     "command": _parse_command,
     "path": _parse_path,
     "arg": _parse_arg,

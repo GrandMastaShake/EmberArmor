@@ -13,8 +13,6 @@ import time
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, replace
 from fnmatch import fnmatchcase
-from fractions import Fraction
-from typing import Any, Protocol
 
 from ember_armor.ledger.facts import Facts
 from ember_armor.ledger.model import (
@@ -37,6 +35,7 @@ from ember_armor.ledger.model import (
     TextRegexPred,
 )
 from ember_armor.ledger.paths import (
+    PathFact,
     is_under,
     matches_glob,
     may_match,
@@ -44,7 +43,11 @@ from ember_armor.ledger.paths import (
 )
 from ember_armor.ledger.shell import SimpleCommand, program_name
 from ember_armor.ledger.shell.argv import has_flag, operand_positions
-from ember_armor.ledger.shellpaths import PathFact
+
+TYPE_CHECKING = False
+if TYPE_CHECKING:
+    from fractions import Fraction
+    from typing import Any, Protocol
 
 TEXT_LIMIT = 20_000
 _MISSING = object()
@@ -88,12 +91,23 @@ class PastCall:
     facts: Facts
 
 
-class History(Protocol):
-    """Source of earlier calls for the history predicates."""
+if TYPE_CHECKING:
 
-    def earlier(self, session: str) -> Iterable[PastCall]:
-        """Earlier calls of *session* that were proposed and not denied."""
-        ...
+    class History(Protocol):
+        """Source of earlier calls for the history predicates."""
+
+        def earlier(self, session: str) -> Iterable[PastCall]:
+            """Earlier calls of *session* that were proposed and not denied."""
+            ...
+
+else:
+
+    class History:
+        """Source of earlier calls for the history predicates.
+
+        Any object with ``earlier(session)`` serves; the audit log and
+        :class:`MemoryHistory` do.  (A protocol while type checking.)
+        """
 
 
 class MemoryHistory:
@@ -111,7 +125,7 @@ class MemoryHistory:
         return [call for call in self.calls if call.facts.session == session]
 
 
-@dataclass
+@dataclass(eq=False, repr=False)
 class _Session:
     """The earlier calls of one session, read from the history at most once."""
 
@@ -124,7 +138,7 @@ class _Session:
         return self.calls
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False, repr=False)
 class _Context:
     rule: Rule
     past: _Session | None
@@ -288,6 +302,8 @@ def _number(value: Any) -> Fraction | float | None:
     Comparisons and sums are exact, so they agree with what lint proves
     about the same rules.
     """
+    from fractions import Fraction
+
     if isinstance(value, bool):
         return None
     if isinstance(value, str):
@@ -331,6 +347,8 @@ def _arg_holds(pred: ArgPred, facts: Facts) -> bool:
 
 
 def _expr_holds(pred: ExprPred, facts: Facts) -> bool:
+    from fractions import Fraction
+
     total: Fraction | float = Fraction(0)
     for name, coefficient in pred.lhs:
         number = _number(_lookup(facts.args, name))

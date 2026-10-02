@@ -13,9 +13,12 @@ import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 
+from ember_armor.ledger.paths import PathFact
 from ember_armor.ledger.shell import ParseResult, SimpleCommand, program_name
 from ember_armor.ledger.shell.argv import has_flag, operand_positions, operands
 from ember_armor.ledger.shell.core import find_exec, find_targets, lister_targets
+
+__all__ = ["PathFact", "shell_paths"]
 
 _NULL_TARGETS = frozenset(
     {"/dev/null", "/dev/stdout", "/dev/stderr", "/dev/tty", "nul", "$null"}
@@ -28,16 +31,7 @@ _FILESYSTEM_RE = re.compile(
 _WILD_TAIL_RE = re.compile(r"(^|[/\\])\*$")
 
 
-@dataclass(frozen=True)
-class PathFact:
-    """One path a call touches: ``op`` is ``read``, ``write`` or ``delete``."""
-
-    path: str
-    op: str
-    recursive: bool = False
-
-
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False, repr=False)
 class _Native:
     """Path behaviour of a POSIX or ``cmd.exe`` program.
 
@@ -56,7 +50,7 @@ class _Native:
     name_flags: tuple[str, ...] = ()
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False, repr=False)
 class _Cmdlet:
     """Path behaviour of a PowerShell cmdlet.
 
@@ -224,7 +218,7 @@ _WHATIF_ON = frozenset({"", "$true", "true", "1"})
 Resolve = Callable[[str, str, str], list[str]]
 
 
-@dataclass
+@dataclass(eq=False, repr=False)
 class _Location:
     """Working directory while walking the commands of one call."""
 

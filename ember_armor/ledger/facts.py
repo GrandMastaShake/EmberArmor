@@ -13,9 +13,8 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from fnmatch import fnmatchcase
-from typing import Any
 
-from ember_armor.ledger.paths import PATH_VARIABLES, Lookup, normalize
+from ember_armor.ledger.paths import PATH_VARIABLES, Lookup, PathFact, normalize
 from ember_armor.ledger.shell import (
     Dynamic,
     ParseResult,
@@ -23,7 +22,10 @@ from ember_armor.ledger.shell import (
     parse_shell,
     program_name,
 )
-from ember_armor.ledger.shellpaths import PathFact, shell_paths
+
+TYPE_CHECKING = False
+if TYPE_CHECKING:
+    from typing import Any
 
 
 @dataclass(frozen=True)
@@ -277,6 +279,8 @@ def extract(
             start = cwd
         else:
             start = normalize(start, cwd, windows=windows, home=home)
+        from ember_armor.ledger.shellpaths import shell_paths
+
         parsed = parse_shell(command, shell)
         overlong = False
 

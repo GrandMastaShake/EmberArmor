@@ -7,19 +7,20 @@ data: nothing in this package executes it.
 
 from __future__ import annotations
 
-from ember_armor.ledger.shell.bash import parse_bash
-from ember_armor.ledger.shell.cmd import parse_cmd
+import importlib
+from collections.abc import Callable
+
 from ember_armor.ledger.shell.core import (
     MAX_COMMAND_CHARS,
     MAX_COMMANDS,
     MAX_DEPTH,
     Dynamic,
     ParseResult,
+    Recurse,
     Redirect,
     SimpleCommand,
     program_name,
 )
-from ember_armor.ledger.shell.powershell import parse_powershell
 
 __all__ = [
     "Dynamic",
@@ -30,7 +31,18 @@ __all__ = [
     "program_name",
 ]
 
-_PARSERS = {"bash": parse_bash, "powershell": parse_powershell, "cmd": parse_cmd}
+#: The parsers are imported on first use: a call only needs its own shell.
+_PARSERS = {"bash": "parse_bash", "powershell": "parse_powershell", "cmd": "parse_cmd"}
+
+
+#: ``parser(text, depth, recurse)``: one shell's parser.
+Parser = Callable[[str, int, Recurse], ParseResult]
+
+
+def _parser(shell: str) -> Parser:
+    module = importlib.import_module(f"{__name__}.{shell}")
+    parser: Parser = getattr(module, _PARSERS[shell])
+    return parser
 
 
 def parse_shell(text: str, shell: str, depth: int = 0) -> ParseResult:
@@ -55,7 +67,7 @@ def parse_shell(text: str, shell: str, depth: int = 0) -> ParseResult:
         return ParseResult(dynamic=[Dynamic("parse_error", "command too long")])
     if depth > MAX_DEPTH:
         return ParseResult(dynamic=[Dynamic("parse_error", "shell nesting too deep")])
-    result = _PARSERS[shell](text, depth, parse_shell)
+    result = _parser(shell)(text, depth, parse_shell)
     if depth == 0 and len(result.commands) > MAX_COMMANDS:
         del result.commands[MAX_COMMANDS:]
         result.dynamic.append(Dynamic("parse_error", "too many commands"))

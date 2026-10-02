@@ -19,7 +19,7 @@ MAX_WRAPPERS = 32
 _ENV_ASSIGN_RE = re.compile(r"([A-Za-z_]\w*)=")
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False, repr=False)
 class Wrapper:
     """A program that runs another command given in its arguments.
 
@@ -38,7 +38,7 @@ class Wrapper:
     only_flags: frozenset[str] | None = None
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False, repr=False)
 class Unwrapped:
     """Where the wrapped command starts.
 

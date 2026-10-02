@@ -8,24 +8,31 @@ removed from either end, then show up in :meth:`AuditLog.verify`.  That is
 not proof against someone with write access who recomputes the chain;
 nothing local can be.  Appends are serialised with a file lock that works on
 Windows and POSIX.
+
+An empty marker file named ``.last.<file>.<size>.<hash>`` repeats what the
+last append left behind.  Its name is read from the directory listing, so
+the next append links to the hash without opening a file the previous
+append has just written (Windows scans such a file on its next open, which
+costs more than the whole evaluation).  When the size no longer matches,
+the log is read as before.
 """
 
 from __future__ import annotations
 
 import contextlib
-import hashlib
 import json
 import os
+import re
 import sys
 import time
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
 
 from ember_armor.ledger.engine import PastCall
 from ember_armor.ledger.facts import FILE_TOOLS, Facts, shell_tool
+from ember_armor.ledger.paths import PathFact
 from ember_armor.ledger.redact import (
     MAX_ITEMS,
     MAX_TEXT,
@@ -34,15 +41,27 @@ from ember_armor.ledger.redact import (
     redact_value,
 )
 from ember_armor.ledger.shell import Dynamic, SimpleCommand
-from ember_armor.ledger.shellpaths import PathFact
+
+TYPE_CHECKING = False
+if TYPE_CHECKING:
+    from typing import Any
 
 if sys.platform == "win32":
     import msvcrt
 else:
     import fcntl
 
+try:
+    # CPython's own SHA-2: the same digest as hashlib's, without loading
+    # OpenSSL on every hook call.
+    from _sha2 import sha256 as _sha256  # type: ignore[import-not-found]
+except ImportError:  # pragma: no cover - older interpreters
+    from hashlib import sha256 as _sha256
+
 GENESIS = "0" * 64
 HEAD_NAME = "head"
+_MARKER_PREFIX = ".last."
+_MONTH_RE = re.compile(r"[0-9]{4}-[0-9]{2}\.jsonl")
 _TAIL_BLOCK = 65_536
 _HISTORY_FILES = 2
 
@@ -133,7 +152,8 @@ def _canonical(entry: Mapping[str, Any]) -> bytes:
 
 def entry_hash(entry: Mapping[str, Any]) -> str:
     """SHA-256 over the entry without its ``hash`` field (``prev`` included)."""
-    return hashlib.sha256(_canonical(entry)).hexdigest()
+    digest: str = _sha256(_canonical(entry)).hexdigest()
+    return digest
 
 
 def _line_hash(line: bytes) -> str | None:
@@ -148,7 +168,8 @@ def _line_hash(line: bytes) -> str | None:
 
 def _link_after(line: bytes) -> str:
     """Value the next entry's ``prev`` must have after *line*."""
-    return _line_hash(line) or hashlib.sha256(line).hexdigest()
+    fallback: str = _sha256(line).hexdigest()
+    return _line_hash(line) or fallback
 
 
 def _last_line(path: Path) -> bytes | None:
@@ -201,9 +222,38 @@ class AuditLog:
         self.directory = directory
         self.lock_timeout = lock_timeout
 
-    def files(self) -> list[Path]:
+    def _names(self) -> list[str]:
+        """Entries of the audit directory (none when it does not exist)."""
+        try:
+            return os.listdir(self.directory)
+        except FileNotFoundError:
+            return []
+
+    def files(self, names: list[str] | None = None) -> list[Path]:
         """Monthly log files, oldest first."""
-        return sorted(self.directory.glob("[0-9][0-9][0-9][0-9]-[0-9][0-9].jsonl"))
+        names = self._names() if names is None else names
+        return sorted(self.directory / n for n in names if _MONTH_RE.fullmatch(n))
+
+    def _marker(self, names: list[str]) -> tuple[str, int, str] | None:
+        """File name, size and hash recorded by the last append's marker."""
+        for name in names:
+            if name.startswith(_MARKER_PREFIX):
+                parts = name[len(_MARKER_PREFIX) :].rsplit(".", 2)
+                if len(parts) == 3 and parts[1].isdigit() and len(parts[2]) == 64:
+                    return parts[0], int(parts[1]), parts[2]
+        return None
+
+    def _mark(self, names: list[str], file: str, size: int, digest: str) -> None:
+        """Leave the marker for the next append, replacing any older one."""
+        marker = self.directory / f"{_MARKER_PREFIX}{file}.{size}.{digest}"
+        old = [n for n in names if n.startswith(_MARKER_PREFIX)]
+        if old:
+            os.replace(self.directory / old[0], marker)
+        else:
+            marker.touch()
+        for name in old[1:]:
+            with contextlib.suppress(OSError):
+                (self.directory / name).unlink()
 
     @contextlib.contextmanager
     def _locked(self) -> Iterator[None]:
@@ -266,16 +316,28 @@ class AuditLog:
         entry = {"ts": moment.isoformat(timespec="milliseconds"), **record}
         try:
             with self._locked():
-                files = self.files()
+                names = self._names()
+                files = self.files(names)
                 target = max([target, *files[-1:]])
-                entry["prev"], unfinished = self._link(files)
+                marker = self._marker(names)
+                if (
+                    marker is not None
+                    and files[-1:] == [target]
+                    and marker[:2] == (target.name, os.stat(target).st_size)
+                ):
+                    # The file is as the last append left it: link to its hash.
+                    entry["prev"], unfinished = marker[2], False
+                else:
+                    entry["prev"], unfinished = self._link(files)
                 entry["hash"] = entry_hash(entry)
                 line = json.dumps(entry, sort_keys=True, ensure_ascii=False)
                 with target.open("ab") as handle:
                     # After a line cut short by a crash, start a new one.
                     handle.write(b"\n" * unfinished + line.encode("utf-8") + b"\n")
+                    written = handle.tell()
                 head = self.directory / HEAD_NAME
                 head.write_text(entry["hash"] + "\n", encoding="ascii")
+                self._mark(names, target.name, written, entry["hash"])
         except AuditError:
             raise
         except OSError as exc:

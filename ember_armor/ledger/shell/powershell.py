@@ -116,7 +116,7 @@ _START_VALUES = ("filepath", "argumentlist", "args", "credential",
                  "verb", "environment")  # fmt: skip
 
 
-@dataclass
+@dataclass(eq=False, repr=False)
 class _Word:
     """One PowerShell token: ``kind`` is bare, string, var, group, block, expr or call.
 
@@ -130,7 +130,7 @@ class _Word:
     spans: list[tuple[int, int]] = field(default_factory=list)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False, repr=False)
 class _Stage:
     """One pipeline element.
 

@@ -15,7 +15,6 @@ import os
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from datetime import datetime
-from typing import Any
 
 from ember_armor.ledger.audit import AuditLog, summarise
 from ember_armor.ledger.config import ConfigError, ember_home, gate_mode, shell_tools
@@ -24,6 +23,10 @@ from ember_armor.ledger.facts import Facts, ShellTool, extract, shell_tools_from
 from ember_armor.ledger.model import SEVERITY, Decision
 from ember_armor.ledger.redact import MAX_TEXT
 from ember_armor.ledger.store import active_rules, load_sources
+
+TYPE_CHECKING = False
+if TYPE_CHECKING:
+    from typing import Any
 
 
 @dataclass(frozen=True)

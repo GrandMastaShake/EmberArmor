@@ -10,13 +10,18 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from functools import lru_cache
-from typing import Any
 
 from ember_armor.ledger.model import LEDGER_VERSION, Rule, parse_ledger
 
-SOURCE = "EmberArmor built-in pack"
+TYPE_CHECKING = False
+if TYPE_CHECKING:
+    from typing import Any
 
-Pred = dict[str, Any]
+    Pred = dict[str, Any]
+else:
+    Pred = dict
+
+SOURCE = "EmberArmor built-in pack"
 
 
 def _command(program: str | list[str], *subcommand: str, **fields: Any) -> Pred:

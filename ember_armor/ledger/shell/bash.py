@@ -68,7 +68,7 @@ _MAX_EXPANSIONS = 4
 _MKTEMP_DIR = "/tmp/mktemp"  # noqa: S108 - a path pattern, nothing is created
 
 
-@dataclass
+@dataclass(eq=False, repr=False)
 class _Word:
     """One shell word after quote removal.
 
@@ -113,7 +113,7 @@ class _Word:
         self.tail_dynamic = True
 
 
-@dataclass
+@dataclass(eq=False, repr=False)
 class _Heredoc:
     """A here-document; ``command`` is the index of the command it feeds.
 
@@ -130,7 +130,7 @@ class _Heredoc:
     shell: str = ""
 
 
-@dataclass
+@dataclass(eq=False, repr=False)
 class _Pending:
     """A simple command that is still being read."""
 
@@ -140,7 +140,7 @@ class _Pending:
     herestring: _Word | None = None
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False, repr=False)
 class _Stage:
     """One pipeline element: its program, whether it reads a script from the
     pipe, and the argument vector that feeds the stage after it."""

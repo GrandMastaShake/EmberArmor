@@ -17,10 +17,13 @@ import json
 import os
 import sys
 from collections.abc import Mapping
-from typing import Any
 
 from ember_armor.ledger.config import gate_mode
 from ember_armor.ledger.gate import GateResult, check
+
+TYPE_CHECKING = False
+if TYPE_CHECKING:
+    from typing import Any
 
 BLOCKING_DECISIONS = ("deny", "ask")
 

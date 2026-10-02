@@ -12,9 +12,12 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping, Sequence
-from typing import Any
 
 from ember_armor.ledger.shell.core import program_name
+
+TYPE_CHECKING = False
+if TYPE_CHECKING:
+    from typing import Any
 
 REDACTED = "[REDACTED]"
 MAX_TEXT = 256

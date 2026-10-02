@@ -15,14 +15,12 @@ run a regular expression.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 from collections.abc import Iterable, Mapping
 from dataclasses import replace
 from datetime import date
 from pathlib import Path
-from typing import Any
 
 from ember_armor.ledger.builtin import builtin_rules
 from ember_armor.ledger.config import (
@@ -48,6 +46,10 @@ from ember_armor.ledger.model import (
     parse_rule,
 )
 from ember_armor.ledger.paths import normalize
+
+TYPE_CHECKING = False
+if TYPE_CHECKING:
+    from typing import Any
 
 LEDGER_NAME = "ledger.json"
 CONFIRMED_NAME = "project-confirmed.json"
@@ -126,6 +128,8 @@ def load_file(
 # ---------------------------------------------------------------------------
 def rule_digest(raw: Mapping[str, Any]) -> str:
     """Content hash of a rule as written, without its ``confirmed`` field."""
+    import hashlib
+
     body = {key: value for key, value in raw.items() if key != "confirmed"}
     text = json.dumps(body, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(text.encode("utf-8")).hexdigest()

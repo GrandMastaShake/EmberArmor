@@ -7,8 +7,6 @@ caller can parse it recursively.  Nothing is executed.
 
 from __future__ import annotations
 
-import base64
-import binascii
 from collections.abc import Sequence
 from dataclasses import dataclass
 
@@ -71,7 +69,7 @@ _INLINE_CODE_FLAGS = frozenset(
 )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False, repr=False)
 class Nested:
     """How a command hands a script to another shell.
 
@@ -132,6 +130,9 @@ def _ps_option(arg: str) -> str | None:
 
 
 def _decode(encoded: str) -> str | None:
+    import base64
+    import binascii
+
     try:
         return base64.b64decode(encoded, validate=True).decode("utf-16-le")
     except (binascii.Error, UnicodeDecodeError, ValueError):

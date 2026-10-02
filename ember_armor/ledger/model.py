@@ -14,9 +14,12 @@ import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
-from typing import Any
 
 from ember_armor.ledger.shell.core import DYNAMIC_KINDS
+
+TYPE_CHECKING = False
+if TYPE_CHECKING:
+    from typing import Any
 
 LEDGER_VERSION = 1
 EFFECTS = ("warn", "ask", "deny")

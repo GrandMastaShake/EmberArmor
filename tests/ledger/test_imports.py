@@ -84,3 +84,48 @@ def test_unknown_attribute_raises() -> None:
 
     with pytest.raises(AttributeError, match="no attribute 'nope'"):
         _ = ember_armor.nope
+
+
+LAZY = (
+    "typing",
+    "fractions",
+    "hashlib",
+    "argparse",
+    "base64",
+    "ember_armor.ledger.cli",
+    "ember_armor.ledger.lint",
+    "ember_armor.ledger.replay",
+    "ember_armor.ledger.shell.bash",
+    "ember_armor.ledger.shell.powershell",
+    "ember_armor.ledger.shell.cmd",
+    "ember_armor.ledger.shellpaths",
+)
+LAZY_PROBE = """
+import json, sys
+import ember_armor.ledger.hook
+before = sorted(m for m in {lazy!r} if m in sys.modules)
+from ember_armor.ledger.facts import extract
+extract({{"tool_name": "Bash", "cwd": "/w", "tool_input": {{"command": "ls"}}}})
+after = sorted(m for m in {lazy!r} if m in sys.modules)
+print(json.dumps({{"before": before, "after": after}}))
+"""
+
+
+def test_the_hook_path_loads_only_what_the_call_needs() -> None:
+    env = {k: v for k, v in os.environ.items() if not k.startswith("EMBER_")}
+    done = subprocess.run(
+        [sys.executable, "-c", LAZY_PROBE.format(lazy=LAZY)],
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=60,
+        check=False,
+    )
+    assert done.returncode == 0, done.stderr
+    loaded = json.loads(done.stdout)
+    assert loaded["before"] == []
+    # A Bash call needs the Bash parser and the path tables, nothing else.
+    assert loaded["after"] == [
+        "ember_armor.ledger.shell.bash",
+        "ember_armor.ledger.shellpaths",
+    ]

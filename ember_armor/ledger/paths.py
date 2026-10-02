@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from functools import lru_cache
 
 _DRIVE_RE = re.compile(r"([A-Za-z]):(.*)", re.DOTALL)
@@ -35,6 +36,16 @@ NO_PATH = "\x00"
 
 #: ``lookup(name)`` gives the value of a shell variable, or ``None``.
 Lookup = Callable[[str], str | None]
+
+
+@dataclass(frozen=True)
+class PathFact:
+    """One path a call touches: ``op`` is ``read``, ``write`` or ``delete``."""
+
+    path: str
+    op: str
+    recursive: bool = False
+
 
 #: Environment variables that may be expanded inside a path.
 PATH_VARIABLES = (

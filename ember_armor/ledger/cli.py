@@ -1,6 +1,6 @@
 """``ember-gate`` command line.
 
-Subcommands: ``check``, ``rules list|add|confirm|remove``,
+Subcommands: ``check``, ``rules list|add|confirm|remove``, ``lint``,
 ``log tail|verify|stats``, ``hook`` and ``install claude-code --print``.
 """
 
@@ -12,6 +12,7 @@ import os
 import sys
 from collections import Counter
 from collections.abc import Sequence
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +23,7 @@ from ember_armor.ledger.model import LedgerError, parse_predicate
 EXIT_OK = 0
 EXIT_ERROR = 1
 EXIT_USAGE = 2
+EXIT_NO_SOLVER = 3
 
 
 def _print_json(value: Any) -> None:
@@ -146,6 +148,29 @@ def _cmd_rules_remove(args: argparse.Namespace) -> int:
     store.remove_rule(path, args.rule_id)
     print(f"removed {args.rule_id} from {path}")
     return EXIT_OK
+
+
+# ---------------------------------------------------------------------------
+# lint
+# ---------------------------------------------------------------------------
+def _cmd_lint(args: argparse.Namespace) -> int:
+    """Check the ledger itself: 0 when clean, 1 with findings, 3 without Z3."""
+    from ember_armor.ledger.lint import SolverUnavailableError, lint
+
+    rules = store.load_all(args.cwd or os.getcwd(), os.environ)
+    try:
+        findings = lint(rules)
+    except SolverUnavailableError as exc:
+        print(f"ember-gate: {exc}", file=sys.stderr)
+        return EXIT_NO_SOLVER
+    if args.json:
+        _print_json({"rules": len(rules), "findings": [asdict(f) for f in findings]})
+    else:
+        for finding in findings:
+            print(f"{finding.kind}: {finding.message}")
+        result = f"{len(findings)} finding(s)" if findings else "no findings"
+        print(f"{len(rules)} rules checked: {result}")
+    return EXIT_ERROR if findings else EXIT_OK
 
 
 # ---------------------------------------------------------------------------
@@ -285,6 +310,11 @@ def build_parser() -> argparse.ArgumentParser:
         p_edit.add_argument("rule_id")
         _add_ledger_options(p_edit)
         p_edit.set_defaults(func=func)
+
+    p_lint = commands.add_parser("lint", help="check the ledger itself (needs Z3)")
+    p_lint.add_argument("--cwd", help="directory whose project ledger to include")
+    p_lint.add_argument("--json", action="store_true", help="print JSON")
+    p_lint.set_defaults(func=_cmd_lint)
 
     log = commands.add_parser("log", help="inspect the audit log")
     log_commands = log.add_subparsers(dest="action", required=True)

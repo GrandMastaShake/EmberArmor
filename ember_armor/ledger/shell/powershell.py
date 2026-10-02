@@ -70,7 +70,6 @@ ALIASES = {
     "start": "Start-Process",
     "saps": "Start-Process",
     "icm": "Invoke-Command",
-    "sc": "Set-Content",
     "si": "Set-Item",
     "sp": "Set-ItemProperty",
     "rp": "Remove-ItemProperty",

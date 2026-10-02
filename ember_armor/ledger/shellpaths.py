@@ -14,13 +14,17 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 
 from ember_armor.ledger.shell import ParseResult, SimpleCommand, program_name
-from ember_armor.ledger.shell.argv import has_flag, operands
+from ember_armor.ledger.shell.argv import has_flag, operand_positions, operands
 from ember_armor.ledger.shell.core import find_exec, find_targets, lister_targets
 
 _NULL_TARGETS = frozenset(
     {"/dev/null", "/dev/stdout", "/dev/stderr", "/dev/tty", "nul", "$null"}
 )
 _PROVIDER_RE = re.compile(r"(?:[A-Za-z]{2,}:|[A-Za-z]+::)")
+#: ``FileSystem::C:\x`` is the plain path ``C:\x``.
+_FILESYSTEM_RE = re.compile(
+    r"(?:Microsoft\.PowerShell\.Core\\)?FileSystem::", re.IGNORECASE
+)
 _WILD_TAIL_RE = re.compile(r"(^|[/\\])\*$")
 
 
@@ -73,6 +77,13 @@ _READERS = ("cat", "tac", "nl", "less", "more", "bat", "strings", "xxd", "od",
 _GREP_VALUES = frozenset({"-e", "-f", "-m", "-A", "-B", "-C", "-g", "-t",
                           "--include", "--exclude", "--exclude-dir", "--glob",
                           "--type"})  # fmt: skip
+_RSYNC_VALUES = frozenset(
+    {"-e", "--rsh", "--exclude", "--include", "--exclude-from", "--include-from",
+     "--files-from", "-f", "--filter", "--rsync-path", "--port", "--bwlimit",
+     "--timeout", "--log-file", "--backup-dir", "--suffix", "--chmod", "--chown",
+     "-T", "--temp-dir", "--compare-dest", "--copy-dest", "--link-dest",
+     "--partial-dir", "--password-file", "-B", "--block-size"}
+)  # fmt: skip
 _BASH: dict[str, _Native] = {
     **{name: _Native("read") for name in _READERS},
     "head": _Native("read", frozenset({"-n", "-c"})),
@@ -92,6 +103,14 @@ _BASH: dict[str, _Native] = {
     "tee": _Native("write"),
     "touch": _Native("write", frozenset({"-d", "-t", "-r"})),
     "truncate": _Native("write", frozenset({"-s", "-r"})),
+    # Programs that send or pack the files they are given.
+    "scp": _Native(
+        "read",
+        frozenset({"-i", "-P", "-o", "-F", "-c", "-l", "-S", "-J", "-D"}),
+        last="write",
+    ),
+    "rsync": _Native("read", _RSYNC_VALUES, last="write"),
+    "zip": _Native("read", frozenset({"-x", "-i", "-b", "-t", "-tt", "-n"}), skip=1),
     "sed": _Native(
         "read", frozenset({"-e", "-f"}), skip=1, write_flags=("-i", "--in-place")
     ),  # fmt: skip
@@ -128,6 +147,11 @@ def _path_params(op: str) -> dict[str, str]:
     return {"path": op, "literalpath": op}
 
 
+_WEB_REQUEST = _cmdlet(
+    {"infile": "read", "outfile": "write"},
+    ("uri", "method", "headers", "body", "contenttype", "useragent", "timeoutsec",
+     "proxy", "form"),
+)  # fmt: skip
 _POWERSHELL: dict[str, _Cmdlet] = {
     "remove-item": _cmdlet(_path_params("delete"), rest="delete"),
     "get-content": _cmdlet(
@@ -161,7 +185,28 @@ _POWERSHELL: dict[str, _Cmdlet] = {
     "select-string": _cmdlet(
         _path_params("read"), ("pattern", "context"), (None,), rest="read"
     ),
+    "compress-archive": _cmdlet(
+        {**_path_params("read"), "destinationpath": "write"},
+        ("compressionlevel",),
+        ("read", "write"),
+    ),
+    "invoke-webrequest": _WEB_REQUEST,
+    "invoke-restmethod": _WEB_REQUEST,
 }
+#: curl options whose value names a file: what is read from it or written to it.
+_CURL_UPLOADS = {"-T": "read", "--upload-file": "read", "-K": "read",
+                 "--config": "read", "-o": "write", "--output": "write"}  # fmt: skip
+_CURL_DATA = frozenset(
+    {"-d", "--data", "--data-binary", "--data-ascii", "--data-urlencode", "--json"}
+)
+_CURL_FORMS = frozenset({"-F", "--form"})
+_WGET_FILES = {"--post-file": "read", "--body-file": "read", "-O": "write",
+               "--output-document": "write"}  # fmt: skip
+_TAR_VALUES = frozenset(
+    {"-C", "--directory", "-T", "--files-from", "-X", "--exclude-from",
+     "--exclude", "-I", "--use-compress-program"}
+)  # fmt: skip
+_GIT_VALUES = frozenset({"-C", "-c", "--git-dir", "--work-tree", "--namespace"})
 _CD = frozenset({"cd", "chdir", "set-location"})
 _PUSHD = frozenset({"pushd", "push-location"})
 _POPD = frozenset({"popd", "pop-location"})
@@ -314,6 +359,110 @@ def _dd_paths(command: SimpleCommand) -> list[tuple[str, str, bool]]:
     return found
 
 
+def _option_values(command: SimpleCommand, flags: Mapping[str, str]) -> list[str]:
+    """Values of the given options: ``-o x``, ``--output=x`` or ``-ox``."""
+    args = command.argv[1:]
+    found: list[tuple[str, str]] = []
+    for index, arg in enumerate(args):
+        flag, attached, value = arg.partition("=")
+        short = arg[:2] if len(arg) > 2 and arg[1] != "-" else ""
+        if flag in flags and flag.startswith("--") and attached:
+            found.append((flag, value))
+        elif arg in flags and index + 1 < len(args):
+            found.append((arg, args[index + 1]))
+        elif short in flags:
+            found.append((short, arg[2:]))
+    return [f"{flag}\0{value}" for flag, value in found if value]
+
+
+def _curl_paths(command: SimpleCommand) -> list[tuple[str, str, bool]]:
+    """Files a ``curl`` invocation uploads, posts or writes.
+
+    ``-T file``, ``-d @file``, ``--data-binary @file``, ``-F name=@file`` and
+    ``-o file``.  Data without ``@`` is literal text, not a file.
+    """
+    found: list[tuple[str, str, bool]] = []
+    every = {**_CURL_UPLOADS, **dict.fromkeys(_CURL_DATA | _CURL_FORMS, "read")}
+    for item in _option_values(command, every):
+        flag, _, value = item.partition("\0")
+        if flag in _CURL_FORMS:
+            value = value.partition("=")[2].partition(";")[0]
+            if value[:1] not in ("@", "<"):
+                continue
+            value = value[1:]
+        elif flag in _CURL_DATA:
+            if "@" not in value or (flag != "--data-urlencode" and value[0] != "@"):
+                continue
+            value = value.partition("@")[2]
+        if value and value != "-":
+            found.append((value, every[flag], False))
+    return found
+
+
+def _wget_paths(command: SimpleCommand) -> list[tuple[str, str, bool]]:
+    found = []
+    for item in _option_values(command, _WGET_FILES):
+        flag, _, value = item.partition("\0")
+        if value != "-":
+            found.append((value, _WGET_FILES[flag], False))
+    return found
+
+
+def _tar_paths(command: SimpleCommand) -> list[tuple[str, str, bool]]:
+    """Files a ``tar`` that creates or extends an archive packs into it."""
+    args = list(command.argv[1:])
+    if args and not args[0].startswith("-"):
+        args[0] = f"-{args[0]}"  # the old style: ``tar czf out.tgz files``
+    letters = "".join(a[1:] for a in args if a.startswith("-") and a[1:2] != "-")
+    creates = set("cru") & set(letters) or any(
+        a in ("--create", "--append", "--update") for a in args
+    )
+    if not creates:
+        return []
+    files: list[str] = []
+    skip = False
+    for arg in args:
+        if skip:
+            skip = False
+        elif arg.startswith("--"):
+            skip = arg in _TAR_VALUES or arg == "--file"
+        elif arg.startswith("-") and len(arg) > 1:
+            skip = arg[-1] in "fCTXI"
+        else:
+            files.append(arg)
+    return [(name, "read", False) for name in files]
+
+
+def _archiver_paths(command: SimpleCommand) -> list[tuple[str, str, bool]]:
+    """Files ``7z a archive files...`` packs."""
+    words = operands(command)
+    if len(words) < 3 or words[0] not in ("a", "u"):
+        return []
+    return [(name, "read", False) for name in words[2:]]
+
+
+def _git_paths(command: SimpleCommand) -> list[tuple[str, str, bool]]:
+    """Files ``git add`` stages: their content goes into the repository."""
+    positions = operand_positions(command, _GIT_VALUES)
+    if not positions or command.argv[positions[0]] != "add":
+        return []
+    argv = command.argv
+    base = [argv[i + 1] for i in range(1, positions[0] - 1) if argv[i] == "-C"]
+    prefix = "/".join(base) + "/" if base else ""
+    return [(f"{prefix}{argv[i]}", "read", False) for i in positions[1:]]
+
+
+_CUSTOM: dict[str, Callable[[SimpleCommand], list[tuple[str, str, bool]]]] = {
+    "curl": _curl_paths,
+    "wget": _wget_paths,
+    "tar": _tar_paths,
+    "bsdtar": _tar_paths,
+    "7z": _archiver_paths,
+    "7za": _archiver_paths,
+    "git": _git_paths,
+}
+
+
 def _find_paths(command: SimpleCommand) -> list[tuple[str, str, bool]]:
     """What a ``find`` deletes with ``-delete`` or ``-exec rm``.
 
@@ -341,6 +490,8 @@ def _command_paths(command: SimpleCommand) -> list[tuple[str, str, bool]]:
         return _dd_paths(command)
     if name == "find":
         return _find_paths(command)
+    if name in _CUSTOM:
+        return _CUSTOM[name](command)
     return _native_paths(command, _BASH[name]) if name in _BASH else []
 
 
@@ -413,6 +564,8 @@ def shell_paths(
             _change_directory(command, place, resolve, home)
             continue
         for raw, op, recursive in _command_paths(command):
+            if qualified := _FILESYSTEM_RE.match(raw):
+                raw = raw[qualified.end() :]
             if _PROVIDER_RE.match(raw):
                 continue
             if recursive:

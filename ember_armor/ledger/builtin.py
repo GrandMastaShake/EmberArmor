@@ -76,7 +76,8 @@ SECRET_FILES = [
     "**/.env", "**/.env.local", "**/.env.*.local", "**/.env.production",
     "**/.env.prod", "**/.env.development", "**/.env.dev", "**/.env.staging",
     "**/.env.test", "**/.envrc",
-    "**/id_rsa", "**/id_dsa", "**/id_ecdsa", "**/id_ed25519", "**/.ssh/*",
+    "**/id_rsa", "**/id_dsa", "**/id_ecdsa", "**/id_ed25519", "**/.ssh",
+    "**/.ssh/*",
     "**/*.ppk", "**/*.p12", "**/*.pfx", "**/*.key", "**/*private*.pem",
     "**/*key*.pem", "**/.aws/credentials", "**/.netrc", "**/_netrc",
     "**/.pypirc", "**/.git-credentials", "**/.kube/config",
@@ -117,13 +118,59 @@ _MACHINE_KEYS = [
     f"{_HKLM}:*", f"{_HKLM}\\*", f"{_MACHINE}\\*", f"{_HKCR}:*", f"{_HKCR}\\*",
     f"{_CLASSES}\\*", f"*::{_MACHINE}*", f"*::{_CLASSES}*", f"*:{_HKLM}:*",
 ]  # fmt: skip
-_ADD_ROOT = r"(?i)(?:^|\s)[-/]addstore\s(?:.*\s)?(?:root|authroot)(?:\s|$)"
+#: ``-addstore``, ``/addstore`` and the MSYS-escaped ``//addstore``.
+_ADD_ROOT = r"(?i)(?:^|\s)(?:-|//?)addstore\s(?:.*\s)?(?:root|authroot)(?:\s|$)"
+#: ``Cert:\LocalMachine\Root`` with either separator, alone or after ``-Param:``.
+_ROOT_STORES = [
+    f"{prefix}cert:[\\/]*[\\/]{store}{tail}"
+    for store in ("root", "authroot")
+    for prefix in ("", "*:")
+    for tail in ("", "[\\/]")
+]
 _FIREWALL_UNITS = ["firewalld*", "ufw*", "nftables*", "iptables*"]
-_DEFENDER = ["WinDefend", "windefend", "MpsSvc", "mpssvc", "Sense", "WdNisSvc"]
-_BCDEDIT_CHANGES = ["/set", "/delete", "/deletevalue", "/create", "/copy", "/import",
-                    "/default", "/displayorder", "/bootsequence", "/timeout",
-                    "/debug", "/bootdebug"]  # fmt: skip
-_WORKTREE = [".", "./", ":/"]
+_SECURITY_UNITS = ["clamav*", "falcon-sensor*", "apparmor*", "auditd*", "mdatp*",
+                   "sentinelone*", "crowdstrike*"]  # fmt: skip
+_STOP_UNIT = ["stop", "disable", "mask"]
+#: Defender's services by name or display name, also from the stage that pipes in.
+_DEFENDER = r"(?i)\b(?:windefend|mpssvc|wdnissvc|sense|wscsvc)\b|defender"
+#: Registry values that switch Defender, the firewall or UAC off.
+_DEFENCE_VALUES = (
+    r"(?i)windows defender|disableantispyware|disablerealtimemonitoring|"
+    r"disableantivirus|firewallpolicy|enablefirewall|\benablelua\b"
+)
+_MP_SWITCHES = ["-DisableRealtimeMonitoring", "-DisableBehaviorMonitoring",
+                "-DisableIOAVProtection", "-DisableScriptScanning",
+                "-DisableBlockAtFirstSeen", "-DisableIntrusionPreventionSystem",
+                "-DisableArchiveScanning", "-DisableEmailScanning",
+                "-DisableRemovableDriveScanning"]  # fmt: skip
+_MP_EXCLUSIONS = ["-ExclusionPath", "-ExclusionProcess", "-ExclusionExtension",
+                  "-ExclusionIpAddress"]  # fmt: skip
+_MP_LEVELS = ["-MAPSReporting", "-SubmitSamplesConsent", "-PUAProtection",
+              "-EnableControlledFolderAccess", "-EnableNetworkProtection"]  # fmt: skip
+_MP_OFF = ["disabled", "0", "neversend", "2", "*:disabled", "*:0", "*:neversend"]
+_BCDEDIT_VERBS = ["set", "delete", "deletevalue", "create", "copy", "import",
+                  "default", "displayorder", "bootsequence", "timeout", "debug",
+                  "bootdebug"]  # fmt: skip
+_BCDEDIT_CHANGES = [f"{dash}{verb}" for verb in _BCDEDIT_VERBS for dash in "/-"]
+_MKFS = ["mkfs", "mke2fs", "mkswap", "mkfs.ext2", "mkfs.ext3", "mkfs.ext4",
+         "mkfs.xfs", "mkfs.btrfs", "mkfs.vfat", "mkfs.fat", "mkfs.ntfs",
+         "mkfs.exfat", "mkfs.f2fs"]  # fmt: skip
+#: The whole working tree; ``[*]`` is a literal star (``git checkout -- *``).
+_WORKTREE = [".", "./", ":/", "[*]"]
+_DRY_RUN = ["-n", "--dry-run"]
+_VERCEL_GROUPS = ["project", "projects", "env", "domains", "alias", "dns", "certs"]
+#: Files that run, or grant access, at every login.
+_LOGIN_FILES = [
+    "**/.ssh/authorized_keys", "**/.ssh/authorized_keys2", "~/.bashrc",
+    "~/.bash_profile", "~/.bash_login", "~/.profile", "~/.zshrc", "~/.zprofile",
+    "~/.zshenv", "~/.zlogin", "~/.config/fish/config.fish",
+    "~/**/PowerShell/*profile.ps1", "~/**/WindowsPowerShell/*profile.ps1",
+    "~/.config/powershell/*profile.ps1", "**/[$]PROFILE", "/etc/profile",
+    "/etc/bash.bashrc",
+]  # fmt: skip
+_HOMES = ["~", "/home/*", "/root", "/Users/*", "?:/Users/*"]
+#: A wildcard in a home directory itself or in one of its top-level folders.
+_HOME_WILDCARDS = [f"{home}{folder}/*[*?]*" for home in _HOMES for folder in ("", "/*")]
 #: The gate's own files: the Ember home and any project ``.ember`` directory.
 _EMBER_FILES = ["~/.ember", "$EMBER_HOME", "**/.ember"]
 _GATE_VARIABLES = [
@@ -182,6 +229,40 @@ def _rules(disposable: Sequence[str]) -> list[dict[str, Any]]:
             "temporary directories.",
             recursive_delete,
         ),
+        _rule(
+            "delete.home-wildcard",
+            "ask",
+            "Ask before deleting with a wildcard directly in a home directory or "
+            "in one of its top-level folders.",
+            {
+                "type": "path",
+                "op": "delete",
+                "glob": _HOME_WILDCARDS,
+                "not_within": [*DISPOSABLE, *disposable],
+            },
+        ),
+        _rule(
+            "delete.mirror",
+            "ask",
+            "Ask before a sync that deletes what the source does not have "
+            "(rsync --delete, robocopy /MIR).",
+            _any(
+                _command(
+                    "rsync",
+                    flags_any=[
+                        "--delete",
+                        "--delete-before",
+                        "--delete-during",
+                        "--delete-after",
+                        "--delete-excluded",
+                        "--del",
+                        "--remove-source-files",
+                    ],
+                    flags_none=[*_DRY_RUN, *_HELP],
+                ),  # fmt: skip
+                _command("robocopy", flags_any=["/MIR", "/PURGE"], flags_none=["/L"]),
+            ),
+        ),
         # -- git history and working tree ------------------------------------
         _rule(
             "git.force-push",
@@ -198,6 +279,19 @@ def _rules(disposable: Sequence[str]) -> list[dict[str, Any]]:
                     args_any_glob=["+*"],
                     flags_none=["-n", "--dry-run", *_HELP],
                 ),
+            ),
+        ),
+        _rule(
+            "git.remote-delete",
+            "ask",
+            "Ask before deleting branches or tags on a remote.",
+            _any(
+                _git(
+                    "push",
+                    flags_any=["--delete", "-d", "--mirror", "--prune"],
+                    flags_none=[*_DRY_RUN, *_HELP],
+                ),
+                _git("push", args_any_glob=[":?*"], flags_none=[*_DRY_RUN, *_HELP]),
             ),
         ),
         _rule(
@@ -233,6 +327,25 @@ def _rules(disposable: Sequence[str]) -> list[dict[str, Any]]:
                 _git(
                     "restore", args_any_glob=_WORKTREE, flags_any=["--worktree", "-W"]
                 ),
+                _git("submodule", "deinit", flags_any=["-f", "--force"]),
+            ),
+        ),
+        _rule(
+            "git.stash-drop",
+            "ask",
+            "Ask before dropping stashed work (git stash drop, git stash clear).",
+            _any(_git("stash", "drop"), _git("stash", "clear")),
+        ),
+        _rule(
+            "git.history-prune",
+            "ask",
+            "Ask before making commits unrecoverable: expiring the reflog, "
+            "pruning now, or deleting a ref directly.",
+            _any(
+                _git("reflog", "expire"),
+                _git("reflog", "delete"),
+                _git("gc", args_any_glob=["--prune=now", "--prune=all"]),
+                _git("update-ref", flags_any=["-d", "--delete"]),
             ),
         ),
         _rule(
@@ -275,6 +388,11 @@ def _rules(disposable: Sequence[str]) -> list[dict[str, Any]]:
             _any(
                 _command(["vercel", "vc"], "remove", flags_none=_HELP),
                 _command(["vercel", "vc"], "rm", flags_none=_HELP),
+                *(
+                    _command(["vercel", "vc"], group, verb, flags_none=_HELP)
+                    for group in _VERCEL_GROUPS
+                    for verb in ("rm", "remove")
+                ),
             ),
         ),
         _rule(
@@ -289,6 +407,10 @@ def _rules(disposable: Sequence[str]) -> list[dict[str, Any]]:
                     flags_any=["-destroy", "--destroy"],
                     flags_none=_TERRAFORM_HELP,
                 ),
+                _command(_TERRAFORM, "state", "rm", flags_none=_TERRAFORM_HELP),
+                _command(_TERRAFORM, "workspace", "delete", flags_none=_TERRAFORM_HELP),
+                _command("terragrunt", "run-all", "destroy"),
+                _command("terragrunt", "destroy-all"),
             ),
         ),
         _rule(
@@ -318,7 +440,19 @@ def _rules(disposable: Sequence[str]) -> list[dict[str, Any]]:
             "cloud.docker-volume-rm",
             "ask",
             "Ask before removing Docker volumes: their data is not recoverable.",
-            _command(["docker", "podman"], "volume", "rm", flags_none=["--help"]),
+            _any(
+                _command(["docker", "podman"], "volume", "rm", flags_none=["--help"]),
+                _command(
+                    ["docker", "podman"], "volume", "prune", flags_none=["--help"]
+                ),
+                _command(
+                    ["docker", "podman"],
+                    "compose",
+                    "down",
+                    flags_any=["-v", "--volumes"],
+                ),
+                _command("docker-compose", "down", flags_any=["-v", "--volumes"]),
+            ),
         ),
         _rule(
             "cloud.aws-s3-delete",
@@ -334,6 +468,36 @@ def _rules(disposable: Sequence[str]) -> list[dict[str, Any]]:
                     flags_none=["--dryrun"],
                     args_none_glob=["help"],
                 ),
+                _command(
+                    "aws", "s3", "sync", flags_any=["--delete"], flags_none=["--dryrun"]
+                ),
+            ),
+        ),
+        _rule(
+            "cloud.resource-delete",
+            "ask",
+            "Ask before deleting cloud resources or infrastructure (helm, gcloud, "
+            "az, aws, gsutil, pulumi, cdk, fly, wrangler, heroku, supabase).",
+            _any(
+                _command("helm", "uninstall", flags_none=[*_HELP, "--dry-run"]),
+                _command("helm", "delete", flags_none=[*_HELP, "--dry-run"]),
+                _command("gcloud", args_any_glob=["delete"], flags_none=_HELP),
+                _command("az", args_any_glob=["delete", "purge"], flags_none=_HELP),
+                _command(
+                    "aws",
+                    args_any_glob=["delete-*", "terminate-instances"],
+                    args_none_glob=["help"],
+                    flags_none=["--dry-run"],
+                ),
+                _command("gsutil", "rm", flags_any=["-r", "-R", "-a"]),
+                _command("gsutil", "rb"),
+                _command("pulumi", "destroy", flags_none=_HELP),
+                _command("pulumi", "stack", "rm", flags_none=_HELP),
+                _command(["cdk", "cdktf"], "destroy", flags_none=_HELP),
+                _command(["fly", "flyctl"], "apps", "destroy"),
+                _command("wrangler", "delete", flags_none=_HELP),
+                _command("heroku", "apps:destroy"),
+                _command("supabase", "db", "reset"),
             ),
         ),
         _rule(
@@ -351,12 +515,8 @@ def _rules(disposable: Sequence[str]) -> list[dict[str, Any]]:
                 # certutil ignores letter case, whichever shell starts it.
                 _command("certutil", args_regex=_ADD_ROOT),
                 _command(
-                    "Import-Certificate",
-                    args_any_glob=[
-                        "cert:\\*\\root",
-                        "cert:\\*\\authroot",
-                        "*:cert:\\*\\root",
-                    ],
+                    ["Import-Certificate", "Import-PfxCertificate"],
+                    args_any_glob=_ROOT_STORES,
                     args_none_glob=_WHAT_IF,
                 ),
                 _command("security", "add-trusted-cert"),
@@ -364,6 +524,15 @@ def _rules(disposable: Sequence[str]) -> list[dict[str, Any]]:
                     ["update-ca-certificates", "update-ca-trust"], flags_none=_HELP
                 ),
                 _command("trust", "anchor"),
+                _command("mkcert", flags_any=["-install", "--install"]),
+                _command("dotnet", "dev-certs", "https", flags_any=["--trust", "-t"]),
+                _command("caddy", "trust"),
+                _command("step", "certificate", "install"),
+                _command(
+                    "keytool",
+                    flags_any=["-importcert", "-import"],
+                    args_regex=r"(?i)cacerts",
+                ),
             ),
         ),
         _rule(
@@ -373,10 +542,17 @@ def _rules(disposable: Sequence[str]) -> list[dict[str, Any]]:
             _any(
                 # netsh ignores letter case, whichever shell starts it.
                 _command(
-                    "netsh", "advfirewall", "set", args_any_glob=[_either_case("off")]
+                    "netsh",
+                    "advfirewall",
+                    "set",
+                    args_any_glob=["off", "allowinbound*"],
                 ),
+                _command("netsh", "advfirewall", "reset"),
                 _command(
-                    "netsh", "firewall", "set", args_any_glob=[_either_case("disable")]
+                    "netsh",
+                    "firewall",
+                    "set",
+                    args_any_glob=["disable", "mode=disable"],
                 ),
                 _command(
                     "Set-NetFirewallProfile",
@@ -384,48 +560,93 @@ def _rules(disposable: Sequence[str]) -> list[dict[str, Any]]:
                     args_any_glob=_FALSE,
                     args_none_glob=_WHAT_IF,
                 ),
+                _command(
+                    "Set-NetFirewallProfile",
+                    flags_any=["-DefaultInboundAction"],
+                    args_any_glob=["allow", "*:allow"],
+                    args_none_glob=_WHAT_IF,
+                ),
                 _command("ufw", "disable"),
-                _command("systemctl", "stop", args_any_glob=_FIREWALL_UNITS),
-                _command("systemctl", "disable", args_any_glob=_FIREWALL_UNITS),
-                _command("systemctl", "mask", args_any_glob=_FIREWALL_UNITS),
+                _command("ufw", "reset"),
+                _command("ufw", "default", "allow"),
+                *(
+                    _command("systemctl", verb, args_any_glob=_FIREWALL_UNITS)
+                    for verb in _STOP_UNIT
+                ),
+                _command(
+                    ["iptables", "ip6tables"],
+                    flags_any=["-F", "--flush", "-X", "--delete-chain"],
+                ),
+                _command(
+                    ["iptables", "ip6tables"],
+                    flags_any=["-P", "--policy"],
+                    args_any_glob=["ACCEPT"],
+                ),
+                _command("nft", "flush", "ruleset"),
+                _command("pfctl", flags_any=["-d"]),
+                _command(
+                    "socketfilterfw",
+                    flags_any=["--setglobalstate"],
+                    args_any_glob=["off"],
+                ),
             ),
         ),
         _rule(
             "system.antivirus-off",
             "ask",
-            "Ask before turning off antivirus protection or adding exclusions.",
+            "Ask before turning off antivirus protection or another security "
+            "control, or adding exclusions.",
             _any(
                 _command(
                     "Set-MpPreference",
                     args_any_glob=_TRUE,
                     args_none_glob=_WHAT_IF,
-                    flags_any=[
-                        "-DisableRealtimeMonitoring",
-                        "-DisableBehaviorMonitoring",
-                        "-DisableIOAVProtection",
-                        "-DisableScriptScanning",
-                        "-DisableBlockAtFirstSeen",
-                        "-DisableIntrusionPreventionSystem",
-                    ],
+                    flags_any=_MP_SWITCHES,
                 ),
                 _command(
-                    "Add-MpPreference",
+                    "Set-MpPreference",
+                    args_any_glob=_MP_OFF,
                     args_none_glob=_WHAT_IF,
-                    flags_any=[
-                        "-ExclusionPath",
-                        "-ExclusionProcess",
-                        "-ExclusionExtension",
-                    ],
+                    flags_any=_MP_LEVELS,
+                ),
+                _command(
+                    ["Add-MpPreference", "Set-MpPreference"],
+                    args_none_glob=_WHAT_IF,
+                    flags_any=_MP_EXCLUSIONS,
                 ),
                 _command(
                     ["Stop-Service", "Set-Service"],
-                    args_any_glob=_DEFENDER,
+                    args_regex=_DEFENDER,
                     args_none_glob=_WHAT_IF,
                 ),
-                _command("sc", "stop", args_any_glob=_DEFENDER),
-                _command("sc", "config", args_any_glob=_DEFENDER),
-                _command("sc", "delete", args_any_glob=_DEFENDER),
-                _command("net", "stop", args_any_glob=_DEFENDER),
+                *(
+                    _command("sc", verb, args_regex=_DEFENDER)
+                    for verb in ("stop", "config", "delete")
+                ),
+                _command("net", "stop", args_regex=_DEFENDER),
+                *(
+                    _command("systemctl", verb, args_any_glob=_SECURITY_UNITS)
+                    for verb in _STOP_UNIT
+                ),
+                _command("setenforce", args_any_glob=["0", "[Pp]ermissive"]),
+                _command("aa-teardown"),
+                _command("spctl", flags_any=["--master-disable", "--global-disable"]),
+                _command("csrutil", "disable"),
+            ),
+        ),
+        _rule(
+            "system.registry-defences",
+            "ask",
+            "Ask before registry changes that switch Defender, the firewall or "
+            "UAC off.",
+            _any(
+                _command("reg", "add", args_regex=_DEFENCE_VALUES),
+                _command(
+                    ["Set-ItemProperty", "New-ItemProperty", "New-Item"],
+                    args_regex=_DEFENCE_VALUES,
+                    args_any_glob=[*_MACHINE_KEYS, *(f"*:{k}" for k in _MACHINE_KEYS)],
+                    args_none_glob=_WHAT_IF,
+                ),
             ),
         ),
         _rule(
@@ -435,29 +656,60 @@ def _rules(disposable: Sequence[str]) -> list[dict[str, Any]]:
             _any(
                 _command("reg", "delete", args_any_glob=_MACHINE_KEYS),
                 _command(
-                    ["Remove-Item", "Remove-ItemProperty"],
+                    [
+                        "Remove-Item",
+                        "Remove-ItemProperty",
+                        "Clear-Item",
+                        "Clear-ItemProperty",
+                    ],
                     args_any_glob=_MACHINE_KEYS,
                     args_none_glob=_WHAT_IF,
-                ),
+                ),  # fmt: skip
             ),
         ),
         _rule(
             "system.disk",
             "ask",
-            "Ask before formatting, repartitioning or changing boot configuration.",
+            "Ask before formatting, wiping, repartitioning or changing boot "
+            "configuration.",
             _any(
                 _command("format", args_any_glob=["?:", "?:\\", "?:/"]),
-                _command(["Format-Volume", "Clear-Disk"], args_none_glob=_WHAT_IF),
+                _command(
+                    [
+                        "Format-Volume",
+                        "Clear-Disk",
+                        "Remove-Partition",
+                        "Initialize-Disk",
+                    ],
+                    args_none_glob=_WHAT_IF,
+                ),  # fmt: skip
                 _command("diskpart", flags_none=["/?"]),
                 _command("bcdedit", flags_any=_BCDEDIT_CHANGES),
+                _command(_MKFS, flags_none=[*_HELP, "-V", "--version"]),
+                _command("wipefs", flags_any=["-a", "--all"]),
+                _command("sgdisk", flags_any=["-Z", "--zap-all", "-o", "--clear"]),
+                _command("blkdiscard", flags_none=_HELP),
+                _command(
+                    "dd",
+                    args_any_glob=["of=/dev/*"],
+                    args_none_glob=["of=/dev/null", "of=/dev/stdout", "of=/dev/stderr"],
+                ),
+                _command("shred", args_any_glob=["/dev/*"]),
+                *(
+                    _command("diskutil", verb)
+                    for verb in ("eraseDisk", "eraseVolume", "zeroDisk", "secureErase")
+                ),
+                _command("zpool", "destroy"),
+                _command("zfs", "destroy"),
+                _command(["lvremove", "vgremove"], flags_none=_HELP),
             ),
         ),
         # -- secrets ---------------------------------------------------------
         _rule(
             "secrets.read",
             "ask",
-            "Ask before reading secret files: .env files, private keys and "
-            "credential files.",
+            "Ask before reading, sending, archiving or staging secret files: "
+            ".env files, private keys and credential files.",
             {
                 "type": "path",
                 "op": "read",
@@ -465,6 +717,16 @@ def _rules(disposable: Sequence[str]) -> list[dict[str, Any]]:
                 "not_glob": NOT_SECRET,
                 "not_under": ["**/node_modules"],
             },
+        ),
+        _rule(
+            "system.login-files",
+            "ask",
+            "Ask before changing SSH authorized keys or shell profile files: "
+            "they grant access or run at every login.",
+            _any(
+                {"type": "path", "op": "write", "glob": _LOGIN_FILES},
+                {"type": "path", "op": "delete", "glob": _LOGIN_FILES},
+            ),
         ),
         # -- the gate itself -------------------------------------------------
         _rule(

@@ -16,6 +16,8 @@ from functools import lru_cache
 _DRIVE_RE = re.compile(r"([A-Za-z]):(.*)", re.DOTALL)
 _MSYS_RE = re.compile(r"/([A-Za-z])(/.*)?", re.DOTALL)
 _UNC_RE = re.compile(r"//([^/]+)/([^/]+)(/.*)?", re.DOTALL)
+#: ``//c/Users``: the MSYS drive form with its slash doubled, not a host ``c``.
+_MSYS_DOUBLED_RE = re.compile(r"//([A-Za-z])(/.*)?", re.DOTALL)
 _DEVICE_RE = re.compile(r"//[?.]/(UNC/)?", re.IGNORECASE)
 _LOCAL_SHARE_RE = re.compile(
     r"//(?:localhost|127\.0\.0\.1)/([A-Za-z])\$(/.*)?", re.IGNORECASE | re.DOTALL
@@ -91,7 +93,11 @@ def _split_root(text: str, windows: bool) -> tuple[str | None, str]:
         if match := _DEVICE_RE.match(text):
             # ``\\?\C:\x`` is ``C:\x``; ``\\?\UNC\host\share`` is ``\\host\share``.
             text = ("//" if match.group(1) else "") + text[match.end() :]
-        local = _LOCAL_SHARE_RE.fullmatch(text) or _MOUNT_RE.fullmatch(text)
+        local = (
+            _LOCAL_SHARE_RE.fullmatch(text)
+            or _MOUNT_RE.fullmatch(text)
+            or _MSYS_DOUBLED_RE.fullmatch(text)
+        )
         if local:
             return f"{local.group(1).upper()}:/", local.group(2) or ""
         if match := _DRIVE_RE.fullmatch(text):

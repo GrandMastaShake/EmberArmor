@@ -76,8 +76,14 @@ POSIX_PATHS = [
     ("D=/var/data; rm -rf $D/old", [("/var/data/old", "delete", True)]),
     ("rm -rf $NOPE/x", [("/work/app/$NOPE/x", "delete", True)]),
     ("cat $PWD/f", [("/work/app/f", "read", False)]),
+    # staging a file puts its content into the repository
+    ("git add .env", [("/work/app/.env", "read", False)]),
+    (
+        "git -C api add -f a b",
+        [("/work/app/api/a", "read", False), ("/work/app/api/b", "read", False)],
+    ),
+    ("git commit -m .env", []),
     # unknown programs contribute no paths
-    ("git add .env", []),
     ("docker run --env-file .env img", []),
     ("python script.py data.csv", []),
 ]

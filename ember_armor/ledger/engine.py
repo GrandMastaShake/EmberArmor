@@ -53,7 +53,8 @@ _MISSING = object()
 _GLOBAL_VALUE_FLAGS: dict[str, frozenset[str]] = {
     "git": frozenset({"-C", "-c", "--git-dir", "--work-tree", "--namespace"}),
     "docker": frozenset({"--context", "-c", "--config", "-H", "--host", "-l",
-                         "--log-level"}),
+                         "--log-level", "-f", "--file", "-p", "--project-name",
+                         "--profile", "--env-file", "--project-directory"}),
     "kubectl": frozenset({"-n", "--namespace", "--context", "--kubeconfig",
                           "--cluster", "--user", "-s", "--server", "--as"}),
     "aws": frozenset({"--profile", "--region", "--endpoint-url", "--output"}),
@@ -63,6 +64,17 @@ _GLOBAL_VALUE_FLAGS: dict[str, frozenset[str]] = {
                          "--local-config", "-Q", "--global-config"}),
 }  # fmt: skip
 _GLOBAL_VALUE_FLAGS["podman"] = _GLOBAL_VALUE_FLAGS["docker"]
+_GLOBAL_VALUE_FLAGS["docker-compose"] = _GLOBAL_VALUE_FLAGS["docker"]
+_GLOBAL_VALUE_FLAGS["gsutil"] = frozenset({"-o", "-h", "-u", "-i"})
+_GLOBAL_VALUE_FLAGS["helm"] = frozenset({"-n", "--namespace", "--kube-context",
+                                         "--kubeconfig"})  # fmt: skip
+#: Windows tools that read their own subcommands and arguments in any letter
+#: case, whichever shell starts them (``REG DELETE``, ``NETSH ADVFIREWALL``).
+_CASELESS_PROGRAMS = frozenset(
+    {"reg", "netsh", "sc", "net", "certutil", "bcdedit", "diskpart", "format",
+     "schtasks", "wmic", "robocopy", "icacls", "takeown", "vssadmin", "wevtutil",
+     "fsutil", "cipher", "setx", "manage-bde"}
+)  # fmt: skip
 _GLOBAL_VALUE_FLAGS["oc"] = _GLOBAL_VALUE_FLAGS["kubectl"]
 _GLOBAL_VALUE_FLAGS["vc"] = _GLOBAL_VALUE_FLAGS["vercel"]
 _GLOBAL_VALUE_FLAGS["pnpm"] = frozenset({"-C", "--dir", "-F", "--filter"})
@@ -125,7 +137,8 @@ class _Context:
 def _command_matches(command: SimpleCommand, pred: CommandPred, windows: bool) -> bool:
     if pred.shell != "any" and command.shell != pred.shell:
         return False
-    fold = command.shell != "bash"
+    caseless = program_name(command.argv[0]) in _CASELESS_PROGRAMS
+    fold = command.shell != "bash" or caseless
 
     def norm(text: str) -> str:
         return text.lower() if fold else text

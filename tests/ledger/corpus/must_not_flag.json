@@ -1871,5 +1871,396 @@
  {
   "tool": "PowerShell",
   "command": "ember-gate rules list"
+ },
+ {
+  "tool": "Bash",
+  "command": "curl -d '{\"a\": 1}' https://example.com/api"
+ },
+ {
+  "tool": "Bash",
+  "command": "curl -d 'user@example.com' https://example.com/api"
+ },
+ {
+  "tool": "Bash",
+  "command": "curl -F 'file=@report.pdf' https://example.com/upload"
+ },
+ {
+  "tool": "Bash",
+  "command": "curl -o out.json https://example.com/api"
+ },
+ {
+  "tool": "Bash",
+  "command": "curl -sS -H 'Authorization: Bearer x' https://example.com/.env"
+ },
+ {
+  "tool": "Bash",
+  "command": "scp build.tar.gz deploy@host:/srv/app/"
+ },
+ {
+  "tool": "Bash",
+  "command": "scp host:/var/log/app.log ."
+ },
+ {
+  "tool": "Bash",
+  "command": "rsync -av src/ host:/srv/app/"
+ },
+ {
+  "tool": "Bash",
+  "command": "rsync -a --delete --dry-run src/ dest/"
+ },
+ {
+  "tool": "Bash",
+  "command": "rsync -avn --delete src/ dest/"
+ },
+ {
+  "tool": "Bash",
+  "command": "tar czf backup.tgz src docs"
+ },
+ {
+  "tool": "Bash",
+  "command": "tar xzf backup.tgz"
+ },
+ {
+  "tool": "Bash",
+  "command": "tar -tf backup.tgz"
+ },
+ {
+  "tool": "Bash",
+  "command": "tar czf out.tgz .env.example"
+ },
+ {
+  "tool": "Bash",
+  "command": "zip -r out.zip src"
+ },
+ {
+  "tool": "Bash",
+  "command": "unzip out.zip"
+ },
+ {
+  "tool": "Bash",
+  "command": "git add ."
+ },
+ {
+  "tool": "Bash",
+  "command": "git add src/app.py .env.example"
+ },
+ {
+  "tool": "Bash",
+  "command": "git add ~/.ssh/config"
+ },
+ {
+  "tool": "Bash",
+  "command": "ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -N ''"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Compress-Archive -Path src -DestinationPath out.zip"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Invoke-WebRequest -Uri https://example.com/x.zip -OutFile x.zip"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "robocopy C:\\src D:\\backup /E"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "robocopy C:\\src D:\\backup /MIR /L"
+ },
+ {
+  "tool": "Write",
+  "input": {
+   "file_path": "~/.ssh/config",
+   "content": "Host x"
+  }
+ },
+ {
+  "tool": "Write",
+  "input": {
+   "file_path": "docs/bashrc.md",
+   "content": "x"
+  }
+ },
+ {
+  "tool": "Read",
+  "input": {
+   "file_path": "~/.bashrc"
+  }
+ },
+ {
+  "tool": "Read",
+  "input": {
+   "file_path": "~/.ssh/authorized_keys"
+  }
+ },
+ {
+  "tool": "Bash",
+  "command": "cat ~/.bashrc"
+ },
+ {
+  "tool": "Bash",
+  "command": "source ~/.bashrc"
+ },
+ {
+  "tool": "Bash",
+  "command": "grep alias ~/.zshrc"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Get-Content $PROFILE"
+ },
+ {
+  "tool": "PowerShell",
+  "command": ". $PROFILE"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm ~/projects/app/*.log"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm ~/Documents/report.txt"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm -f ~/.cache/*"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm ~/tmp/*"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm ./*.tmp"
+ },
+ {
+  "tool": "Bash",
+  "command": "ls ~/Documents/*"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Remove-Item $env:TEMP\\*"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Remove-Item C:\\Users\\alexa\\projects\\app\\build\\*",
+  "platform": "windows"
+ },
+ {
+  "tool": "Bash",
+  "command": "reg query HKLM\\SOFTWARE\\Vendor"
+ },
+ {
+  "tool": "Bash",
+  "command": "reg add HKCU\\Software\\MyApp /v Theme /d dark /f"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Set-ItemProperty -Path HKCU:\\Software\\MyApp -Name Theme -Value dark"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Get-ItemProperty 'HKLM:\\SOFTWARE\\Microsoft\\Windows Defender'"
+ },
+ {
+  "tool": "Bash",
+  "command": "sudo iptables -L -n"
+ },
+ {
+  "tool": "Bash",
+  "command": "iptables -A INPUT -p tcp --dport 22 -j ACCEPT"
+ },
+ {
+  "tool": "Bash",
+  "command": "sudo ufw status"
+ },
+ {
+  "tool": "Bash",
+  "command": "sudo ufw allow 22/tcp"
+ },
+ {
+  "tool": "Bash",
+  "command": "sudo nft list ruleset"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "netsh advfirewall show allprofiles"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "netsh advfirewall firewall add rule name=web dir=in action=allow protocol=TCP localport=8080"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Set-NetFirewallProfile -All -DefaultInboundAction Block"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Get-MpPreference"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Get-Service WinDefend"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Stop-Service -Name Spooler"
+ },
+ {
+  "tool": "Bash",
+  "command": "getenforce"
+ },
+ {
+  "tool": "Bash",
+  "command": "sudo systemctl restart nginx"
+ },
+ {
+  "tool": "Bash",
+  "command": "sudo systemctl stop postgresql"
+ },
+ {
+  "tool": "Bash",
+  "command": "mkcert localhost 127.0.0.1"
+ },
+ {
+  "tool": "Bash",
+  "command": "dotnet dev-certs https --check"
+ },
+ {
+  "tool": "Bash",
+  "command": "keytool -list -cacerts"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Import-Certificate -FilePath ca.cer -CertStoreLocation Cert:\\CurrentUser\\My"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "bcdedit /enum"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Get-Partition"
+ },
+ {
+  "tool": "Bash",
+  "command": "dd if=/dev/zero of=/dev/null bs=1M count=10"
+ },
+ {
+  "tool": "Bash",
+  "command": "dd if=disk.img of=backup.img"
+ },
+ {
+  "tool": "Bash",
+  "command": "lsblk -f"
+ },
+ {
+  "tool": "Bash",
+  "command": "diskutil list"
+ },
+ {
+  "tool": "Bash",
+  "command": "mkfs.ext4 --help"
+ },
+ {
+  "tool": "Bash",
+  "command": "git stash list"
+ },
+ {
+  "tool": "Bash",
+  "command": "git reflog"
+ },
+ {
+  "tool": "Bash",
+  "command": "git gc"
+ },
+ {
+  "tool": "Bash",
+  "command": "git update-ref refs/heads/main HEAD"
+ },
+ {
+  "tool": "Bash",
+  "command": "git worktree remove ../wt"
+ },
+ {
+  "tool": "Bash",
+  "command": "git worktree add ../wt main"
+ },
+ {
+  "tool": "Bash",
+  "command": "git submodule update --init --recursive"
+ },
+ {
+  "tool": "Bash",
+  "command": "git restore --staged '*'"
+ },
+ {
+  "tool": "Bash",
+  "command": "git push -u origin feature:feature"
+ },
+ {
+  "tool": "Bash",
+  "command": "git push origin --delete main --dry-run"
+ },
+ {
+  "tool": "Bash",
+  "command": "docker compose down"
+ },
+ {
+  "tool": "Bash",
+  "command": "docker compose up -d -v"
+ },
+ {
+  "tool": "Bash",
+  "command": "vercel project ls"
+ },
+ {
+  "tool": "Bash",
+  "command": "helm list"
+ },
+ {
+  "tool": "Bash",
+  "command": "helm upgrade --install app ./chart"
+ },
+ {
+  "tool": "Bash",
+  "command": "gcloud projects list"
+ },
+ {
+  "tool": "Bash",
+  "command": "az group list"
+ },
+ {
+  "tool": "Bash",
+  "command": "aws ec2 describe-instances"
+ },
+ {
+  "tool": "Bash",
+  "command": "aws s3 sync ./site s3://bucket"
+ },
+ {
+  "tool": "Bash",
+  "command": "gsutil ls gs://bucket"
+ },
+ {
+  "tool": "Bash",
+  "command": "pulumi preview"
+ },
+ {
+  "tool": "Bash",
+  "command": "cdk diff"
+ },
+ {
+  "tool": "Bash",
+  "command": "terraform state list"
+ },
+ {
+  "tool": "Bash",
+  "command": "terraform workspace select staging"
+ },
+ {
+  "tool": "Bash",
+  "command": "supabase db push"
  }
 ]

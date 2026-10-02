@@ -167,31 +167,43 @@ def test_dissonance_invalid_request(client, auth_headers) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 12. Anchor registration requires auth.
+# 12. Ledger check requires auth.
 # ---------------------------------------------------------------------------
-def test_anchor_requires_auth(client) -> None:
-    """/v1/anchor/register must require authentication."""
-    response = client.post("/v1/anchor/register", json={
-        "constraint_id": "test-1",
-        "constraint_data": {"key": "value"},
+def test_ledger_check_requires_auth(client) -> None:
+    """/v1/ledger/check must require authentication."""
+    response = client.post("/v1/ledger/check", json={
+        "tool_name": "Bash",
+        "tool_input": {"command": "git status"},
     })
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
 
 # ---------------------------------------------------------------------------
-# 13. Anchor registration with auth succeeds.
+# 13. Ledger check with auth succeeds.
 # ---------------------------------------------------------------------------
-def test_anchor_with_auth_succeeds(client, auth_headers) -> None:
-    """Authenticated anchor registration must succeed."""
+def test_ledger_check_with_auth_succeeds(
+    client, auth_headers, tmp_path, monkeypatch
+) -> None:
+    """An authenticated ledger check must return the gate's decision.
+
+    The command string is data for the gate; nothing runs it.  The ledger
+    and the Ember home are pointed into a temporary directory.
+    """
+    from ember_armor.core.config import SETTINGS
+
+    monkeypatch.setenv("EMBER_HOME", str(tmp_path / "ember-home"))
+    monkeypatch.delenv("EMBER_GATE_MODE", raising=False)
+    monkeypatch.delenv("EMBER_GATE_BUILTIN", raising=False)
+    monkeypatch.setattr(SETTINGS, "ledger_path", str(tmp_path / "ledger.json"))
     response = client.post(
-        "/v1/anchor/register",
+        "/v1/ledger/check",
         json={
-            "constraint_id": "test-1",
-            "constraint_data": {"key": "value"},
+            "tool_name": "Bash",
+            "tool_input": {"command": "git push --force origin main"},
         },
         headers=auth_headers,
     )
-    assert response.status_code == status.HTTP_201_CREATED
+    assert response.status_code == status.HTTP_200_OK
     data = response.json()
-    assert data["constraint_id"] == "test-1"
-    assert data["status"] == "registered"
+    assert data["decision"] == "ask"
+    assert [rule["id"] for rule in data["rules"]] == ["builtin.git.force-push"]

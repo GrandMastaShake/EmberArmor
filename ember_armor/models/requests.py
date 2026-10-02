@@ -45,30 +45,38 @@ class DissonanceCheckRequest(BaseModel):
         return v
 
 
-class TemporalAnchorRequest(BaseModel):
-    """Request to register a temporal constraint.
+class LedgerCheckRequest(BaseModel):
+    """A proposed tool call to check against the constraint ledger.
+
+    The fields are those of a Claude Code PreToolUse hook payload, so a host
+    can post that payload unchanged; other fields are ignored.
 
     Attributes:
-        constraint_id: Unique identifier for the constraint.
-        constraint_data: Arbitrary data defining the constraint.
-        ttl_seconds: Time-to-live in seconds (60 to 86400).
+        tool_name: Name of the tool the agent wants to call.
+        tool_input: The input the tool would be called with.
+        cwd: Working directory of the call.
+        session_id: Session identifier (used by history rules).
     """
 
-    constraint_id: str = Field(
+    tool_name: str = Field(
         ...,
         min_length=1,
         max_length=256,
-        description="Unique identifier for the constraint",
+        description="Name of the tool the agent wants to call",
     )
-    constraint_data: dict[str, Any] = Field(
-        ...,
-        description="Constraint definition data",
+    tool_input: dict[str, Any] = Field(
+        default_factory=dict,
+        description="The input the tool would be called with",
     )
-    ttl_seconds: int = Field(
-        default=3600,
-        ge=60,
-        le=86400,
-        description="Time-to-live in seconds (60 to 86400)",
+    cwd: str = Field(
+        default="",
+        max_length=4096,
+        description="Working directory of the call",
+    )
+    session_id: str = Field(
+        default="",
+        max_length=256,
+        description="Session identifier (used by history rules)",
     )
 
 

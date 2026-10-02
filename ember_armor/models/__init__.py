@@ -1,6 +1,6 @@
 """EmberArmor v2 — Pydantic request and response models."""
 
-from .requests import AuthRequest, DissonanceCheckRequest, TemporalAnchorRequest
+from .requests import AuthRequest, DissonanceCheckRequest, LedgerCheckRequest
 from .responses import (
     DissonanceCheckResponse,
     HealthResponse,
@@ -13,7 +13,7 @@ __all__ = [
     "DissonanceCheckRequest",
     "DissonanceCheckResponse",
     "HealthResponse",
+    "LedgerCheckRequest",
     "MetricsResponse",
     "SafetyLevel",
-    "TemporalAnchorRequest",
 ]

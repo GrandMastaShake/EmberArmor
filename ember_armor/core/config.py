@@ -100,6 +100,16 @@ class EmberSettings(BaseSettings):
     )
 
     # ------------------------------------------------------------------
+    # Constraint ledger
+    # Optional: the ledger file the /v1/ledger routes read.  If not set, the
+    # user ledger (~/.ember/ledger.json) and the project ledger are used.
+    # ------------------------------------------------------------------
+    ledger_path: str | None = Field(
+        default=None,
+        description="Ledger file read by the /v1/ledger routes (EMBER_LEDGER_PATH)",
+    )
+
+    # ------------------------------------------------------------------
     # Logging
     # ------------------------------------------------------------------
     log_level: str = "INFO"

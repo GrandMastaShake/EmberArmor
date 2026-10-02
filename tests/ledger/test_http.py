@@ -13,6 +13,7 @@ from typing import Any
 import pytest
 from fastapi import status
 
+from ember_armor.api.routes.ledger import GATE_FAILURE, LOAD_FAILURE
 from ember_armor.core.config import SETTINGS, EmberSettings
 from ember_armor.ledger.builtin import builtin_rules
 from tests.ledger.helpers import rule, write_ledger
@@ -28,6 +29,7 @@ def ledger(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("EMBER_HOME", str(tmp_path / "ember-home"))
     path = tmp_path / "ledger.json"
+    write_ledger(path)
     monkeypatch.setattr(SETTINGS, "ledger_path", str(path))
     return path
 
@@ -101,6 +103,7 @@ def test_check_uses_the_configured_ledger_and_quotes_the_rule(
             "text": "Never force-push here.",
             "source": "test suite",
             "effect": "deny",
+            "origin": "override",
         }
     ]
     call["tool_input"]["amount"] = 5
@@ -144,11 +147,45 @@ def test_a_broken_ledger_follows_the_gate_failure_rules(
     call = bash("git status")
     data = client.post("/v1/ledger/check", json=call, headers=auth_headers).json()
     assert (data["decision"], data["mode"]) == ("none", "observe")
-    assert "not valid JSON" in data["error"]
+    assert data["error"] == GATE_FAILURE
     monkeypatch.setenv("EMBER_GATE_MODE", "enforce")
     data = client.post("/v1/ledger/check", json=call, headers=auth_headers).json()
     assert (data["decision"], data["mode"]) == ("ask", "enforce")
-    assert "not valid JSON" in data["error"]
+    assert data["error"] == GATE_FAILURE
+    # The built-in rules are still applied.
+    call = bash("rm -rf /")
+    data = client.post("/v1/ledger/check", json=call, headers=auth_headers).json()
+    assert (data["decision"], data["error"]) == ("deny", GATE_FAILURE)
+
+
+def test_no_ledger_is_read_from_a_directory_named_in_the_request(
+    client, auth_headers, ledger, tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setattr(SETTINGS, "ledger_path", None)
+    project = tmp_path / "repo"
+    write_ledger(project / ".ember" / "ledger.json", rule("planted"))
+    looked: list[str] = []
+    is_file = Path.is_file
+
+    def record(self: Path) -> bool:
+        looked.append(str(self))
+        return is_file(self)
+
+    monkeypatch.setattr(Path, "is_file", record)
+    for cwd in (str(project), "\\\\198.51.100.7\\share\\a"):
+        call = bash("git push --force", cwd=cwd)
+        data = client.post("/v1/ledger/check", json=call, headers=auth_headers).json()
+        assert [fired["id"] for fired in data["rules"]] == ["builtin.git.force-push"]
+    rules = client.get("/v1/ledger/rules", headers=auth_headers).json()["rules"]
+    assert "planted" not in [item["id"] for item in rules]
+    assert not [path for path in looked if ".ember" in path and "repo" in path]
+    assert not [path for path in looked if "198.51.100.7" in path]
+
+
+def test_an_oversized_tool_input_is_refused(client, auth_headers, ledger) -> None:
+    call = {"tool_name": "mcp__x__y", "tool_input": {"k": "a-" * 200_000}}
+    response = client.post("/v1/ledger/check", json=call, headers=auth_headers)
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
 
 # ---------------------------------------------------------------------------
@@ -180,7 +217,8 @@ def test_rules_report_a_broken_ledger(client, auth_headers, ledger) -> None:
     ledger.write_text('{"version": 1, "rules": [{"id": "x"}]}', encoding="utf-8")
     response = client.get("/v1/ledger/rules", headers=auth_headers)
     assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
-    assert "missing field(s)" in response.json()["detail"]
+    # Fixed words: file paths and parser messages stay in the server log.
+    assert response.json() == {"detail": LOAD_FAILURE}
 
 
 def test_the_setting_is_read_from_the_environment(monkeypatch) -> None:
@@ -236,4 +274,4 @@ def test_lint_reports_a_broken_ledger(client, auth_headers, ledger) -> None:
     ledger.write_text("{broken", encoding="utf-8")
     response = client.post("/v1/ledger/lint", headers=auth_headers)
     assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
-    assert "not valid JSON" in response.json()["detail"]
+    assert response.json() == {"detail": LOAD_FAILURE}

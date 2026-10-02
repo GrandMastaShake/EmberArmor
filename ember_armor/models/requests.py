@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
+
+#: Largest tool input the ledger routes evaluate, as serialised JSON.
+MAX_TOOL_INPUT_CHARS = 300_000
 
 
 class DissonanceCheckRequest(BaseModel):
@@ -78,6 +82,16 @@ class LedgerCheckRequest(BaseModel):
         max_length=256,
         description="Session identifier (used by history rules)",
     )
+
+    @field_validator("tool_input")
+    @classmethod
+    def _validate_tool_input_size(cls, v: dict[str, Any]) -> dict[str, Any]:
+        """Refuse a tool input too large to be a real call."""
+        if len(json.dumps(v, default=str)) > MAX_TOOL_INPUT_CHARS:
+            raise ValueError(
+                f"tool_input is larger than {MAX_TOOL_INPUT_CHARS} characters"
+            )
+        return v
 
 
 class AuthRequest(BaseModel):

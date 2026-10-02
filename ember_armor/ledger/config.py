@@ -5,10 +5,11 @@ tests never touch the real home directory.  ``EMBER_HOME`` replaces
 ``~/.ember``.
 
 ``config.json`` in the Ember home may hold ``mode`` (``observe`` or
-``enforce``), ``builtin`` (``false`` switches the built-in pack off) and
+``enforce``), ``builtin`` (``false`` switches the built-in pack off),
 ``disposable`` (directory patterns the built-in delete rules leave alone, in
-addition to the pack's own list).  Anything else is an error: a misspelt
-setting must not be read as "not set".
+addition to the pack's own list) and ``shell_tools`` (tools whose input
+carries a shell command, see :func:`shell_tools`).  Anything else is an
+error: a misspelt setting must not be read as "not set".
 """
 
 from __future__ import annotations
@@ -19,7 +20,9 @@ from pathlib import Path
 from typing import Any
 
 MODES = ("observe", "enforce")
-_SETTINGS = ("mode", "builtin", "disposable")
+SHELLS = ("bash", "powershell", "cmd", "native")
+_SETTINGS = ("mode", "builtin", "disposable", "shell_tools")
+_SHELL_TOOL_KEYS = ("shell", "field", "cwd")
 _FALSE_WORDS = frozenset({"0", "false", "no", "off"})
 
 
@@ -54,7 +57,30 @@ def _validate(config: Any, path: Path) -> dict[str, Any]:
         isinstance(pattern, str) and pattern for pattern in patterns
     ):
         raise ConfigError(f"{path}: 'disposable' must be a list of path patterns")
+    _validate_shell_tools(config.get("shell_tools", {}), path)
     return config
+
+
+def _validate_shell_tools(tools: Any, path: Path) -> None:
+    where = f"{path}: 'shell_tools'"
+    if not isinstance(tools, dict):
+        raise ConfigError(f"{where} must map tool names to objects")
+    for name, entry in tools.items():
+        if not name or not isinstance(entry, dict):
+            raise ConfigError(f"{where}: {name!r} must be an object with a 'shell'")
+        unknown = sorted(set(entry) - set(_SHELL_TOOL_KEYS))
+        if unknown:
+            raise ConfigError(
+                f"{where}: {name!r} has unknown key(s) {', '.join(unknown)} "
+                f"(known: {', '.join(_SHELL_TOOL_KEYS)})"
+            )
+        if entry.get("shell") not in SHELLS:
+            raise ConfigError(
+                f"{where}: {name!r} needs 'shell', one of {', '.join(SHELLS)}"
+            )
+        for key in ("field", "cwd"):
+            if not isinstance(entry.get(key, "x"), str) or entry.get(key) == "":
+                raise ConfigError(f"{where}: {name!r}: '{key}' must be a field name")
 
 
 def read_config(env: Mapping[str, str]) -> dict[str, Any]:
@@ -108,6 +134,19 @@ def builtin_enabled(env: Mapping[str, str]) -> bool:
     if flag is not None:
         return flag.strip().lower() not in _FALSE_WORDS
     return bool(read_config(env).get("builtin", True))
+
+
+def shell_tools(env: Mapping[str, str]) -> dict[str, dict[str, str]]:
+    """The user's shell-carrying tools (``shell_tools`` in ``config.json``).
+
+    Maps a tool name or glob to ``shell`` (``bash``, ``powershell``, ``cmd``
+    or ``native``: PowerShell on Windows, Bash elsewhere), ``field`` (the
+    input field that holds the command, ``command`` when left out) and
+    optionally ``cwd`` (the input field that names the directory the command
+    starts in).  The command of such a tool is parsed like that of the
+    native shell tools.
+    """
+    return dict(read_config(env).get("shell_tools", {}))
 
 
 def disposable_patterns(env: Mapping[str, str]) -> tuple[str, ...]:

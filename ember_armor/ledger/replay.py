@@ -25,6 +25,7 @@ from typing import Any
 from ember_armor.ledger.audit import restore, summarise
 from ember_armor.ledger.engine import MemoryHistory, evaluate
 from ember_armor.ledger.facts import extract
+from ember_armor.ledger.gate import configured_shell_tools
 from ember_armor.ledger.model import Rule
 from ember_armor.ledger.store import load_rules
 
@@ -200,6 +201,7 @@ def replay(
     """
     env = os.environ if env is None else env
     report = ReplayReport()
+    carriers = configured_shell_tools(env)
     rules_by_cwd: dict[str, list[Rule]] = {}
     histories: dict[str, MemoryHistory] = {}
     seen: set[str] = set()
@@ -217,7 +219,7 @@ def replay(
             report.calls += 1
             report.tools[call["tool_name"]] += 1
             try:
-                facts = extract(call, windows=windows, env=env)
+                facts = extract(call, windows=windows, env=env, shell_tools=carriers)
                 decision = evaluate(rules_by_cwd[cwd], facts, history, now=when)
                 summary = summarise(facts)
             except Exception:  # one bad call must not end the replay

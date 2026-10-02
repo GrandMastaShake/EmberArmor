@@ -18,9 +18,9 @@ from datetime import datetime
 from typing import Any
 
 from ember_armor.ledger.audit import AuditLog, summarise
-from ember_armor.ledger.config import ember_home, gate_mode
+from ember_armor.ledger.config import ConfigError, ember_home, gate_mode, shell_tools
 from ember_armor.ledger.engine import History, evaluate
-from ember_armor.ledger.facts import Facts, extract
+from ember_armor.ledger.facts import Facts, ShellTool, extract, shell_tools_from
 from ember_armor.ledger.model import SEVERITY, Decision
 from ember_armor.ledger.redact import MAX_TEXT
 from ember_armor.ledger.store import active_rules, load_sources
@@ -54,6 +54,18 @@ class GateResult:
 def audit_log(env: Mapping[str, str]) -> AuditLog:
     """The audit log under the Ember home of *env*."""
     return AuditLog(ember_home(env) / "audit")
+
+
+def configured_shell_tools(env: Mapping[str, str]) -> dict[str, ShellTool]:
+    """The user's shell-carrying tools; none when the configuration is unreadable.
+
+    The unreadable configuration itself is reported where the rules are
+    loaded, so it is not reported a second time here.
+    """
+    try:
+        return shell_tools_from(shell_tools(env))
+    except ConfigError:
+        return {}
 
 
 def _failure(mode: str, error: str, earlier: Decision | None = None) -> Decision:
@@ -142,7 +154,9 @@ def check(
             raise ValueError(problem)
         if not isinstance(call, Mapping):
             raise ValueError("tool call is not a JSON object")
-        facts = extract(call, windows=windows, env=env)
+        facts = extract(
+            call, windows=windows, env=env, shell_tools=configured_shell_tools(env)
+        )
         rules, unloaded = load_sources(str(call.get("cwd") or ""), env, project=project)
         decision = evaluate(
             active_rules(rules, moment.date()),

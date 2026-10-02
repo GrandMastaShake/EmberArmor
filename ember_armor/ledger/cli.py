@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from ember_armor.ledger import hook, store
-from ember_armor.ledger.gate import audit_log, check
+from ember_armor.ledger.gate import audit_log, check, configured_shell_tools
 from ember_armor.ledger.model import LedgerError, parse_predicate
 
 EXIT_OK = 0
@@ -173,7 +173,7 @@ def _cmd_lint(args: argparse.Namespace) -> int:
 
     rules = store.load_all(args.cwd or os.getcwd(), os.environ)
     try:
-        findings = lint(rules)
+        findings = lint(rules, shell_tools=configured_shell_tools(os.environ))
     except SolverUnavailableError as exc:
         print(f"ember-gate: {exc}", file=sys.stderr)
         return EXIT_NO_SOLVER

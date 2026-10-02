@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from ember_armor.ledger.engine import PastCall
-from ember_armor.ledger.facts import FILE_TOOLS, Facts, shell_of
+from ember_armor.ledger.facts import FILE_TOOLS, Facts, shell_tool
 from ember_armor.ledger.redact import (
     MAX_ITEMS,
     MAX_TEXT,
@@ -95,7 +95,7 @@ def summarise(facts: Facts) -> dict[str, Any]:
     if facts.tool in FILE_TOOLS:
         key = FILE_TOOLS[facts.tool][0]
         summary["args"] = redact_value({key: facts.args.get(key)})
-    elif shell_of(facts.tool) is None:
+    elif not facts.shell and shell_tool(facts.tool) is None:
         summary["args"] = redact_value(facts.args)
     return summary
 

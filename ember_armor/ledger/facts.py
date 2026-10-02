@@ -12,6 +12,7 @@ import os
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from fnmatch import fnmatchcase
 from typing import Any
 
 from ember_armor.ledger.paths import PATH_VARIABLES, Lookup, normalize
@@ -24,13 +25,30 @@ from ember_armor.ledger.shell import (
 )
 from ember_armor.ledger.shellpaths import PathFact, shell_paths
 
-#: Tools whose ``command`` input is a shell string, and the shell that reads it.
+
+@dataclass(frozen=True)
+class ShellTool:
+    """How a tool carries a shell command.
+
+    ``shell`` is ``bash``, ``powershell``, ``cmd`` or ``native`` (PowerShell
+    on Windows, Bash elsewhere); ``field`` is the input field that holds the
+    command; ``cwd`` optionally names the input field with the directory the
+    command starts in.
+    """
+
+    shell: str
+    field: str = "command"
+    cwd: str = ""
+
+
+#: Tools whose input is a shell string, by name (any letter case) or glob.
+#: ``shell_tools`` in ``config.json`` adds to them.
 SHELL_TOOLS = {
-    "Bash": "bash",
-    "PowerShell": "powershell",
-    "mcp__Windows-MCP__PowerShell": "powershell",
+    "Bash": ShellTool("bash"),
+    "PowerShell": ShellTool("powershell"),
+    "mcp__Windows-MCP__PowerShell": ShellTool("powershell"),
+    "mcp__terminal__run_in_terminal": ShellTool("native", cwd="cwd"),
 }
-_SHELLS_BY_TOOL = {name.lower(): shell for name, shell in SHELL_TOOLS.items()}
 #: A longer path is not matched against rules; the call is marked instead.
 MAX_PATH_CHARS = 1024
 _MAX_ALTERNATIVES = 64
@@ -58,7 +76,8 @@ class Facts:
     ``windows`` is the path flavour, ``home`` the normalised home directory
     and ``variables`` the upper-cased variables that path patterns may use.
     ``assigned`` names the variables the shell input sets (see
-    :func:`assigned_names`).
+    :func:`assigned_names`) and ``shell`` the shell whose command the tool
+    carries (empty for any other tool).
     """
 
     tool: str
@@ -70,13 +89,30 @@ class Facts:
     paths: tuple[PathFact, ...] = ()
     dynamic: tuple[Dynamic, ...] = ()
     assigned: tuple[str, ...] = ()
+    shell: str = ""
     args: Mapping[str, Any] = field(default_factory=dict)
     variables: Mapping[str, str] = field(default_factory=dict)
 
 
-def shell_of(tool: str) -> str | None:
-    """Shell that reads the ``command`` of *tool* (any letter case), if any."""
-    return _SHELLS_BY_TOOL.get(tool.lower())
+def shell_tools_from(config: Mapping[str, Mapping[str, str]]) -> dict[str, ShellTool]:
+    """The ``shell_tools`` setting of ``config.json`` as :class:`ShellTool`."""
+    return {name: ShellTool(**entry) for name, entry in config.items()}
+
+
+def shell_tool(
+    tool: str, extra: Mapping[str, ShellTool] | None = None
+) -> ShellTool | None:
+    """How *tool* carries a shell command, if it does.
+
+    The user's entries (*extra*) are tried first, then :data:`SHELL_TOOLS`.
+    Names are compared in any letter case and may be globs.
+    """
+    lowered = tool.lower()
+    for known in (extra or {}, SHELL_TOOLS):
+        for name, spec in known.items():
+            if fnmatchcase(lowered, name.lower()):
+                return spec
+    return None
 
 
 def path_variables(env: Mapping[str, str]) -> dict[str, str]:
@@ -185,6 +221,7 @@ def extract(
     *,
     windows: bool | None = None,
     env: Mapping[str, str] | None = None,
+    shell_tools: Mapping[str, ShellTool] | None = None,
 ) -> Facts:
     """Extract facts from a tool call.
 
@@ -198,6 +235,8 @@ def extract(
     env:
         Environment used for ``~`` and variables such as ``$HOME`` or
         ``$env:TEMP``.  Defaults to the process environment.
+    shell_tools:
+        The user's shell-carrying tools, in addition to :data:`SHELL_TOOLS`.
 
     Raises
     ------
@@ -222,11 +261,22 @@ def extract(
     dynamic: tuple[Dynamic, ...] = ()
     assigned: tuple[str, ...] = ()
     paths: list[PathFact] = []
-    shell = shell_of(tool)
-    if shell is not None:
-        command = tool_input.get("command")
+    shell = ""
+    carrier = shell_tool(tool, shell_tools)
+    if carrier is not None:
+        command = tool_input.get(carrier.field)
         if not isinstance(command, str):
-            raise ValueError(f"{tool} call has no command string")
+            raise ValueError(
+                f"{tool} call has no command string (field {carrier.field!r})"
+            )
+        shell = carrier.shell
+        if shell == "native":
+            shell = "powershell" if windows else "bash"
+        start = tool_input.get(carrier.cwd) if carrier.cwd else None
+        if not isinstance(start, str) or not start:
+            start = cwd
+        else:
+            start = normalize(start, cwd, windows=windows, home=home)
         parsed = parse_shell(command, shell)
         overlong = False
 
@@ -249,7 +299,7 @@ def extract(
                 for text in _alternatives(raw, parsed.choices, fold)
             ]
 
-        paths = shell_paths(parsed, cwd, resolve, home)
+        paths = shell_paths(parsed, start, resolve, home)
         commands, dynamic = tuple(parsed.commands), tuple(parsed.dynamic)
         assigned = assigned_names(parsed)
         if overlong:
@@ -279,6 +329,7 @@ def extract(
         paths=tuple(paths),
         dynamic=dynamic,
         assigned=assigned,
+        shell=shell,
         args=tool_input,
         variables=variables,
     )

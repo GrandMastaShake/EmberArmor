@@ -124,9 +124,10 @@ def _describe(scope: Applies) -> str:
 class _Model:
     """Symbolic description of one arbitrary tool call."""
 
-    def __init__(self, z3: Any, windows: bool) -> None:
+    def __init__(self, z3: Any, windows: bool, carriers: tuple[str, ...]) -> None:
         self.z3 = z3
         self.windows = windows
+        self.carriers = tuple(name.lower() for name in (*SHELL_TOOLS, *carriers))
         self.tools: dict[str, Any] = {}
         self.directories: dict[tuple[str, str | None], Any] = {}
         self.commands: dict[CommandPred, Any] = {}
@@ -248,7 +249,19 @@ class _Model:
                 known.append(z3.Implies(atom_a, atom_b))
             else:
                 known.append(z3.Not(z3.And(atom_a, atom_b)))
-        shell = z3.Or([self.tools[name] for name in SHELL_TOOLS])
+        # A shell tool is one of the known names, a name the user listed,
+        # or (when the user listed globs) some tool no rule names.
+        named = [
+            atom
+            for name, atom in self.tools.items()
+            if any(fnmatchcase(name.lower(), carrier) for carrier in self.carriers)
+        ]
+        other = z3.Bool("tool:another shell tool")
+        if len(self.carriers) == len(SHELL_TOOLS):
+            known.append(z3.Not(other))
+        literal = [a for n, a in self.tools.items() if not set(n) & set("*?[")]
+        known += [z3.Not(z3.And(other, atom)) for atom in literal]
+        shell = z3.Or(*named, other)
         files = z3.Or(shell, *[self.tools[name] for name in FILE_TOOLS])
         for atom in (*self.commands.values(), *self.kinds.values()):
             known.append(z3.Implies(atom, shell))
@@ -294,9 +307,11 @@ class _Model:
 class _Linter:
     """Runs the four checks on the encoded rules."""
 
-    def __init__(self, z3: Any, rules: list[Rule], windows: bool) -> None:
+    def __init__(
+        self, z3: Any, rules: list[Rule], windows: bool, carriers: tuple[str, ...]
+    ) -> None:
         self.z3 = z3
-        self.model = _Model(z3, windows)
+        self.model = _Model(z3, windows, carriers)
         self.cases = [self._case(rule) for rule in rules]
         self.solver = z3.Solver()
         self.solver.set("timeout", TIMEOUT_MS)
@@ -462,7 +477,11 @@ class _Linter:
 
 
 def lint(
-    rules: Iterable[Rule], *, windows: bool | None = None, today: date | None = None
+    rules: Iterable[Rule],
+    *,
+    windows: bool | None = None,
+    today: date | None = None,
+    shell_tools: Iterable[str] = (),
 ) -> list[Finding]:
     """Check a ledger for dead, blanket, shadowed and contradictory rules.
 
@@ -477,6 +496,9 @@ def lint(
         Path flavour for comparing path patterns; defaults to the platform.
     today:
         Rules that expired before this date are ignored; defaults to today.
+    shell_tools:
+        Names and globs of the user's shell-carrying tools (``shell_tools``
+        in ``config.json``): command predicates can hold for them too.
 
     Raises
     ------
@@ -493,4 +515,4 @@ def lint(
     day = today or date.today()
     live = [rule for rule in rules if rule.expires is None or day <= rule.expires]
     flavour = os.name == "nt" if windows is None else windows
-    return _Linter(z3, live, flavour).run()
+    return _Linter(z3, live, flavour, tuple(shell_tools)).run()

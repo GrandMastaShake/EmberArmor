@@ -25,6 +25,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from ember_armor.api.auth import get_current_auth
 from ember_armor.core.config import SETTINGS
 from ember_armor.ledger import LedgerError, Rule, check, load_all
+from ember_armor.ledger.gate import configured_shell_tools
 from ember_armor.ledger.lint import SolverUnavailableError, lint
 from ember_armor.models.requests import LedgerCheckRequest
 from ember_armor.utils.logging import logger
@@ -128,7 +129,8 @@ def lint_ledger(auth: str = Depends(get_current_auth)) -> dict[str, Any]:
     rules = _load()
     try:
         with _LINT_LOCK:
-            findings = lint(rules)
+            carriers = configured_shell_tools(_ledger_env())
+            findings = lint(rules, shell_tools=carriers)
     except SolverUnavailableError as exc:
         raise HTTPException(
             status_code=status.HTTP_501_NOT_IMPLEMENTED, detail=str(exc)

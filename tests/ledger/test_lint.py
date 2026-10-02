@@ -145,7 +145,6 @@ DEAD_CASES = [
     {"type": "all", "of": [arg("env", "==", "prod"), arg("env", "==", "dev")]},
     {"type": "all", "of": [arg("env", "in", ["a", "b"]), arg("env", "==", "c")]},
     {"type": "all", "of": [arg("n", "in", [1, 2]), arg("n", ">", 2)]},
-    arg("amount", ">", "5"),
     arg("env", "in", []),
     {
         "type": "all",
@@ -292,15 +291,18 @@ def test_relative_patterns_of_different_ledgers_are_not_compared() -> None:
 
 
 def test_command_refinement_is_shadowed_by_a_built_in_rule() -> None:
-    when = {
+    loose = {
         "type": "command",
         "program": "git",
         "subcommand": ["push", "origin"],
         "flags_any": ["--force"],
     }
+    when = {**loose, "flags_none": ["-n", "--dry-run", "--help", "-h"]}
     findings = lint([*builtin_rules(), make("mine", when, effect="ask")])
     assert kinds(findings) == [("shadowed", ("mine", "builtin.git.force-push"))]
     assert lint([*builtin_rules(), make("mine", when, effect="deny")]) == []
+    # Without the exceptions it also fires on a dry run, which the pack skips.
+    assert lint([*builtin_rules(), make("mine", loose, effect="ask")]) == []
 
 
 def test_of_two_equivalent_rules_only_the_later_one_is_reported() -> None:
@@ -410,3 +412,73 @@ def test_cli_reports_a_malformed_ledger(cli_env, capsys, tmp_path) -> None:
     (tmp_path / "ledger.json").write_text("{not json", encoding="utf-8")
     assert cli.main(["lint"]) == 1
     assert "not valid JSON" in capsys.readouterr().err
+
+
+# ---------------------------------------------------------------------------
+# Findings must hold on every call
+# ---------------------------------------------------------------------------
+def test_the_working_directory_is_not_under_the_posix_root_on_windows() -> None:
+    root = {"cwd_under": ["/"]}
+    rules = [
+        make("here-no-foo", {"type": "command", "program": "foo"},
+             applies={"cwd_under": ["."]}),
+        make("cap", arg("amount", ">", 5), applies=root),
+        make("floor", require=arg("amount", ">", 5), applies=root),
+    ]  # fmt: skip
+    # On Windows a working directory such as C:/proj is never under "/".
+    scopes = [finding.scope for finding in lint(rules, windows=True)]
+    assert [scope.cwd_under for scope in scopes if scope] == [("/",)]
+    # On POSIX every directory is: the narrower scope is the one reported.
+    scopes = [finding.scope for finding in lint(rules, windows=False)]
+    assert [scope.cwd_under for scope in scopes if scope] == [(".",)]
+
+
+@pytest.mark.parametrize(
+    ("inner", "outer"),
+    [
+        (path(op="write", under=["src"]), path(op="write", under=["/"])),
+        (path(op="read", under=["~/.ssh"]), path(op="read", under=["/"])),
+        (path(op="read", under=["$TEMP/x"]), path(op="read", under=["/"])),
+    ],
+)
+def test_relative_and_home_paths_are_not_under_the_posix_root_on_windows(
+    inner, outer
+) -> None:
+    rules = [make("inner", inner), make("outer", outer)]
+    assert lint(rules, windows=True) == []
+    assert kinds(lint(rules, windows=False)) == [("shadowed", ("inner", "outer"))]
+
+
+def test_fractional_coefficients_are_compared_as_the_engine_computes_them() -> None:
+    tenths = {"type": "expr", "lhs": {"x": 0.1, "y": 0.2}, "op": "<=", "rhs": 0.3}
+    units = {"type": "expr", "lhs": {"x": 1, "y": 2}, "op": "<=", "rhs": 3}
+    # x = y = 1 fires "units" only: the floats 0.1 and 0.2 sum to more than
+    # 0.3.  So "units" is not shadowed by "tenths"; the reverse does hold.
+    assert kinds(lint([make("tenths", tenths), make("units", units)])) == [
+        ("shadowed", ("tenths", "units"))
+    ]
+    halves = {"type": "expr", "lhs": {"x": 0.5, "y": 1}, "op": "<=", "rhs": 1.5}
+    assert kinds(lint([make("halves", halves), make("units", units)])) == [
+        ("shadowed", ("units", "halves"))
+    ]
+
+
+def test_a_contradiction_among_unconfirmed_rules_says_so() -> None:
+    rules = [
+        make("cap", CAP, applies=TRANSFER, confirmed=False),
+        make("floor", require=FLOOR, applies=TRANSFER),
+    ]
+    (finding,) = lint(rules)
+    assert finding.message == (
+        "deny rules cap, floor together deny every call for tool transfer "
+        "(once confirmed: cap can only warn until then)"
+    )
+
+
+def test_exceptions_on_a_command_block_the_implication() -> None:
+    push = {"type": "command", "program": "git", "subcommand": ["push"]}
+    careful = {**push, "flags_none": ["--dry-run"]}
+    assert kinds(lint([make("careful", careful), make("push", push)])) == [
+        ("shadowed", ("careful", "push"))
+    ]
+    assert lint([make("push", push, effect="ask"), make("careful", careful)]) == []

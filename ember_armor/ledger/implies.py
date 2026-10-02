@@ -14,7 +14,9 @@ from collections.abc import Sequence
 from ember_armor.ledger.model import CommandPred, PathPred
 from ember_armor.ledger.paths import is_under, resolve_pattern
 
-_CWD = "/\x00cwd"
+#: Paths that stand in for directories lint cannot know start with this.
+_UNKNOWN = "/\x00"
+_CWD = f"{_UNKNOWN}cwd"
 _WILDCARDS = "*?["
 
 
@@ -35,7 +37,7 @@ def resolved(
         return None
     if text.startswith("~") or "$" in text or "%" in text:
         root = base.encode("utf-8").hex() if base else "cwd"
-        return f"/\x00var-{root}/{text.strip('/')}"
+        return f"{_UNKNOWN}var-{root}/{text.strip('/')}"
     return resolve_pattern(pattern, base or _CWD, windows=windows, bare_anywhere=bare)
 
 
@@ -44,6 +46,9 @@ def directory_inside(inner: str | None, outer: str | None, *, windows: bool) -> 
 
     Both are patterns from :func:`resolved`.  A pattern with wildcards is
     only compared when both start with ``**/``, or when the two are equal.
+    A pattern below the working directory, the home directory or a variable
+    is somewhere lint does not know: it is inside a fixed directory only
+    when that directory is ``/`` on POSIX, where everything is.
     """
     if inner is None or outer is None:
         return False
@@ -53,6 +58,8 @@ def directory_inside(inner: str | None, outer: str | None, *, windows: bool) -> 
         inner = inner[3:]
     if any(char in inner for char in _WILDCARDS):
         return False
+    if inner.startswith(_UNKNOWN) and not outer.startswith(("**/", _UNKNOWN)):
+        return outer == "/" and not windows
     return is_under(inner, outer, windows=windows)
 
 
@@ -82,6 +89,19 @@ def command_implies(a: CommandPred, b: CommandPred) -> bool:
     ):
         return False
     if not all(f in a.flags_all or a.flags_any == (f,) for f in b.flags_all):
+        return False
+    # *a* must rule out at least what *b* rules out.  The argument fields
+    # look at what follows the subcommand, so they compare for the same one.
+    if not set(b.flags_none) <= set(a.flags_none):
+        return False
+    same_arguments = a.subcommand == b.subcommand
+    if b.args_none_glob and not (
+        same_arguments and set(b.args_none_glob) <= set(a.args_none_glob)
+    ):
+        return False
+    if b.args_regex is not None and not (
+        same_arguments and a.args_regex == b.args_regex
+    ):
         return False
     return not b.args_any_glob or (
         bool(a.args_any_glob) and set(a.args_any_glob) <= set(b.args_any_glob)
@@ -123,6 +143,10 @@ def path_implies(
         return False
     a_excluded = texts(a.not_under, base_a)
     if not all(inside(n, a_excluded) for n in texts(b.not_under, base_b)):
+        return False
+    a_spared = texts(a.not_glob, base_a, True)
+    b_spared = texts(b.not_glob, base_b, True)
+    if not all(g is not None and g in a_spared for g in b_spared):
         return False
     return not b_glob or (
         bool(a_glob) and all(g is not None and g in b_glob for g in a_glob)

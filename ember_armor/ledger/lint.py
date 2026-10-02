@@ -14,8 +14,9 @@ symbolically:
 
 Every finding is an "unsatisfiable" answer from the solver.  Because the
 atoms allow more calls than can really happen, a finding is certain and a
-clean result is not a proof.  Non-finite numbers and floating-point rounding
-are not modelled.
+clean result is not a proof.  Numbers are the exact values of the floats
+the rules hold, as in the engine.  Non-finite arguments (``1e999``) are not
+modelled.
 
 Z3 is imported lazily inside :func:`lint`; it comes with the optional
 ``smt`` extra.
@@ -152,7 +153,7 @@ class _Model:
         return self.values[name]
 
     def _real(self, number: float) -> Any:
-        fraction = Fraction(str(number))
+        fraction = Fraction(number)
         return self.z3.Q(fraction.numerator, fraction.denominator)
 
     def _equal(self, name: str, constant: Any) -> Any:
@@ -190,9 +191,6 @@ class _Model:
 
     def _expr(self, pred: ExprPred) -> Any:
         z3 = self.z3
-        numbers = [coefficient for _, coefficient in pred.lhs] + [pred.rhs]
-        if not all(math.isfinite(number) for number in numbers):
-            return self._atom(self.opaque, repr(pred), "expr")
         terms = [self._real(c) * self._value(name)[2] for name, c in pred.lhs]
         numeric = [self._value(name)[1] for name, _ in pred.lhs]
         compared = _COMPARE[pred.op](z3.Sum(terms), self._real(pred.rhs))
@@ -427,6 +425,16 @@ class _Linter:
                 else f"deny rule {ids[0]} denies"
             )
             message = f"{subject} every call {where}"
+            unconfirmed = [
+                case.rule.id
+                for case in cases
+                if case.rule.id in ids and not case.rule.confirmed
+            ]
+            if unconfirmed:
+                message += (
+                    f" (once confirmed: {', '.join(unconfirmed)} "
+                    "can only warn until then)"
+                )
             findings.append(Finding("contradiction", ids, message, scope))
         return findings
 

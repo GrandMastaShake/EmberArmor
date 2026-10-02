@@ -16,7 +16,6 @@ from pathlib import Path
 from typing import Any
 
 from ember_armor.ledger import hook, store
-from ember_armor.ledger.audit import summarise
 from ember_armor.ledger.gate import audit_log, check
 from ember_armor.ledger.model import LedgerError, parse_predicate
 
@@ -54,15 +53,7 @@ def _cmd_check(args: argparse.Namespace) -> int:
     result = check(call, record=False)
     decision = result.decision
     if args.json:
-        _print_json(
-            {
-                "decision": decision.effect,
-                "mode": result.mode,
-                "rules": [vars(rule) for rule in decision.fired],
-                "error": decision.error,
-                "call": summarise(result.facts) if result.facts else None,
-            }
-        )
+        _print_json(result.report())
         return EXIT_OK
     print(f"decision: {decision.effect} (mode: {result.mode})")
     for rule in decision.fired:

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from typing import Any
 
@@ -36,6 +36,16 @@ class GateResult:
         """True when the host must act on the decision (deny or ask, enforced)."""
         severe = SEVERITY[self.decision.effect] >= SEVERITY["ask"]
         return self.mode == "enforce" and severe
+
+    def report(self) -> dict[str, Any]:
+        """The result as JSON data, with the call redacted as in the audit log."""
+        return {
+            "decision": self.decision.effect,
+            "mode": self.mode,
+            "rules": [asdict(rule) for rule in self.decision.fired],
+            "error": self.decision.error,
+            "call": summarise(self.facts) if self.facts else None,
+        }
 
 
 def audit_log(env: Mapping[str, str]) -> AuditLog:

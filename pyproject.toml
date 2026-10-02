@@ -21,6 +21,9 @@ dependencies = [
     "python-jose[cryptography]>=3.3.0",
 ]
 
+[project.scripts]
+ember-gate = "ember_armor.ledger.cli:main"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",

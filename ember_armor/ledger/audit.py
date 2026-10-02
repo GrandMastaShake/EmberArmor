@@ -1,9 +1,11 @@
 """Hash-chained JSONL audit log of gate evaluations.
 
 One JSON object per line in ``<ember home>/audit/YYYY-MM.jsonl``.  Each entry
-carries the hash of the previous entry (``prev``) and its own ``hash``, so
-accidental damage and naive editing show up in :meth:`AuditLog.verify`.  That
-is not proof against someone with write access who recomputes the chain;
+carries the hash of the previous entry (``prev``) and its own ``hash``; the
+first entry links to a fixed genesis value and ``head`` holds the hash of
+the last one.  Accidental damage and naive editing, including entries
+removed from either end, then show up in :meth:`AuditLog.verify`.  That is
+not proof against someone with write access who recomputes the chain;
 nothing local can be.  Appends are serialised with a file lock that works on
 Windows and POSIX.
 """
@@ -23,8 +25,8 @@ from pathlib import Path
 from typing import Any
 
 from ember_armor.ledger.engine import PastCall
-from ember_armor.ledger.facts import FILE_TOOLS, SHELL_TOOLS, Facts
-from ember_armor.ledger.redact import MAX_ITEMS, redact_argv, redact_value
+from ember_armor.ledger.facts import FILE_TOOLS, Facts, shell_of
+from ember_armor.ledger.redact import MAX_ITEMS, redact_argv, redact_path, redact_value
 from ember_armor.ledger.shell import Dynamic, SimpleCommand
 from ember_armor.ledger.shellpaths import PathFact
 
@@ -34,6 +36,7 @@ else:
     import fcntl
 
 GENESIS = "0" * 64
+HEAD_NAME = "head"
 _TAIL_BLOCK = 65_536
 _HISTORY_FILES = 2
 
@@ -69,7 +72,11 @@ def summarise(facts: Facts) -> dict[str, Any]:
         ]
     if facts.paths:
         summary["paths"] = [
-            {"path": path.path, "op": path.op, "recursive": path.recursive}
+            {
+                "path": redact_path(path.path),
+                "op": path.op,
+                "recursive": path.recursive,
+            }
             for path in facts.paths[:MAX_ITEMS]
         ]
     if facts.dynamic:
@@ -80,7 +87,7 @@ def summarise(facts: Facts) -> dict[str, Any]:
     if facts.tool in FILE_TOOLS:
         key = FILE_TOOLS[facts.tool][0]
         summary["args"] = redact_value({key: facts.args.get(key)})
-    elif facts.tool not in SHELL_TOOLS:
+    elif shell_of(facts.tool) is None:
         summary["args"] = redact_value(facts.args)
     return summary
 
@@ -136,11 +143,7 @@ def _link_after(line: bytes) -> str:
 
 
 def _last_line(path: Path) -> bytes | None:
-    try:
-        handle = path.open("rb")
-    except FileNotFoundError:
-        return None
-    with handle:
+    with path.open("rb") as handle:
         size = handle.seek(0, os.SEEK_END)
         data = b""
         while size > 0:
@@ -207,18 +210,42 @@ class AuditLog:
             finally:
                 _unlock(handle)
 
-    def _previous_hash(self, target: Path) -> str:
-        candidates = [path for path in self.files() if path <= target]
-        for path in reversed(candidates):
+    def _head(self) -> str | None:
+        """Hash of the last entry as recorded at the last append, if any."""
+        try:
+            return (self.directory / HEAD_NAME).read_text(encoding="ascii").strip()
+        except (FileNotFoundError, ValueError):
+            return None
+
+    def _link(self, files: list[Path]) -> tuple[str, bool]:
+        """What the next entry links to, and whether a newline must come first.
+
+        Normally the hash of the last line.  When ``head`` names another
+        hash although that line is intact, entries were removed from the end
+        (or an append was cut short): the new entry then links to ``head``,
+        so the gap stays visible to :meth:`verify`.  A damaged last line is
+        linked to as it is; it is its own evidence.
+        """
+        for path in reversed(files):
             line = _last_line(path)
-            if line is not None:
-                return _link_after(line)
-        return GENESIS
+            if line is None:
+                continue
+            with path.open("rb") as handle:
+                handle.seek(-1, os.SEEK_END)
+                unfinished = path == files[-1] and handle.read(1) != b"\n"
+            head = self._head()
+            intact = _line_hash(line) is not None
+            link = head if intact and head else _link_after(line)
+            return link, unfinished
+        return self._head() or GENESIS, False
 
     def append(
         self, record: Mapping[str, Any], when: datetime | None = None
     ) -> dict[str, Any]:
         """Append one entry and return it with ``ts``, ``prev`` and ``hash``.
+
+        The entry goes to the file of its month, or to the newest file if
+        that is later: entries are never inserted before existing ones.
 
         Raises
         ------
@@ -230,11 +257,16 @@ class AuditLog:
         entry = {"ts": moment.isoformat(timespec="milliseconds"), **record}
         try:
             with self._locked():
-                entry["prev"] = self._previous_hash(target)
+                files = self.files()
+                target = max([target, *files[-1:]])
+                entry["prev"], unfinished = self._link(files)
                 entry["hash"] = entry_hash(entry)
                 line = json.dumps(entry, sort_keys=True, ensure_ascii=False)
                 with target.open("ab") as handle:
-                    handle.write(line.encode("utf-8") + b"\n")
+                    # After a line cut short by a crash, start a new one.
+                    handle.write(b"\n" * unfinished + line.encode("utf-8") + b"\n")
+                head = self.directory / HEAD_NAME
+                head.write_text(entry["hash"] + "\n", encoding="ascii")
         except AuditError:
             raise
         except OSError as exc:
@@ -255,7 +287,7 @@ class AuditLog:
     def verify(self) -> Verification:
         """Recompute the chain over every file and report what does not fit."""
         problems: list[str] = []
-        expected: str | None = None
+        expected = GENESIS
         count = 0
         for path in self.files():
             with path.open("rb") as handle:
@@ -270,11 +302,17 @@ class AuditLog:
                         problems.append(f"{where}: not a valid log entry")
                     else:
                         entry = json.loads(line)
-                        if expected is not None and entry.get("prev") != expected:
+                        if entry.get("prev") != expected:
                             problems.append(f"{where}: chain broken (prev mismatch)")
                         if entry_hash(entry) != stored:
                             problems.append(f"{where}: entry modified (hash mismatch)")
                     expected = _link_after(line)
+        head = self._head()
+        if head is not None and head != expected:
+            problems.append(
+                "head: the last entry is not the one recorded at the last append "
+                "(entries were removed from the end, or an append was cut short)"
+            )
         return Verification(count, tuple(problems))
 
     def earlier(self, session: str) -> list[PastCall]:
@@ -284,12 +322,21 @@ class AuditLog:
         ``enforce`` mode).  v0 does not know whether a call succeeded.
         """
         calls: list[PastCall] = []
-        for entry in self.entries(last_files=_HISTORY_FILES):
-            if entry.get("session") != session or "call" not in entry:
-                continue
-            if entry.get("mode") == "enforce" and entry.get("decision") == "deny":
-                continue
-            with contextlib.suppress(KeyError, TypeError, ValueError):
-                when = datetime.fromisoformat(entry["ts"]).timestamp()
-                calls.append(PastCall(when, restore(entry)))
+        # Only lines that mention the session are decoded: the cost of the
+        # rest of the log is one substring test per line.
+        marker = json.dumps(session, ensure_ascii=False).encode("utf-8")
+        needle = b'"session": ' + marker
+        for path in self.files()[-_HISTORY_FILES:]:
+            with path.open("rb") as handle:
+                for line in handle:
+                    if needle not in line:
+                        continue
+                    with contextlib.suppress(KeyError, TypeError, ValueError):
+                        entry = json.loads(line)
+                        if entry["session"] != session or "call" not in entry:
+                            continue
+                        if (entry["mode"], entry["decision"]) == ("enforce", "deny"):
+                            continue
+                        when = datetime.fromisoformat(entry["ts"]).timestamp()
+                        calls.append(PastCall(when, restore(entry)))
         return calls

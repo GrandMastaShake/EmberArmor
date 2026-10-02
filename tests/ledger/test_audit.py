@@ -132,13 +132,15 @@ def test_a_damaged_line_is_reported_and_appending_still_works(tmp_path: Path) ->
     assert [e["n"] for e in log.entries()] == [0, 1, 2, 3]
 
 
-def test_dropping_the_oldest_file_keeps_the_rest_verifiable(tmp_path: Path) -> None:
+def test_dropping_the_oldest_file_is_reported(tmp_path: Path) -> None:
     log = AuditLog(tmp_path)
     log.append(record(0), datetime(2026, 9, 1, tzinfo=UTC))
     log.append(record(1), OCTOBER)
     log.append(record(2), OCTOBER)
     log.files()[0].unlink()
-    assert log.verify().ok
+    result = log.verify()
+    assert result.entries == 2
+    assert result.problems == ("2026-10.jsonl:1: chain broken (prev mismatch)",)
 
 
 def test_concurrent_appends_from_threads_keep_the_chain_intact(tmp_path: Path) -> None:
@@ -242,10 +244,21 @@ REDACT_TEXT_CASES = [
     ("-----BEGIN RSA PRIVATE KEY-----\nMIIE\n-----END RSA PRIVATE KEY-----", REDACTED),
     ("git status", "git status"),
     ("C:/Users/dev/project/src/main.py", "C:/Users/dev/project/src/main.py"),
+    # A long hexadecimal string may be a commit id or an API key: redacted.
+    ("0123456789abcdef0123456789abcdef01234567", REDACTED),
+    ("a_long_snake_case_identifier_with_version_2",) * 2,
+    ("Cookie: session=Zq9abcdef0123456789", f"Cookie: {REDACTED}"),
     (
-        "0123456789abcdef0123456789abcdef01234567",
-        "0123456789abcdef0123456789abcdef01234567",
+        "https://example.com/file?sig=Zq9abcdef0123&se=2026",
+        f"https://example.com/file?sig={REDACTED}",
     ),
+    ("STRIPE_KEY=Zq9_live_abcdefgh", f"STRIPE_KEY={REDACTED}"),
+    (
+        "https://Zq9tokenvalue@github.com/a/b.git",
+        f"https://{REDACTED}@github.com/a/b.git",
+    ),
+    ("deploy --key Zq9hunter2 --region eu", f"deploy --key {REDACTED} --region eu"),
+    ("keyboard=qwerty monkey business", "keyboard=qwerty monkey business"),
 ]
 
 

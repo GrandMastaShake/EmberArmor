@@ -9,6 +9,7 @@ a rule that silently matches nothing.
 from __future__ import annotations
 
 import dataclasses
+import math
 import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -25,6 +26,8 @@ ARG_OPS = ("<", "<=", ">", ">=", "==", "!=", "in", "matches")
 EXPR_OPS = ("<", "<=", ">", ">=", "==", "!=")
 SHELLS = ("bash", "powershell", "any")
 BUILTIN_PREFIX = "builtin."
+#: Longest rule text and source quoted to the agent when a rule fires.
+REASON_CHARS = 400
 
 _ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,79}")
 
@@ -38,28 +41,42 @@ class LedgerError(ValueError):
 # ---------------------------------------------------------------------------
 @dataclass(frozen=True)
 class CommandPred:
-    """Matches one simple command of the parsed shell input."""
+    """Matches one simple command of the parsed shell input.
+
+    Every field must hold for the same command.  ``flags_none`` and
+    ``args_none_glob`` are the exceptions (a dry run, ``--help``).  The
+    argument fields look at what follows the subcommand; ``args_regex`` also
+    searches the command's here-document and the stage that pipes into it.
+    """
 
     program: tuple[str, ...] = ()
     subcommand: tuple[str, ...] = ()
     flags_any: tuple[str, ...] = ()
     flags_all: tuple[str, ...] = ()
+    flags_none: tuple[str, ...] = ()
     args_any_glob: tuple[str, ...] = ()
+    args_none_glob: tuple[str, ...] = ()
+    args_regex: str | None = None
     shell: str = "any"
+    regex: re.Pattern[str] | None = dataclasses.field(
+        default=None, compare=False, repr=False
+    )
 
 
 @dataclass(frozen=True)
 class PathPred:
     """Matches one path the call reads, writes or deletes.
 
-    ``recursive`` narrows a ``delete`` to recursive (``True``) or
-    non-recursive (``False``) deletions; ``None`` accepts both.
+    Every field must hold for the same path.  ``recursive`` narrows a
+    ``delete`` to recursive (``True``) or non-recursive (``False``)
+    deletions; ``None`` accepts both.
     """
 
     op: str = "any"
     under: tuple[str, ...] = ()
     not_under: tuple[str, ...] = ()
     glob: tuple[str, ...] = ()
+    not_glob: tuple[str, ...] = ()
     recursive: bool | None = None
 
 
@@ -191,12 +208,16 @@ class Rule:
 
 @dataclass(frozen=True)
 class FiredRule:
-    """A rule that fired for a call, with the effect it contributed."""
+    """A rule that fired for a call, with the effect it contributed.
+
+    ``origin`` names the ledger the rule came from (see :class:`Rule`).
+    """
 
     id: str
     text: str
     source: str
     effect: str
+    origin: str = "user"
 
 
 @dataclass(frozen=True)
@@ -208,12 +229,18 @@ class Decision:
     error: str | None = None
 
     def reason(self) -> str:
-        """Human-readable reason quoting each fired rule's text and source."""
-        lines = [
-            f'EmberArmor ledger rule {r.id} ({r.effect}): "{r.text}" '
-            f"[source: {r.source}]"
-            for r in self.fired
-        ]
+        """Human-readable reason quoting each fired rule's text and source.
+
+        The quoted text is capped, and a rule from a project ledger is
+        labelled as such: its wording was written in the repository.
+        """
+        lines = []
+        for rule in self.fired:
+            where = " from this repository's ledger" if rule.origin == "project" else ""
+            lines.append(
+                f"EmberArmor ledger rule {rule.id}{where} ({rule.effect}): "
+                f'"{rule.text[:REASON_CHARS]}" [source: {rule.source[:REASON_CHARS]}]'
+            )
         if self.error:
             lines.append(f"EmberArmor gate failure: {self.error}")
         return "\n".join(lines)
@@ -250,6 +277,8 @@ def _string(value: Any, where: str) -> str:
 def _number(value: Any, where: str) -> float:
     if isinstance(value, bool) or not isinstance(value, int | float):
         raise LedgerError(f"{where}: expected a number")
+    if not math.isfinite(value):
+        raise LedgerError(f"{where}: expected a finite number")
     return float(value)
 
 
@@ -263,15 +292,20 @@ def _one_of(value: Any, allowed: Sequence[str], where: str) -> str:
 # Predicate parsing
 # ---------------------------------------------------------------------------
 def _parse_command(obj: Mapping[str, Any], where: str) -> CommandPred:
-    lists = ("program", "subcommand", "flags_any", "flags_all", "args_any_glob")
-    _check_keys(obj, where, ("type",), (*lists, "shell"))
+    lists = ("program", "subcommand", "flags_any", "flags_all", "flags_none",
+             "args_any_glob", "args_none_glob")  # fmt: skip
+    _check_keys(obj, where, ("type",), (*lists, "args_regex", "shell"))
     values = {k: _strings(obj[k], f"{where}.{k}") for k in lists if k in obj}
     shell = _one_of(obj.get("shell", "any"), SHELLS, f"{where}.shell")
-    return CommandPred(shell=shell, **values)
+    regex = None
+    if "args_regex" in obj:
+        regex = _compile(obj["args_regex"], f"{where}.args_regex")
+    pattern = regex.pattern if regex else None
+    return CommandPred(shell=shell, args_regex=pattern, regex=regex, **values)
 
 
 def _parse_path(obj: Mapping[str, Any], where: str) -> PathPred:
-    lists = ("under", "not_under", "glob")
+    lists = ("under", "not_under", "glob", "not_glob")
     _check_keys(obj, where, ("type",), (*lists, "op", "recursive"))
     values = {k: _strings(obj[k], f"{where}.{k}") for k in lists if k in obj}
     recursive = obj.get("recursive")
@@ -289,6 +323,9 @@ def _parse_arg(obj: Mapping[str, Any], where: str) -> ArgPred:
         raise LedgerError(f"{where}.value: 'in' needs a list")
     if op == "matches":
         value = _compile(value, f"{where}.value")
+    if op in ("<", "<=", ">", ">="):
+        # A threshold that is not a number could never match: a typo.
+        _number(value, f"{where}.value")
     return ArgPred(name=_string(obj["name"], f"{where}.name"), op=op, value=value)
 
 

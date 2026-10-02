@@ -1141,5 +1141,481 @@
    "repo": "o/r",
    "query": "drop table"
   }
+ },
+ {
+  "tool": "Bash",
+  "command": "rm -rf node_modules package-lock.json && npm install"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm -rf node_modules yarn.lock"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm -rf .parcel-cache dist"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm -rf storybook-static"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm -rf playwright-report test-results"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm -rf htmlcov .coverage"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm -rf dist tsconfig.tsbuildinfo"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm -rf .eslintcache"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm -rf build.log"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm -rf logs/*.log"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm -rf .svelte-kit .vite .nuxt .output .astro"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm -rf ~/.npm/_cacache"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm -rf /c/Users/dev/AppData/Local/npm-cache/_npx",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Remove-Item -Recurse -Force node_modules, package-lock.json"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Remove-Item .\\obj -Recurse -Force",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Remove-Item -Recurse -Force \"$env:LOCALAPPDATA\\pip\\cache\"",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Get-ChildItem -Path . -Directory -Recurse -Filter __pycache__ | Remove-Item -Recurse -Force"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Get-ChildItem -Recurse -Directory -Filter node_modules | Remove-Item -Recurse -Force"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Get-ChildItem .\\dist | Remove-Item -Recurse -Force",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Get-ChildItem -Recurse -Directory -Filter node_modules | ForEach-Object { Remove-Item -Recurse -Force $_ }"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Get-ChildItem -Recurse -Filter *.log | Where-Object { $_.Length -gt 1mb } | Remove-Item"
+ },
+ {
+  "tool": "Bash",
+  "command": "find . -type d -name node_modules -prune | xargs rm -rf"
+ },
+ {
+  "tool": "Bash",
+  "command": "find . -name __pycache__ | grep -v keep | xargs rm -rf"
+ },
+ {
+  "tool": "Bash",
+  "command": "ls -d */node_modules | xargs rm -rf"
+ },
+ {
+  "tool": "Bash",
+  "command": "find . -type f -name '*.tmp' -exec rm -f {} +"
+ },
+ {
+  "tool": "Bash",
+  "command": "TMP_DIR=\"$TMPDIR/ember-test\"; mkdir -p \"$TMP_DIR\"; rm -rf \"$TMP_DIR\"",
+  "platform": "posix"
+ },
+ {
+  "tool": "Bash",
+  "command": "TMP_DIR=\"$TEMP/ember-test\"; mkdir -p \"$TMP_DIR\"; rm -rf \"$TMP_DIR\"",
+  "platform": "windows"
+ },
+ {
+  "tool": "Bash",
+  "command": "WORK=$(mktemp -d) && cd \"$WORK\" && npm init -y && cd - && rm -rf \"$WORK\""
+ },
+ {
+  "tool": "Bash",
+  "command": "tmp=$(mktemp -d -t ember-XXXX); rm -rf \"$tmp\""
+ },
+ {
+  "tool": "Bash",
+  "command": "for d in dist build coverage; do rm -rf \"$d\"; done"
+ },
+ {
+  "tool": "Bash",
+  "command": "dirs=(dist build); rm -rf \"${dirs[@]}\""
+ },
+ {
+  "tool": "PowerShell",
+  "command": "$work = Join-Path $env:TEMP \"ember-test\"; Remove-Item -Recurse -Force $work",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "$work = \"$env:TEMP\\ember-test\"; Remove-Item -Recurse -Force $work",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Remove-Item -Recurse -Force (Join-Path $env:TEMP \"ember-test\")",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "foreach ($d in 'dist','build') { Remove-Item -Recurse -Force $d }"
+ },
+ {
+  "tool": "Bash",
+  "command": "HOME=/tmp/fake npm install"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm -rf {dist,build}"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm -rf packages/*/{dist,node_modules}"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm -rf ./{dist,build,.next,coverage}"
+ },
+ {
+  "tool": "Bash",
+  "command": "arr=(a b c); echo \"${arr[@]}\""
+ },
+ {
+  "tool": "Bash",
+  "command": "files=(src/*.ts); wc -l \"${files[@]}\""
+ },
+ {
+  "tool": "Bash",
+  "command": "shopt -s extglob; ls !(node_modules)"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "$o = [pscustomobject]@{ A = 1 }; $o | ConvertTo-Json"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Remove-Item -Recurse -Force .\\src -WhatIf",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Format-Volume -DriveLetter E -WhatIf"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Set-MpPreference -DisableRealtimeMonitoring $true -WhatIf"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Stop-Service WinDefend -WhatIf"
+ },
+ {
+  "tool": "Bash",
+  "command": "sqlite3 dev.db \".tables\" && git commit -m \"migration: drop table legacy_sessions\""
+ },
+ {
+  "tool": "Bash",
+  "command": "git commit -m \"refactor: drop user avatar column\" && wrangler deploy"
+ },
+ {
+  "tool": "Bash",
+  "command": "git commit -am \"feat: drop index page from nav\" && turso db list"
+ },
+ {
+  "tool": "Bash",
+  "command": "grep -n \"DROP TABLE\" migrations/*.sql && sqlite3 dev.db .schema"
+ },
+ {
+  "tool": "Bash",
+  "command": "sqlite3 dev.db .schema | grep -i 'drop table'"
+ },
+ {
+  "tool": "Bash",
+  "command": "psql -c \"select 1\" | head -c 200 # truncate output"
+ },
+ {
+  "tool": "Bash",
+  "command": "usql --version; echo \"drop schema docs\""
+ },
+ {
+  "tool": "PowerShell",
+  "command": "sqlite3 .\\dev.db \".tables\"; git commit -m \"migration: drop table legacy\""
+ },
+ {
+  "tool": "Bash",
+  "command": "sqlite3 dev.db \"SELECT * FROM logs WHERE msg LIKE '%delete from cart%'\""
+ },
+ {
+  "tool": "Bash",
+  "command": "sqlite3 dev.db \"INSERT INTO log(msg) VALUES ('drop table users requested')\""
+ },
+ {
+  "tool": "Bash",
+  "command": "sqlite3 dev.db \"SELECT 'DROP TABLE ' || name FROM sqlite_master\""
+ },
+ {
+  "tool": "Bash",
+  "command": "psql -c \"COMMENT ON TABLE t IS 'do not drop table without backup'\""
+ },
+ {
+  "tool": "Bash",
+  "command": "cat certs/public_key.pem"
+ },
+ {
+  "tool": "Bash",
+  "command": "cat keys/pubkey.pem"
+ },
+ {
+  "tool": "Bash",
+  "command": "cat node_modules/some-pkg/test/fixtures/server.key"
+ },
+ {
+  "tool": "Bash",
+  "command": "cat ~/.ssh/id_rsa.pub ~/.ssh/known_hosts"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Get-Content .\\certs\\public_key.pem",
+  "platform": "windows"
+ },
+ {
+  "tool": "Read",
+  "input": {
+   "file_path": "config/jwt-public-key.pem"
+  }
+ },
+ {
+  "tool": "Bash",
+  "command": "cat *.json"
+ },
+ {
+  "tool": "Bash",
+  "command": "grep foo *"
+ },
+ {
+  "tool": "Bash",
+  "command": "head -5 src/*"
+ },
+ {
+  "tool": "Bash",
+  "command": "grep -rn foo --include='*.py' ."
+ },
+ {
+  "tool": "Bash",
+  "command": "rg TODO -g '*.ts' -g '!*.d.ts'"
+ },
+ {
+  "tool": "Bash",
+  "command": "find . -name '*.py' | xargs grep foo"
+ },
+ {
+  "tool": "Bash",
+  "command": "awk '{print $1}' access.log"
+ },
+ {
+  "tool": "Grep",
+  "input": {
+   "pattern": "x",
+   "glob": "*.json"
+  }
+ },
+ {
+  "tool": "Grep",
+  "input": {
+   "pattern": "x",
+   "glob": "*.{ts,tsx}"
+  }
+ },
+ {
+  "tool": "Grep",
+  "input": {
+   "pattern": "x",
+   "path": "src",
+   "glob": "**/*.py"
+  }
+ },
+ {
+  "tool": "Bash",
+  "command": "curl -s http://localhost:3000/api/items | python -mjson.tool"
+ },
+ {
+  "tool": "Bash",
+  "command": "wget -qO- http://localhost:3000/health | python3 -mjson.tool"
+ },
+ {
+  "tool": "Bash",
+  "command": "curl -s http://localhost:3000/api | python3 -Xutf8 -mjson.tool"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "curl.exe -s http://localhost:3000/api/items | python -mjson.tool"
+ },
+ {
+  "tool": "Bash",
+  "command": "node scripts/compare.js \"$(curl -s http://localhost:3000/api/version)\""
+ },
+ {
+  "tool": "Bash",
+  "command": "python scripts/check.py --payload \"$(curl -s http://localhost:3000/api)\""
+ },
+ {
+  "tool": "Bash",
+  "command": "bash scripts/deploy.sh \"$(curl -s https://api.github.com/repos/acme/webapp/releases/latest | jq -r .tag_name)\""
+ },
+ {
+  "tool": "Bash",
+  "command": "node -e \"console.log(JSON.parse(process.argv[1]).version)\" \"$(curl -s http://localhost:3000/api/version)\""
+ },
+ {
+  "tool": "Bash",
+  "command": "python3 -c \"import sys; print(len(sys.argv[1]))\" \"$(curl -s http://localhost:3000/)\""
+ },
+ {
+  "tool": "Bash",
+  "command": "git -C . checkout main"
+ },
+ {
+  "tool": "Bash",
+  "command": "git -C ./ checkout -b feat/x"
+ },
+ {
+  "tool": "Bash",
+  "command": "git --git-dir .git --work-tree . checkout main"
+ },
+ {
+  "tool": "Bash",
+  "command": "git -C . restore src/a.ts"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "git -C . checkout main"
+ },
+ {
+  "tool": "Bash",
+  "command": "kubectl delete pod api-7d9f --dry-run=client"
+ },
+ {
+  "tool": "Bash",
+  "command": "gh repo delete --help"
+ },
+ {
+  "tool": "Bash",
+  "command": "vercel remove --help"
+ },
+ {
+  "tool": "Bash",
+  "command": "npm unpublish --help"
+ },
+ {
+  "tool": "Bash",
+  "command": "npm unpublish webapp@0.0.1-test --dry-run"
+ },
+ {
+  "tool": "Bash",
+  "command": "git reset --hard --help"
+ },
+ {
+  "tool": "Bash",
+  "command": "git push --force --help"
+ },
+ {
+  "tool": "Bash",
+  "command": "git push --force --dry-run"
+ },
+ {
+  "tool": "Bash",
+  "command": "git push -n -f"
+ },
+ {
+  "tool": "Bash",
+  "command": "git branch -D --help"
+ },
+ {
+  "tool": "Bash",
+  "command": "docker volume rm --help"
+ },
+ {
+  "tool": "Bash",
+  "command": "docker system prune -a --help"
+ },
+ {
+  "tool": "Bash",
+  "command": "terraform destroy -help"
+ },
+ {
+  "tool": "Bash",
+  "command": "aws s3 rm s3://acme-dev-artifacts/tmp --recursive --dryrun"
+ },
+ {
+  "tool": "Bash",
+  "command": "update-ca-certificates --help"
+ },
+ {
+  "tool": "Bash",
+  "command": "diskpart /?"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Remove-Item hklm-export.reg"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Remove-Item .\\HKLM_backup.reg",
+  "platform": "windows"
+ },
+ {
+  "tool": "Bash",
+  "command": "npx vercel deploy --prod"
+ },
+ {
+  "tool": "Bash",
+  "command": "pnpm exec vitest run"
+ },
+ {
+  "tool": "Bash",
+  "command": "docker compose exec db psql -c 'SELECT 1'"
+ },
+ {
+  "tool": "Bash",
+  "command": "certutil -hashfile root.cer SHA256"
+ },
+ {
+  "tool": "Bash",
+  "command": "certutil -addstore My client.cer"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm -rf \"$BUILD_DIR/node_modules\""
  }
 ]

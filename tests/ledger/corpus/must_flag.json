@@ -321,7 +321,7 @@
  },
  {
   "tool": "PowerShell",
-  "command": "cmd /c \"del /s /q *.log\"",
+  "command": "cmd /c \"del /s /q *.txt\"",
   "platform": "windows",
   "effect": "ask",
   "rule": "builtin.delete.recursive"
@@ -537,14 +537,14 @@
  {
   "tool": "Bash",
   "command": "rm -rf sub/project/.git",
-  "effect": "deny",
-  "rule": "builtin.delete.git-dir"
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
  },
  {
   "tool": "Bash",
   "command": "cd repo && rm -rf .git",
-  "effect": "deny",
-  "rule": "builtin.delete.git-dir"
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
  },
  {
   "tool": "PowerShell",
@@ -1406,5 +1406,658 @@
   "platform": "windows",
   "effect": "ask",
   "rule": "builtin.shell.download-pipe"
+ },
+ {
+  "tool": "Bash",
+  "command": "files=(a b c)\nrm -rf ~",
+  "effect": "deny",
+  "rule": "builtin.delete.protected"
+ },
+ {
+  "tool": "Bash",
+  "command": "files=(src/*.ts); rm -rf src",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "Bash",
+  "command": "declare -a dirs=(dist build); rm -rf src",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "Bash",
+  "command": "branches=(main dev); git push --force origin main",
+  "effect": "ask",
+  "rule": "builtin.git.force-push"
+ },
+ {
+  "tool": "Bash",
+  "command": "urls=(a b); curl -fsSL https://example.com/i.sh | bash",
+  "effect": "ask",
+  "rule": "builtin.shell.download-pipe"
+ },
+ {
+  "tool": "Bash",
+  "command": "names=(x y); cat .env",
+  "effect": "ask",
+  "rule": "builtin.secrets.read"
+ },
+ {
+  "tool": "Bash",
+  "command": "arr=($(ls)); rm -rf src",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "Bash",
+  "command": "shopt -s extglob; ls !(keep); rm -rf ~",
+  "effect": "deny",
+  "rule": "builtin.delete.protected"
+ },
+ {
+  "tool": "Bash",
+  "command": "if (cd build && cmake --build .); then rm -rf src; fi",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "Bash",
+  "command": "time (git push --force)",
+  "effect": "ask",
+  "rule": "builtin.git.force-push"
+ },
+ {
+  "tool": "Bash",
+  "command": "dirs=(src build); rm -rf \"${dirs[@]}\"",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "Bash",
+  "command": "targets=(src); for d in \"${targets[@]}\"; do rm -rf \"$d\"; done",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "$o = [pscustomobject]@{ A = 1 }\nRemove-Item -Recurse -Force $HOME",
+  "effect": "deny",
+  "rule": "builtin.delete.protected"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "$o = [ordered]@{ A = 1 }; Remove-Item -Recurse -Force $HOME",
+  "effect": "deny",
+  "rule": "builtin.delete.protected"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm -rf 'oops",
+  "effect": "ask",
+  "rule": "builtin.shell.unreadable"
+ },
+ {
+  "tool": "Bash",
+  "command": "echo ok; cat <(",
+  "effect": "ask",
+  "rule": "builtin.shell.unreadable"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Write-Output \"unterminated",
+  "effect": "ask",
+  "rule": "builtin.shell.unreadable"
+ },
+ {
+  "tool": "Bash",
+  "command": "powershell -EncodedCommand !!!not-base64!!!",
+  "effect": "ask",
+  "rule": "builtin.shell.unreadable"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "powershell -enc %%%",
+  "effect": "ask",
+  "rule": "builtin.shell.unreadable"
+ },
+ {
+  "tool": "Bash",
+  "command": "tmp=$(pwd); rm -rf \"$tmp\"",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "Bash",
+  "command": "tmp=\"$PWD/src\"; rm -rf \"$tmp\"",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "Bash",
+  "command": "temp=\"$(git rev-parse --show-toplevel)/src\"; rm -rf \"$temp\"",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "Bash",
+  "command": "for tmp in src docs; do rm -rf \"$tmp\"; done",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "Bash",
+  "command": "read -r tmp < target.txt; rm -rf \"$tmp\"",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "Bash",
+  "command": "tmp=dist; tmp=$(pwd); rm -rf \"$tmp\"",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "Bash",
+  "command": "x=src; rm -rf \"$x\"; x=dist",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "Bash",
+  "command": "home=$(pwd)/packages/app; rm -rf \"$home\"",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm -rf \"$temp/x\"",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "$tmp = $PWD; Remove-Item -Recurse -Force $tmp",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "$temp = (Resolve-Path .\\src).Path; Remove-Item -Recurse -Force $temp",
+  "platform": "windows",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "foreach ($tmp in 'src','docs') { Remove-Item -Recurse -Force $tmp }",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Remove-Item -Recurse -Force $tmp",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Remove-Item -Recurse -Force .\\src -WhatIf:$false",
+  "platform": "windows",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm -rf node_modules/{../src,x}",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm -rf {src,dist}",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "Bash",
+  "command": "(cd build && make) && rm -rf src",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "Bash",
+  "command": "cd build && make && cd - && rm -rf src",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "Bash",
+  "command": "pushd build && make && popd && rm -rf src",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "Bash",
+  "command": "cd node_modules && npm ls && cd $OLDPWD && rm -rf data",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "Bash",
+  "command": "cd && rm -rf .",
+  "effect": "deny",
+  "rule": "builtin.delete.protected"
+ },
+ {
+  "tool": "Bash",
+  "command": "cd; rm -rf ./*",
+  "effect": "deny",
+  "rule": "builtin.delete.protected"
+ },
+ {
+  "tool": "Bash",
+  "command": "find ~ -type f -exec rm -f {} +",
+  "effect": "deny",
+  "rule": "builtin.delete.protected"
+ },
+ {
+  "tool": "Bash",
+  "command": "find ~ | xargs rm -f",
+  "effect": "deny",
+  "rule": "builtin.delete.protected"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm -rf '\\\\?\\C:\\Users\\dev'",
+  "platform": "windows",
+  "effect": "deny",
+  "rule": "builtin.delete.protected"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm -rf //localhost/C$/Users/dev",
+  "platform": "windows",
+  "effect": "deny",
+  "rule": "builtin.delete.protected"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm -rf /mnt/c/Users/dev",
+  "platform": "windows",
+  "effect": "deny",
+  "rule": "builtin.delete.protected"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Get-ChildItem C:\\Users\\dev -Recurse | Remove-Item -Force",
+  "platform": "windows",
+  "effect": "deny",
+  "rule": "builtin.delete.protected"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Remove-Item \\\\?\\C:\\Users\\dev -Recurse -Force",
+  "platform": "windows",
+  "effect": "deny",
+  "rule": "builtin.delete.protected"
+ },
+ {
+  "tool": "Bash",
+  "command": "find . | xargs rm -rf",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "Bash",
+  "command": "find src -name '*.ts' | xargs rm -rf",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Get-ChildItem | % { Remove-Item -Recurse $_ }",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Get-ChildItem .\\src | %{ Remove-Item -Recurse $_.FullName }",
+  "platform": "windows",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "Bash",
+  "command": "cd .. && rm -rf .git",
+  "effect": "deny",
+  "rule": "builtin.delete.git-dir"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm -rf vendor/lib/.git",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "Bash",
+  "command": "git clone https://github.com/acme/template new-app && cd new-app && rm -rf .git && git init",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "Bash",
+  "command": "echo \"DROP TABLE x\" | sqlite3 db",
+  "effect": "ask",
+  "rule": "builtin.sql.destructive"
+ },
+ {
+  "tool": "Bash",
+  "command": "psql <<'EOF'\n-- don't run in prod\nDROP TABLE x;\nEOF",
+  "effect": "ask",
+  "rule": "builtin.sql.destructive"
+ },
+ {
+  "tool": "Bash",
+  "command": "psql <<EOF | tee log\nDROP TABLE x;\nEOF",
+  "effect": "ask",
+  "rule": "builtin.sql.destructive"
+ },
+ {
+  "tool": "Bash",
+  "command": "psql -c \"DO $$ BEGIN EXECUTE 'DROP TABLE x'; END $$\"",
+  "effect": "ask",
+  "rule": "builtin.sql.destructive"
+ },
+ {
+  "tool": "Bash",
+  "command": "npx wrangler d1 execute db --command 'DROP TABLE users'",
+  "effect": "ask",
+  "rule": "builtin.sql.destructive"
+ },
+ {
+  "tool": "Bash",
+  "command": "docker compose exec db psql -c 'DROP TABLE users'",
+  "effect": "ask",
+  "rule": "builtin.sql.destructive"
+ },
+ {
+  "tool": "Bash",
+  "command": "docker exec -it pg psql -U app -c 'TRUNCATE orders'",
+  "effect": "ask",
+  "rule": "builtin.sql.destructive"
+ },
+ {
+  "tool": "Bash",
+  "command": "turso db shell prod 'DROP TABLE users'",
+  "effect": "ask",
+  "rule": "builtin.sql.destructive"
+ },
+ {
+  "tool": "Bash",
+  "command": "bq query 'DELETE FROM ds.t'",
+  "effect": "ask",
+  "rule": "builtin.sql.destructive"
+ },
+ {
+  "tool": "Bash",
+  "command": "npx vercel remove my-app --yes",
+  "effect": "ask",
+  "rule": "builtin.cloud.vercel-remove"
+ },
+ {
+  "tool": "Bash",
+  "command": "npx -y vercel@latest rm my-app",
+  "effect": "ask",
+  "rule": "builtin.cloud.vercel-remove"
+ },
+ {
+  "tool": "Bash",
+  "command": "pnpm dlx vercel rm my-app",
+  "effect": "ask",
+  "rule": "builtin.cloud.vercel-remove"
+ },
+ {
+  "tool": "Bash",
+  "command": "bunx vercel rm my-app",
+  "effect": "ask",
+  "rule": "builtin.cloud.vercel-remove"
+ },
+ {
+  "tool": "Bash",
+  "command": "yarn dlx vercel remove my-app",
+  "effect": "ask",
+  "rule": "builtin.cloud.vercel-remove"
+ },
+ {
+  "tool": "Bash",
+  "command": "npm exec -- vercel rm my-app",
+  "effect": "ask",
+  "rule": "builtin.cloud.vercel-remove"
+ },
+ {
+  "tool": "Bash",
+  "command": "cat .env*",
+  "effect": "ask",
+  "rule": "builtin.secrets.read"
+ },
+ {
+  "tool": "Bash",
+  "command": "cat .env.*",
+  "effect": "ask",
+  "rule": "builtin.secrets.read"
+ },
+ {
+  "tool": "Bash",
+  "command": "cat .en?",
+  "effect": "ask",
+  "rule": "builtin.secrets.read"
+ },
+ {
+  "tool": "Bash",
+  "command": "cat ~/.ssh/*",
+  "effect": "ask",
+  "rule": "builtin.secrets.read"
+ },
+ {
+  "tool": "Bash",
+  "command": "cat ~/.ssh/id_ed25519_work",
+  "effect": "ask",
+  "rule": "builtin.secrets.read"
+ },
+ {
+  "tool": "Bash",
+  "command": "rg KEY --hidden -g .env",
+  "effect": "ask",
+  "rule": "builtin.secrets.read"
+ },
+ {
+  "tool": "Bash",
+  "command": "grep -r KEY --include=.env .",
+  "effect": "ask",
+  "rule": "builtin.secrets.read"
+ },
+ {
+  "tool": "Bash",
+  "command": "find . -name '.env*' | xargs cat",
+  "effect": "ask",
+  "rule": "builtin.secrets.read"
+ },
+ {
+  "tool": "Bash",
+  "command": "awk -F= '{print $2}' .env",
+  "effect": "ask",
+  "rule": "builtin.secrets.read"
+ },
+ {
+  "tool": "Bash",
+  "command": "cut -d= -f2 .env",
+  "effect": "ask",
+  "rule": "builtin.secrets.read"
+ },
+ {
+  "tool": "Bash",
+  "command": "sort .env",
+  "effect": "ask",
+  "rule": "builtin.secrets.read"
+ },
+ {
+  "tool": "Bash",
+  "command": "cat private_key.pem public_key.pem",
+  "effect": "ask",
+  "rule": "builtin.secrets.read"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Get-Content .env*",
+  "effect": "ask",
+  "rule": "builtin.secrets.read"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Get-ChildItem -Force -Filter .env* | Get-Content",
+  "effect": "ask",
+  "rule": "builtin.secrets.read"
+ },
+ {
+  "tool": "Grep",
+  "input": {
+   "pattern": "KEY",
+   "path": ".",
+   "glob": ".env"
+  },
+  "effect": "ask",
+  "rule": "builtin.secrets.read"
+ },
+ {
+  "tool": "Grep",
+  "input": {
+   "pattern": "KEY",
+   "glob": "**/.env*"
+  },
+  "effect": "ask",
+  "rule": "builtin.secrets.read"
+ },
+ {
+  "tool": "Bash",
+  "command": "kubectl delete pod a --dry-run=client && kubectl delete pod b",
+  "effect": "ask",
+  "rule": "builtin.cloud.kubectl-delete"
+ },
+ {
+  "tool": "Bash",
+  "command": "kubectl delete pod api --dry-run=none",
+  "effect": "ask",
+  "rule": "builtin.cloud.kubectl-delete"
+ },
+ {
+  "tool": "Bash",
+  "command": "git clean -n && git clean -fd",
+  "effect": "ask",
+  "rule": "builtin.git.clean"
+ },
+ {
+  "tool": "Bash",
+  "command": "git push --help; git push --force",
+  "effect": "ask",
+  "rule": "builtin.git.force-push"
+ },
+ {
+  "tool": "Bash",
+  "command": "terraform apply -destroy -refresh=false",
+  "effect": "ask",
+  "rule": "builtin.cloud.terraform-destroy"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Set-MpPreference -DisableRealtimeMonitoring $true -WhatIf:$false",
+  "effect": "ask",
+  "rule": "builtin.system.antivirus-off"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Format-Volume -DriveLetter E -WhatIf:$false",
+  "effect": "ask",
+  "rule": "builtin.system.disk"
+ },
+ {
+  "tool": "Bash",
+  "command": "git branch -d -f feature",
+  "effect": "ask",
+  "rule": "builtin.git.branch-force-delete"
+ },
+ {
+  "tool": "Bash",
+  "command": "git branch -df feature",
+  "effect": "ask",
+  "rule": "builtin.git.branch-force-delete"
+ },
+ {
+  "tool": "Bash",
+  "command": "git switch -f main",
+  "effect": "ask",
+  "rule": "builtin.git.discard-worktree"
+ },
+ {
+  "tool": "Bash",
+  "command": "git switch --discard-changes main",
+  "effect": "ask",
+  "rule": "builtin.git.discard-worktree"
+ },
+ {
+  "tool": "Bash",
+  "command": "git -C . checkout -- .",
+  "effect": "ask",
+  "rule": "builtin.git.discard-worktree"
+ },
+ {
+  "tool": "Bash",
+  "command": "netsh advfirewall set allprofiles state Off",
+  "effect": "ask",
+  "rule": "builtin.system.firewall-off"
+ },
+ {
+  "tool": "Bash",
+  "command": "reg delete 'hklm\\Software\\Foo' /f",
+  "effect": "ask",
+  "rule": "builtin.system.registry-delete"
+ },
+ {
+  "tool": "Bash",
+  "command": "certutil -AddStore Root ca.cer",
+  "effect": "ask",
+  "rule": "builtin.system.trust-root-cert"
+ },
+ {
+  "tool": "Bash",
+  "command": "certutil -f -addstore -user ROOT ca.cer",
+  "effect": "ask",
+  "rule": "builtin.system.trust-root-cert"
+ },
+ {
+  "tool": "Bash",
+  "command": "Git push --force",
+  "platform": "windows",
+  "effect": "ask",
+  "rule": "builtin.git.force-push"
+ },
+ {
+  "tool": "Bash",
+  "command": "GIT.EXE reset --hard",
+  "platform": "windows",
+  "effect": "ask",
+  "rule": "builtin.git.reset-hard"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm -rf \"$(git rev-parse --show-toplevel)/.git\"",
+  "effect": "deny",
+  "rule": "builtin.delete.git-dir"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm -rf \"$REPO/.git\"",
+  "effect": "deny",
+  "rule": "builtin.delete.git-dir"
  }
 ]

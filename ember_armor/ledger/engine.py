@@ -8,10 +8,12 @@ most restrictive effect wins (``deny`` over ``ask`` over ``warn``).
 from __future__ import annotations
 
 import json
+import math
 import time
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, replace
 from fnmatch import fnmatchcase
+from fractions import Fraction
 from typing import Any, Protocol
 
 from ember_armor.ledger.facts import Facts
@@ -33,9 +35,14 @@ from ember_armor.ledger.model import (
     Rule,
     TextRegexPred,
 )
-from ember_armor.ledger.paths import is_under, matches_glob, resolve_pattern
+from ember_armor.ledger.paths import (
+    is_under,
+    matches_glob,
+    may_match,
+    resolve_pattern,
+)
 from ember_armor.ledger.shell import SimpleCommand, program_name
-from ember_armor.ledger.shell.argv import has_flag, operands
+from ember_armor.ledger.shell.argv import has_flag, operand_positions
 from ember_armor.ledger.shellpaths import PathFact
 
 TEXT_LIMIT = 20_000
@@ -91,17 +98,30 @@ class MemoryHistory:
         return [call for call in self.calls if call.facts.session == session]
 
 
+@dataclass
+class _Session:
+    """The earlier calls of one session, read from the history at most once."""
+
+    history: History
+    calls: list[PastCall] | None = None
+
+    def earlier(self, session: str) -> list[PastCall]:
+        if self.calls is None:
+            self.calls = list(self.history.earlier(session))
+        return self.calls
+
+
 @dataclass(frozen=True)
 class _Context:
     rule: Rule
-    history: History | None
+    past: _Session | None
     now: float
 
 
 # ---------------------------------------------------------------------------
 # Leaf predicates
 # ---------------------------------------------------------------------------
-def _command_matches(command: SimpleCommand, pred: CommandPred) -> bool:
+def _command_matches(command: SimpleCommand, pred: CommandPred, windows: bool) -> bool:
     if pred.shell != "any" and command.shell != pred.shell:
         return False
     fold = command.shell != "bash"
@@ -109,23 +129,40 @@ def _command_matches(command: SimpleCommand, pred: CommandPred) -> bool:
     def norm(text: str) -> str:
         return text.lower() if fold else text
 
-    name = program_name(command.argv[0], fold=fold)
-    if pred.program and name not in {norm(p) for p in pred.program}:
+    # Windows finds ``GIT`` and ``Git.exe`` as well, whichever shell asks.
+    name = program_name(command.argv[0], fold=fold or windows)
+    programs = {p.lower() if windows else norm(p) for p in pred.program}
+    if pred.program and name not in programs:
         return False
+    rest = command.argv[1:]
     if pred.subcommand:
         value_flags = _GLOBAL_VALUE_FLAGS.get(name.lower(), frozenset())
-        leading = operands(command, value_flags, slash_flags=command.shell == "cmd")
+        positions = operand_positions(
+            command, value_flags, slash_flags=command.shell == "cmd"
+        )[: len(pred.subcommand)]
         wanted = [norm(part) for part in pred.subcommand]
-        if [norm(part) for part in leading[: len(wanted)]] != wanted:
+        if [norm(command.argv[i]) for i in positions] != wanted:
             return False
+        # What follows the subcommand: ``git -C . checkout`` has no ``.``.
+        rest = command.argv[positions[-1] + 1 :]
     if pred.flags_any and not any(has_flag(command, f) for f in pred.flags_any):
         return False
     if not all(has_flag(command, flag) for flag in pred.flags_all):
         return False
-    if pred.args_any_glob:
-        args = [norm(arg) for arg in command.argv[1:]]
-        globs = [norm(glob) for glob in pred.args_any_glob]
-        return any(fnmatchcase(arg, glob) for arg in args for glob in globs)
+    if any(has_flag(command, flag) for flag in pred.flags_none):
+        return False
+    args = [norm(arg) for arg in rest]
+
+    def listed(globs: Iterable[str]) -> bool:
+        return any(fnmatchcase(arg, norm(glob)) for arg in args for glob in globs)
+
+    if pred.args_any_glob and not listed(pred.args_any_glob):
+        return False
+    if listed(pred.args_none_glob):
+        return False
+    if pred.regex is not None:
+        texts = (" ".join(rest), command.stdin, " ".join(command.upstream))
+        return any(pred.regex.search(text[:TEXT_LIMIT]) for text in texts)
     return True
 
 
@@ -140,6 +177,11 @@ def _resolve(pattern: str, rule: Rule, facts: Facts, *, bare: bool = False) -> s
     )
 
 
+def _anywhere(pattern: str) -> bool:
+    """True for a resolved pattern that does not depend on a location."""
+    return pattern.startswith("**/")
+
+
 def _under_any(path: str, directories: Iterable[str], windows: bool) -> bool:
     """True when *path* is inside one of the resolved *directories*."""
     return any(is_under(path, directory, windows=windows) for directory in directories)
@@ -147,10 +189,13 @@ def _under_any(path: str, directories: Iterable[str], windows: bool) -> bool:
 
 def _path_holds(pred: PathPred, rule: Rule, facts: Facts) -> bool:
     """True when one path of the call satisfies every field of *pred*."""
+    if not facts.paths:
+        return False
     windows = facts.windows
     under = [_resolve(d, rule, facts) for d in pred.under]
     not_under = [_resolve(d, rule, facts) for d in pred.not_under]
     globs = [_resolve(g, rule, facts, bare=True) for g in pred.glob]
+    not_globs = [_resolve(g, rule, facts, bare=True) for g in pred.not_glob]
 
     def matches(path: PathFact) -> bool:
         if pred.op != "any" and path.op != pred.op:
@@ -159,10 +204,22 @@ def _path_holds(pred: PathPred, rule: Rule, facts: Facts) -> bool:
             return False
         if under and not _under_any(path.path, under, windows):
             return False
-        if _under_any(path.path, not_under, windows):
+        # Where a path with an unresolved variable lies is not known, so only
+        # an exception that holds anywhere (``**/name``) can apply to it.
+        located = "$" not in path.path
+        if _under_any(
+            path.path, (d for d in not_under if located or _anywhere(d)), windows
+        ):
             return False
+        if any(
+            matches_glob(path.path, glob, windows=windows)
+            for glob in not_globs
+            if located or _anywhere(glob)
+        ):
+            return False
+        # An operand the shell still has to expand may name a matching file.
         return not globs or any(
-            matches_glob(path.path, glob, windows=windows) for glob in globs
+            may_match(path.path, glob, windows=windows) for glob in globs
         )
 
     return any(matches(path) for path in facts.paths)
@@ -181,20 +238,25 @@ def _lookup(args: Any, dotted: str) -> Any:
     return value
 
 
-def _number(value: Any) -> float | None:
+def _number(value: Any) -> Fraction | float | None:
+    """Exact value of a numeric argument (a float only when not finite).
+
+    Comparisons and sums are exact, so they agree with what lint proves
+    about the same rules.
+    """
     if isinstance(value, bool):
         return None
-    if isinstance(value, int | float):
-        return float(value)
     if isinstance(value, str):
         try:
-            return float(value)
+            value = float(value)
         except ValueError:
             return None
-    return None
+    if isinstance(value, int) or (isinstance(value, float) and math.isfinite(value)):
+        return Fraction(value)
+    return value if isinstance(value, float) else None
 
 
-def _ordered(left: float, op: str, right: float) -> bool:
+def _ordered(left: Fraction | float, op: str, right: Fraction | float) -> bool:
     return {
         "<": left < right,
         "<=": left <= right,
@@ -225,13 +287,13 @@ def _arg_holds(pred: ArgPred, facts: Facts) -> bool:
 
 
 def _expr_holds(pred: ExprPred, facts: Facts) -> bool:
-    total = 0.0
+    total: Fraction | float = Fraction(0)
     for name, coefficient in pred.lhs:
         number = _number(_lookup(facts.args, name))
         if number is None:
             return False
-        total += coefficient * number
-    return _ordered(total, pred.op, pred.rhs)
+        total += Fraction(coefficient) * number
+    return _ordered(total, pred.op, Fraction(pred.rhs))
 
 
 def _text_holds(pred: TextRegexPred, facts: Facts) -> bool:
@@ -245,11 +307,29 @@ def _text_holds(pred: TextRegexPred, facts: Facts) -> bool:
 # ---------------------------------------------------------------------------
 # Predicate tree
 # ---------------------------------------------------------------------------
+def _reads_history(pred: Predicate) -> bool:
+    """True when evaluating *pred* may need the session's earlier calls."""
+    if isinstance(pred, NotPrecededByPred | CountExceedsPred):
+        return True
+    if isinstance(pred, AllPred | AnyPred):
+        return any(_reads_history(inner) for inner in pred.of)
+    return isinstance(pred, NotPred) and _reads_history(pred.of)
+
+
+def _cheapest_first(parts: tuple[Predicate, ...]) -> list[Predicate]:
+    """Order the parts so the history is read only when nothing else decides."""
+    return sorted(parts, key=_reads_history)
+
+
 def _past_matches(pred: Predicate, facts: Facts, ctx: _Context) -> list[PastCall]:
-    """Earlier calls of the session on which *pred* holds."""
-    if ctx.history is None:
+    """Earlier calls of the session on which *pred* holds.
+
+    A call without a session id has no history: unrelated calls must not
+    vouch for each other.
+    """
+    if ctx.past is None or not facts.session:
         return []
-    inner = replace(ctx, history=None)
+    inner = replace(ctx, past=None)
 
     def as_now(past: Facts) -> Facts:
         # Judge the earlier call with the path flavour and home of this one.
@@ -259,7 +339,7 @@ def _past_matches(pred: Predicate, facts: Facts, ctx: _Context) -> list[PastCall
 
     return [
         past
-        for past in ctx.history.earlier(facts.session)
+        for past in ctx.past.earlier(facts.session)
         if _holds(pred, as_now(past.facts), inner)
     ]
 
@@ -267,7 +347,11 @@ def _past_matches(pred: Predicate, facts: Facts, ctx: _Context) -> list[PastCall
 def _holds(pred: Predicate, facts: Facts, ctx: _Context) -> bool:
     """Truth value of one predicate on the facts of a call."""
     if isinstance(pred, CommandPred):
-        return any(_command_matches(c, pred) for c in facts.commands if c.argv)
+        return any(
+            _command_matches(command, pred, facts.windows)
+            for command in facts.commands
+            if command.argv
+        )
     if isinstance(pred, PathPred):
         return _path_holds(pred, ctx.rule, facts)
     if isinstance(pred, ArgPred):
@@ -281,9 +365,9 @@ def _holds(pred: Predicate, facts: Facts, ctx: _Context) -> bool:
             return bool(facts.dynamic)
         return any(reason.kind in pred.reason for reason in facts.dynamic)
     if isinstance(pred, AllPred):
-        return all(_holds(inner, facts, ctx) for inner in pred.of)
+        return all(_holds(inner, facts, ctx) for inner in _cheapest_first(pred.of))
     if isinstance(pred, AnyPred):
-        return any(_holds(inner, facts, ctx) for inner in pred.of)
+        return any(_holds(inner, facts, ctx) for inner in _cheapest_first(pred.of))
     if isinstance(pred, NotPred):
         return not _holds(pred.of, facts, ctx)
     if isinstance(pred, NotPrecededByPred):
@@ -334,13 +418,16 @@ def evaluate(
         with every rule that fired, strongest first.
     """
     moment = time.time() if now is None else now
+    past = None if history is None else _Session(history)
     fired: list[FiredRule] = []
     for rule in rules:
         if not _in_scope(rule, facts):
             continue
-        holds = _holds(rule.predicate, facts, _Context(rule, history, moment))
+        holds = _holds(rule.predicate, facts, _Context(rule, past, moment))
         if holds != rule.obligation:
-            fired.append(FiredRule(rule.id, rule.text, rule.source, rule.effect))
+            fired.append(
+                FiredRule(rule.id, rule.text, rule.source, rule.effect, rule.origin)
+            )
     if not fired:
         return Decision()
     fired.sort(key=lambda rule: -SEVERITY[rule.effect])

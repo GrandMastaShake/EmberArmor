@@ -22,6 +22,7 @@ from ember_armor.ledger.model import (
     AllPred,
     AnyPred,
     ArgPred,
+    AssignsPred,
     CommandPred,
     CountExceedsPred,
     Decision,
@@ -326,6 +327,14 @@ def _expr_holds(pred: ExprPred, facts: Facts) -> bool:
     return _ordered(total, pred.op, Fraction(pred.rhs))
 
 
+def _assigns(pred: AssignsPred, facts: Facts) -> bool:
+    """True when the call sets a variable named by *pred* (Windows folds case)."""
+    if facts.windows:
+        names = [name.upper() for name in facts.assigned]
+        return any(fnmatchcase(n, glob.upper()) for n in names for glob in pred.name)
+    return any(fnmatchcase(n, glob) for n in facts.assigned for glob in pred.name)
+
+
 def _text_holds(pred: TextRegexPred, facts: Facts) -> bool:
     value = _lookup(facts.args, pred.field)
     if value is _MISSING:
@@ -394,6 +403,8 @@ def _holds(pred: Predicate, facts: Facts, ctx: _Context) -> bool:
         if not pred.reason:
             return bool(facts.dynamic)
         return any(reason.kind in pred.reason for reason in facts.dynamic)
+    if isinstance(pred, AssignsPred):
+        return _assigns(pred, facts)
     if isinstance(pred, AllPred):
         return all(_holds(inner, facts, ctx) for inner in _cheapest_first(pred.of))
     if isinstance(pred, AnyPred):

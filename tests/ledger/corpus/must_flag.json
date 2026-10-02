@@ -2416,5 +2416,338 @@
   "command": "TOOL=git; DIR=/usr/bin; $DIR/$TOOL reset --hard",
   "effect": "ask",
   "rule": "builtin.git.reset-hard"
+ },
+ {
+  "tool": "Write",
+  "input": {
+   "file_path": "~/.ember/config.json",
+   "content": "{\"mode\": \"observe\"}"
+  },
+  "effect": "ask",
+  "rule": "builtin.gate.files"
+ },
+ {
+  "tool": "Edit",
+  "input": {
+   "file_path": "/home/dev/.ember/ledger.json",
+   "old_string": "a",
+   "new_string": "b"
+  },
+  "effect": "ask",
+  "rule": "builtin.gate.files",
+  "platform": "posix"
+ },
+ {
+  "tool": "Edit",
+  "input": {
+   "file_path": "C:\\Users\\dev\\.ember\\project-confirmed.json",
+   "old_string": "a",
+   "new_string": "b"
+  },
+  "effect": "ask",
+  "rule": "builtin.gate.files",
+  "platform": "windows"
+ },
+ {
+  "tool": "Write",
+  "input": {
+   "file_path": ".ember/ledger.json",
+   "content": "{\"version\": 1, \"rules\": []}"
+  },
+  "effect": "ask",
+  "rule": "builtin.gate.files"
+ },
+ {
+  "tool": "Bash",
+  "command": "echo '{\"mode\": \"observe\"}' > ~/.ember/config.json",
+  "effect": "ask",
+  "rule": "builtin.gate.files"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm ~/.ember/ledger.json",
+  "effect": "ask",
+  "rule": "builtin.gate.files"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm -rf ~/.ember/audit",
+  "effect": "ask",
+  "rule": "builtin.gate.files"
+ },
+ {
+  "tool": "Bash",
+  "command": "sed -i 's/enforce/observe/' ~/.ember/config.json",
+  "effect": "ask",
+  "rule": "builtin.gate.files"
+ },
+ {
+  "tool": "Bash",
+  "command": "cp /tmp/empty.json ~/.ember/ledger.json",
+  "effect": "ask",
+  "rule": "builtin.gate.files"
+ },
+ {
+  "tool": "Bash",
+  "command": "mv ~/.ember/project-confirmed.json /tmp/",
+  "effect": "ask",
+  "rule": "builtin.gate.files"
+ },
+ {
+  "tool": "Bash",
+  "command": "truncate -s 0 ~/.ember/audit/2026-10.jsonl",
+  "effect": "ask",
+  "rule": "builtin.gate.files"
+ },
+ {
+  "tool": "Bash",
+  "command": "printf '{}' | tee ~/.ember/config.json",
+  "effect": "ask",
+  "rule": "builtin.gate.files"
+ },
+ {
+  "tool": "Bash",
+  "command": "git rm --cached x; : > .ember/ledger.json",
+  "effect": "ask",
+  "rule": "builtin.gate.files"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Set-Content -Path $HOME\\.ember\\config.json -Value '{}'",
+  "effect": "ask",
+  "rule": "builtin.gate.files",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Remove-Item $env:USERPROFILE\\.ember\\ledger.json",
+  "effect": "ask",
+  "rule": "builtin.gate.files",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "'{}' | Out-File ~\\.ember\\config.json",
+  "effect": "ask",
+  "rule": "builtin.gate.files",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "'{\"mode\":\"observe\"}' > $HOME\\.ember\\config.json",
+  "effect": "ask",
+  "rule": "builtin.gate.files",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Clear-Content $HOME\\.ember\\audit\\2026-10.jsonl",
+  "effect": "ask",
+  "rule": "builtin.gate.files",
+  "platform": "windows"
+ },
+ {
+  "tool": "Bash",
+  "command": "ember-gate rules confirm no-force-push",
+  "effect": "ask",
+  "rule": "builtin.gate.rules"
+ },
+ {
+  "tool": "Bash",
+  "command": "ember-gate rules remove no-force-push",
+  "effect": "ask",
+  "rule": "builtin.gate.rules"
+ },
+ {
+  "tool": "Bash",
+  "command": "ember-gate rules add --file rule.json",
+  "effect": "ask",
+  "rule": "builtin.gate.rules"
+ },
+ {
+  "tool": "Bash",
+  "command": "ember-gate install claude-code --print",
+  "effect": "ask",
+  "rule": "builtin.gate.rules"
+ },
+ {
+  "tool": "Bash",
+  "command": "python -m ember_armor.ledger.cli rules confirm x --project",
+  "effect": "ask",
+  "rule": "builtin.gate.rules"
+ },
+ {
+  "tool": "Bash",
+  "command": "uv run ember-gate rules remove x",
+  "effect": "ask",
+  "rule": "builtin.gate.rules"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "ember-gate rules confirm x --project",
+  "effect": "ask",
+  "rule": "builtin.gate.rules"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "& ember-gate.exe rules remove x",
+  "effect": "ask",
+  "rule": "builtin.gate.rules"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "python -m ember_armor.ledger.cli install claude-code --print",
+  "effect": "ask",
+  "rule": "builtin.gate.rules"
+ },
+ {
+  "tool": "Bash",
+  "command": "EMBER_GATE_MODE=observe npm test",
+  "effect": "ask",
+  "rule": "builtin.gate.environment"
+ },
+ {
+  "tool": "Bash",
+  "command": "export EMBER_LEDGER=/tmp/empty.json",
+  "effect": "ask",
+  "rule": "builtin.gate.environment"
+ },
+ {
+  "tool": "Bash",
+  "command": "EMBER_HOME=/tmp/x ember-gate check 'ls'",
+  "effect": "ask",
+  "rule": "builtin.gate.environment"
+ },
+ {
+  "tool": "Bash",
+  "command": "env EMBER_GATE_BUILTIN=0 make",
+  "effect": "ask",
+  "rule": "builtin.gate.environment"
+ },
+ {
+  "tool": "Bash",
+  "command": "unset EMBER_GATE_MODE",
+  "effect": "ask",
+  "rule": "builtin.gate.environment"
+ },
+ {
+  "tool": "Bash",
+  "command": "EMBER_GATE_MODE=observe",
+  "effect": "ask",
+  "rule": "builtin.gate.environment"
+ },
+ {
+  "tool": "Bash",
+  "command": "bash -c 'EMBER_GATE_MODE=observe make'",
+  "effect": "ask",
+  "rule": "builtin.gate.environment"
+ },
+ {
+  "tool": "Bash",
+  "command": "setx EMBER_GATE_MODE observe",
+  "effect": "ask",
+  "rule": "builtin.gate.environment"
+ },
+ {
+  "tool": "Bash",
+  "command": "cmd //c \"set EMBER_GATE_BUILTIN=0 && make\"",
+  "effect": "ask",
+  "rule": "builtin.gate.environment"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "$env:EMBER_GATE_MODE = 'observe'",
+  "effect": "ask",
+  "rule": "builtin.gate.environment"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "$env:EMBER_LEDGER='C:\\empty.json'; npm test",
+  "effect": "ask",
+  "rule": "builtin.gate.environment"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "[Environment]::SetEnvironmentVariable('EMBER_GATE_MODE', 'observe', 'User')",
+  "effect": "ask",
+  "rule": "builtin.gate.environment"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Remove-Item Env:\\EMBER_GATE_MODE",
+  "effect": "ask",
+  "rule": "builtin.gate.environment"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Set-Item -Path env:EMBER_HOME -Value C:\\x",
+  "effect": "ask",
+  "rule": "builtin.gate.environment"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "setx EMBER_GATE_BUILTIN 0",
+  "effect": "ask",
+  "rule": "builtin.gate.environment"
+ },
+ {
+  "tool": "Write",
+  "input": {
+   "file_path": "~/.claude/settings.json",
+   "content": "{}"
+  },
+  "effect": "ask",
+  "rule": "builtin.gate.host-settings"
+ },
+ {
+  "tool": "Edit",
+  "input": {
+   "file_path": ".claude/settings.local.json",
+   "old_string": "a",
+   "new_string": "b"
+  },
+  "effect": "ask",
+  "rule": "builtin.gate.host-settings"
+ },
+ {
+  "tool": "MultiEdit",
+  "input": {
+   "file_path": ".claude/settings.json",
+   "edits": []
+  },
+  "effect": "ask",
+  "rule": "builtin.gate.host-settings"
+ },
+ {
+  "tool": "Bash",
+  "command": "jq 'del(.hooks)' ~/.claude/settings.json > /tmp/s.json && mv /tmp/s.json ~/.claude/settings.json",
+  "effect": "ask",
+  "rule": "builtin.gate.host-settings"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm .claude/settings.json",
+  "effect": "ask",
+  "rule": "builtin.gate.host-settings"
+ },
+ {
+  "tool": "Bash",
+  "command": "echo '{}' > .claude/settings.local.json",
+  "effect": "ask",
+  "rule": "builtin.gate.host-settings"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Set-Content $HOME\\.claude\\settings.json '{}'",
+  "effect": "ask",
+  "rule": "builtin.gate.host-settings",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Copy-Item settings.bak $env:USERPROFILE\\.claude\\settings.json",
+  "effect": "ask",
+  "rule": "builtin.gate.host-settings",
+  "platform": "windows"
  }
 ]

@@ -122,6 +122,17 @@ class DynamicShellPred:
 
 
 @dataclass(frozen=True)
+class AssignsPred:
+    """True when the shell input sets a variable with one of these names.
+
+    ``name`` holds names or globs.  What counts as setting is listed on
+    ``ParseResult.assigned`` and :func:`ember_armor.ledger.facts.extract`.
+    """
+
+    name: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class AllPred:
     """Every inner predicate is true."""
 
@@ -165,6 +176,7 @@ Predicate = (
     | ExprPred
     | TextRegexPred
     | DynamicShellPred
+    | AssignsPred
     | AllPred
     | AnyPred
     | NotPred
@@ -370,6 +382,14 @@ def _parse_dynamic(obj: Mapping[str, Any], where: str) -> DynamicShellPred:
     return DynamicShellPred(reason=reason)
 
 
+def _parse_assigns(obj: Mapping[str, Any], where: str) -> AssignsPred:
+    _check_keys(obj, where, ("type", "name"), ())
+    names = _strings(obj["name"], f"{where}.name")
+    if not names:
+        raise LedgerError(f"{where}.name: expected at least one variable name")
+    return AssignsPred(name=names)
+
+
 def _parse_group(obj: Mapping[str, Any], where: str, history: bool) -> Predicate:
     _check_keys(obj, where, ("type", "of"), ())
     kind, inner = obj["type"], obj["of"]
@@ -410,6 +430,7 @@ _LEAF_PARSERS: dict[str, Callable[[Mapping[str, Any], str], Predicate]] = {
     "expr": _parse_expr,
     "text_regex": _parse_text_regex,
     "dynamic_shell": _parse_dynamic,
+    "assigns": _parse_assigns,
 }
 PREDICATE_TYPES = (
     *_LEAF_PARSERS,

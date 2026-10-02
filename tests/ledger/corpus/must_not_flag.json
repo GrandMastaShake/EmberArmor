@@ -1749,5 +1749,127 @@
  {
   "tool": "Bash",
   "command": "find . -name '*.py' -exec grep -l TODO {} +"
+ },
+ {
+  "tool": "Read",
+  "input": {
+   "file_path": "~/.ember/config.json"
+  }
+ },
+ {
+  "tool": "Read",
+  "input": {
+   "file_path": "~/.claude/settings.json"
+  }
+ },
+ {
+  "tool": "Write",
+  "input": {
+   "file_path": ".claude/commands/review.md",
+   "content": "x"
+  }
+ },
+ {
+  "tool": "Write",
+  "input": {
+   "file_path": "docs/ember.md",
+   "content": "EMBER_GATE_MODE=enforce"
+  }
+ },
+ {
+  "tool": "Bash",
+  "command": "cat ~/.ember/ledger.json"
+ },
+ {
+  "tool": "Bash",
+  "command": "ls ~/.ember/audit"
+ },
+ {
+  "tool": "Bash",
+  "command": "cat ~/.claude/settings.json | jq .hooks"
+ },
+ {
+  "tool": "Bash",
+  "command": "ember-gate rules list"
+ },
+ {
+  "tool": "Bash",
+  "command": "ember-gate check 'git push --force'"
+ },
+ {
+  "tool": "Bash",
+  "command": "ember-gate lint"
+ },
+ {
+  "tool": "Bash",
+  "command": "ember-gate log verify"
+ },
+ {
+  "tool": "Bash",
+  "command": "ember-gate hook"
+ },
+ {
+  "tool": "Bash",
+  "command": "python -m ember_armor.ledger.cli rules list --json"
+ },
+ {
+  "tool": "Bash",
+  "command": "python -m ember_armor.ledger.hook"
+ },
+ {
+  "tool": "Bash",
+  "command": "echo $EMBER_HOME"
+ },
+ {
+  "tool": "Bash",
+  "command": "printenv EMBER_GATE_MODE"
+ },
+ {
+  "tool": "Bash",
+  "command": "grep -rn EMBER_GATE_MODE docs"
+ },
+ {
+  "tool": "Bash",
+  "command": "git commit -m 'docs: EMBER_GATE_MODE=enforce turns the gate on'"
+ },
+ {
+  "tool": "Bash",
+  "command": "echo 'set EMBER_GATE_MODE=enforce to enforce'"
+ },
+ {
+  "tool": "Bash",
+  "command": "NODE_ENV=test npm test"
+ },
+ {
+  "tool": "Bash",
+  "command": "export PATH=$PATH:/opt/bin"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "$env:EMBER_HOME"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Get-Content $HOME\\.ember\\config.json"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Write-Host $env:EMBER_GATE_MODE"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "$env:NODE_ENV = 'test'; npm test"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "$EMBER_HOME = 'C:\\x'; Write-Host $EMBER_HOME"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Get-Item Env:\\EMBER_GATE_MODE"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "ember-gate rules list"
  }
 ]

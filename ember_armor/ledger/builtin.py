@@ -124,6 +124,20 @@ _BCDEDIT_CHANGES = ["/set", "/delete", "/deletevalue", "/create", "/copy", "/imp
                     "/default", "/displayorder", "/bootsequence", "/timeout",
                     "/debug", "/bootdebug"]  # fmt: skip
 _WORKTREE = [".", "./", ":/"]
+#: The gate's own files: the Ember home and any project ``.ember`` directory.
+_EMBER_FILES = ["~/.ember", "$EMBER_HOME", "**/.ember"]
+_GATE_VARIABLES = [
+    "EMBER_GATE_MODE",
+    "EMBER_LEDGER",
+    "EMBER_HOME",
+    "EMBER_GATE_BUILTIN",
+]
+_GATE_EDITS = ["add", "confirm", "remove"]
+_GATE_MODULE = (
+    r"(?:^|\s)-m\s+ember_armor\.ledger\.cli\s+"
+    r"(?:rules\s+(?:add|confirm|remove)|install)(?:\s|$)"
+)
+_HOST_SETTINGS = ["**/.claude/settings.json", "**/.claude/settings.local.json"]
 _TERRAFORM = ["terraform", "tofu", "terragrunt"]
 _TERRAFORM_HELP = ["-help", "--help"]
 
@@ -451,6 +465,45 @@ def _rules(disposable: Sequence[str]) -> list[dict[str, Any]]:
                 "not_glob": NOT_SECRET,
                 "not_under": ["**/node_modules"],
             },
+        ),
+        # -- the gate itself -------------------------------------------------
+        _rule(
+            "gate.files",
+            "ask",
+            "Ask before changing the gate's own files: its configuration, its "
+            "ledgers and its audit log.",
+            _any(
+                {"type": "path", "op": "write", "under": _EMBER_FILES},
+                {"type": "path", "op": "delete", "under": _EMBER_FILES},
+            ),
+        ),
+        _rule(
+            "gate.rules",
+            "ask",
+            "Ask before adding, confirming or removing ledger rules, or "
+            "installing the hook: that is the owner's decision.",
+            _any(
+                *(_command("ember-gate", "rules", edit) for edit in _GATE_EDITS),
+                _command("ember-gate", "install"),
+                _command(["python", "python3", "py"], args_regex=_GATE_MODULE),
+            ),
+        ),
+        _rule(
+            "gate.environment",
+            "ask",
+            "Ask before setting the variables that choose the gate's mode, "
+            "ledger, home or built-in pack.",
+            {"type": "assigns", "name": _GATE_VARIABLES},
+        ),
+        _rule(
+            "gate.host-settings",
+            "ask",
+            "Ask before changing Claude Code settings files: they hold the hook "
+            "that runs this gate.",
+            _any(
+                {"type": "path", "op": "write", "glob": _HOST_SETTINGS},
+                {"type": "path", "op": "delete", "glob": _HOST_SETTINGS},
+            ),
         ),
         # -- shell input the gate cannot vouch for ---------------------------
         _rule(

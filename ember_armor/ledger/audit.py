@@ -26,7 +26,13 @@ from typing import Any
 
 from ember_armor.ledger.engine import PastCall
 from ember_armor.ledger.facts import FILE_TOOLS, Facts, shell_of
-from ember_armor.ledger.redact import MAX_ITEMS, redact_argv, redact_path, redact_value
+from ember_armor.ledger.redact import (
+    MAX_ITEMS,
+    MAX_TEXT,
+    redact_argv,
+    redact_path,
+    redact_value,
+)
 from ember_armor.ledger.shell import Dynamic, SimpleCommand
 from ember_armor.ledger.shellpaths import PathFact
 
@@ -84,6 +90,8 @@ def summarise(facts: Facts) -> dict[str, Any]:
             {"kind": reason.kind, "detail": redact_argv([reason.detail])[0]}
             for reason in facts.dynamic[:MAX_ITEMS]
         ]
+    if facts.assigned:
+        summary["assigned"] = [name[:MAX_TEXT] for name in facts.assigned[:MAX_ITEMS]]
     if facts.tool in FILE_TOOLS:
         key = FILE_TOOLS[facts.tool][0]
         summary["args"] = redact_value({key: facts.args.get(key)})
@@ -112,6 +120,7 @@ def restore(entry: Mapping[str, Any]) -> Facts:
             Dynamic(d.get("kind", ""), d.get("detail", ""))
             for d in call.get("dynamic", ())
         ),
+        assigned=tuple(str(name) for name in call.get("assigned", ())),
         args=call.get("args") or {},
     )
 

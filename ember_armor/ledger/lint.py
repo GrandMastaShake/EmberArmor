@@ -50,6 +50,7 @@ from ember_armor.ledger.model import (
     AnyPred,
     Applies,
     ArgPred,
+    AssignsPred,
     CommandPred,
     DynamicShellPred,
     ExprPred,
@@ -217,6 +218,8 @@ class _Model:
             return z3.Not(self.predicate(pred.of, base))
         if isinstance(pred, TextRegexPred):
             return self._atom(self.opaque, repr(pred), "text")
+        if isinstance(pred, AssignsPred):
+            return self._atom(self.opaque, repr(pred), "assigns")
         return self._atom(self.opaque, (repr(pred), base), "history")
 
     def scope(self, scope: Applies, base: str | None) -> Any:

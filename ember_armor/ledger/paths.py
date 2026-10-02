@@ -47,6 +47,9 @@ PATH_VARIABLES = (
     "PROGRAMFILES",
     "SYSTEMROOT",
     "WINDIR",
+    "HOMEDRIVE",
+    "HOMEPATH",
+    "EMBER_HOME",
 )
 
 

@@ -15,7 +15,13 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ember_armor.ledger.paths import PATH_VARIABLES, Lookup, normalize
-from ember_armor.ledger.shell import Dynamic, ParseResult, SimpleCommand, parse_shell
+from ember_armor.ledger.shell import (
+    Dynamic,
+    ParseResult,
+    SimpleCommand,
+    parse_shell,
+    program_name,
+)
 from ember_armor.ledger.shellpaths import PathFact, shell_paths
 
 #: Tools whose ``command`` input is a shell string, and the shell that reads it.
@@ -28,6 +34,12 @@ _SHELLS_BY_TOOL = {name.lower(): shell for name, shell in SHELL_TOOLS.items()}
 #: A longer path is not matched against rules; the call is marked instead.
 MAX_PATH_CHARS = 1024
 _MAX_ALTERNATIVES = 64
+#: PowerShell cmdlets that create, change or remove an ``Env:NAME`` item.
+_ENV_CMDLETS = frozenset(
+    {"set-item", "new-item", "remove-item", "clear-item", "set-content",
+     "add-content", "clear-content", "rename-item", "move-item"}
+)  # fmt: skip
+_ENV_ITEM_RE = re.compile(r"env:[\\/]?(\w+)", re.IGNORECASE)
 #: File tools: the input field holding the path, and what the tool does to it.
 FILE_TOOLS = {
     "Read": ("file_path", "read"),
@@ -45,6 +57,8 @@ class Facts:
 
     ``windows`` is the path flavour, ``home`` the normalised home directory
     and ``variables`` the upper-cased variables that path patterns may use.
+    ``assigned`` names the variables the shell input sets (see
+    :func:`assigned_names`).
     """
 
     tool: str
@@ -55,6 +69,7 @@ class Facts:
     commands: tuple[SimpleCommand, ...] = ()
     paths: tuple[PathFact, ...] = ()
     dynamic: tuple[Dynamic, ...] = ()
+    assigned: tuple[str, ...] = ()
     args: Mapping[str, Any] = field(default_factory=dict)
     variables: Mapping[str, str] = field(default_factory=dict)
 
@@ -71,6 +86,31 @@ def path_variables(env: Mapping[str, str]) -> dict[str, str]:
     if home:
         found.setdefault("HOME", home)
     return found
+
+
+def assigned_names(parsed: ParseResult) -> tuple[str, ...]:
+    """Variables the parsed shell input sets in the environment of a command.
+
+    What the parsers saw (an assignment in Bash, alone or in front of a
+    command, ``export``, ``env NAME=...``, ``unset``; ``$env:NAME = ...`` and
+    ``SetEnvironmentVariable`` in PowerShell), plus ``setx NAME``, ``set
+    NAME=...`` in ``cmd.exe`` and a PowerShell cmdlet that changes an
+    ``Env:NAME`` item.  Values are not kept.
+    """
+    names = list(parsed.assigned)
+    for command in parsed.commands:
+        if len(command.argv) < 2:
+            continue
+        program, args = program_name(command.argv[0]), command.argv[1:]
+        if program == "setx":
+            names += [arg for arg in args if not arg.startswith("/")][:1]
+        elif command.shell == "cmd" and program == "set":
+            name, equals, _ = " ".join(args).partition("=")
+            names += [name.strip().upper()] if equals and " " not in name else []
+        elif command.shell == "powershell" and program in _ENV_CMDLETS:
+            found = (_ENV_ITEM_RE.fullmatch(arg) for arg in args)
+            names += [match.group(1).upper() for match in found if match]
+    return tuple(dict.fromkeys(names))
 
 
 def _lookup(
@@ -180,6 +220,7 @@ def extract(
 
     commands: tuple[SimpleCommand, ...] = ()
     dynamic: tuple[Dynamic, ...] = ()
+    assigned: tuple[str, ...] = ()
     paths: list[PathFact] = []
     shell = shell_of(tool)
     if shell is not None:
@@ -210,6 +251,7 @@ def extract(
 
         paths = shell_paths(parsed, cwd, resolve, home)
         commands, dynamic = tuple(parsed.commands), tuple(parsed.dynamic)
+        assigned = assigned_names(parsed)
         if overlong:
             dynamic += (Dynamic("parse_error", "path too long"),)
     elif tool in FILE_TOOLS:
@@ -236,6 +278,7 @@ def extract(
         commands=commands,
         paths=tuple(paths),
         dynamic=dynamic,
+        assigned=assigned,
         args=tool_input,
         variables=variables,
     )

@@ -74,13 +74,14 @@ def test_fixture_transcript_gives_the_expected_aggregates(gate_env) -> None:
         "Edit": 1,
         "mcp__db__query": 1,
     }
-    assert dict(report.decisions) == {"none": 4, "ask": 3, "deny": 1}
+    assert dict(report.decisions) == {"none": 3, "ask": 4, "deny": 1}
     assert dict(report.rules) == {
         "builtin.secrets.read": 1,
         "builtin.git.force-push": 1,
         "builtin.delete.protected": 1,
         "builtin.delete.recursive": 1,
         "builtin.shell.download-pipe": 1,
+        "builtin.shell.unreadable": 1,
     }
     assert report.effects["builtin.delete.protected"] == "deny"
     assert report.effects["builtin.git.force-push"] == "ask"
@@ -94,9 +95,11 @@ def test_fixture_transcript_gives_the_expected_aggregates(gate_env) -> None:
 
 
 def test_replay_writes_nothing(gate_env) -> None:
+    ledger = Path(gate_env["EMBER_LEDGER"])
+    before = ledger.read_bytes()
     replay([SESSION_A], env=gate_env, windows=False)
     assert not Path(gate_env["EMBER_HOME"]).exists()
-    assert not Path(gate_env["EMBER_LEDGER"]).exists()
+    assert ledger.read_bytes() == before
 
 
 def test_directories_are_searched_for_transcripts(gate_env, tmp_path) -> None:
@@ -331,7 +334,7 @@ def test_cli_json_and_example_limit(cli_env, capsys) -> None:
     assert cli.main(["replay", "--json", "--examples", "0", SESSION_A]) == 0
     report = json.loads(capsys.readouterr().out)
     assert report["calls"] == 8
-    assert report["decisions"] == {"none": 4, "ask": 3, "deny": 1}
+    assert report["decisions"] == {"ask": 4, "none": 3, "deny": 1}
     assert report["rules"]["builtin.shell.download-pipe"] == {
         "effect": "ask",
         "count": 1,

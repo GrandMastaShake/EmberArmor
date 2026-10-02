@@ -4,7 +4,9 @@
 the gate itself fails, then in ``enforce`` mode the decision is ``ask`` with
 the error as the reason, and in ``observe`` mode the call proceeds and the
 error is recorded.  A failure is never silent approval in ``enforce`` mode
-and never a hard block.
+and never a hard block.  A ledger that cannot be loaded is such a failure,
+and it only ever adds an ``ask``: the rules of the other ledgers are still
+evaluated and a ``deny`` among them stands.
 """
 
 from __future__ import annotations
@@ -16,11 +18,12 @@ from datetime import datetime
 from typing import Any
 
 from ember_armor.ledger.audit import AuditLog, summarise
-from ember_armor.ledger.config import ConfigError, ember_home, gate_mode
+from ember_armor.ledger.config import ember_home, gate_mode
 from ember_armor.ledger.engine import History, evaluate
 from ember_armor.ledger.facts import Facts, extract
 from ember_armor.ledger.model import SEVERITY, Decision
-from ember_armor.ledger.store import load_rules
+from ember_armor.ledger.redact import MAX_TEXT
+from ember_armor.ledger.store import active_rules, load_sources
 
 
 @dataclass(frozen=True)
@@ -68,9 +71,9 @@ def _record(
 ) -> dict[str, Any]:
     source = call if isinstance(call, Mapping) else {}
     record: dict[str, Any] = {
-        "session": str(source.get("session_id") or ""),
-        "tool": str(source.get("tool_name") or ""),
-        "cwd": facts.cwd if facts else str(source.get("cwd") or ""),
+        "session": str(source.get("session_id") or "")[:MAX_TEXT],
+        "tool": str(source.get("tool_name") or "")[:MAX_TEXT],
+        "cwd": (facts.cwd if facts else str(source.get("cwd") or ""))[: 4 * MAX_TEXT],
         "decision": decision.effect,
         "rules": [rule.id for rule in decision.fired],
         "mode": mode,
@@ -91,6 +94,7 @@ def check(
     record: bool = True,
     now: datetime | None = None,
     problem: str | None = None,
+    project: bool = True,
 ) -> GateResult:
     """Evaluate one proposed tool call against the ledger.
 
@@ -113,6 +117,8 @@ def check(
     problem:
         A failure that happened before the gate was reached (for example
         unreadable hook input).  It is handled like any other gate failure.
+    project:
+        Look for a project ledger above the call's working directory.
 
     Returns
     -------
@@ -122,10 +128,14 @@ def check(
     env = os.environ if env is None else env
     moment = (now or datetime.now()).astimezone()
     facts: Facts | None = None
+    problems: list[str] = []
     try:
         mode = gate_mode(env)
-    except ConfigError as exc:
-        mode, problem = "enforce", problem or str(exc)
+    except Exception as exc:
+        # A configuration nobody can read is treated as enforce: the owner
+        # may have asked for it, and observe would hide the failure.
+        mode = "enforce"
+        problems.append(str(exc))
     log = audit_log(env)
     try:
         if problem:
@@ -133,10 +143,17 @@ def check(
         if not isinstance(call, Mapping):
             raise ValueError("tool call is not a JSON object")
         facts = extract(call, windows=windows, env=env)
-        rules = load_rules(str(call.get("cwd") or ""), env, moment.date())
+        rules, unloaded = load_sources(str(call.get("cwd") or ""), env, project=project)
         decision = evaluate(
-            rules, facts, log if history is None else history, now=moment.timestamp()
+            active_rules(rules, moment.date()),
+            facts,
+            log if history is None else history,
+            now=moment.timestamp(),
         )
+        problems = list(dict.fromkeys(problems + unloaded))
+        if problems:
+            # What did load was evaluated; the failure can only add an ask.
+            decision = _failure(mode, "; ".join(problems), decision)
     except Exception as exc:
         decision = _failure(mode, f"{type(exc).__name__}: {exc}")
     if record:

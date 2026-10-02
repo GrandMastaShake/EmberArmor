@@ -19,6 +19,7 @@ import sys
 from collections.abc import Mapping
 from typing import Any
 
+from ember_armor.ledger.config import gate_mode
 from ember_armor.ledger.gate import GateResult, check
 
 BLOCKING_DECISIONS = ("deny", "ask")
@@ -58,9 +59,17 @@ def handle(raw: bytes, env: Mapping[str, str] | None = None) -> GateResult:
     problem: str | None = None
     try:
         call = json.loads(raw.decode("utf-8", errors="replace"))
-    except ValueError as exc:
-        problem = f"malformed hook input: {exc}"
+    except (ValueError, RecursionError) as exc:
+        problem = f"malformed hook input: {type(exc).__name__}: {exc}"
     return check(call, env=env, problem=problem)
+
+
+def _observing() -> bool:
+    """True only when the configured mode is positively known to be observe."""
+    try:
+        return gate_mode(os.environ) == "observe"
+    except Exception:
+        return False
 
 
 def main() -> int:
@@ -69,10 +78,11 @@ def main() -> int:
         result = handle(sys.stdin.buffer.read())
         output, error = hook_output(result), result.decision.error
     except Exception as exc:
-        enforcing = os.environ.get("EMBER_GATE_MODE") == "enforce"
+        # Last resort.  Unless the gate is known to be observing, ask: the
+        # mode may be enforce in a configuration this failure kept unread.
         error = f"{type(exc).__name__}: {exc}"
         failure = f"EmberArmor gate failure: {error}"
-        output = _decision_object("ask", failure) if enforcing else ""
+        output = "" if _observing() else _decision_object("ask", failure)
     if error:
         sys.stderr.write(f"ember-gate: gate failure: {error}\n")
     if output:

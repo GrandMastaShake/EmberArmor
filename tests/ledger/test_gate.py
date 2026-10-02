@@ -114,12 +114,27 @@ def test_unreadable_ledger_in_enforce_mode_asks_with_the_error(gate_env) -> None
 
 def test_unreadable_ledger_in_observe_mode_proceeds_and_logs(gate_env) -> None:
     _broken_ledger(gate_env)
-    result = run("rm -rf /", gate_env)
+    result = run("git status", gate_env)
     assert result.decision.effect == "none"
     assert result.blocking is False
     (entry,) = audit_entries(gate_env)
     assert entry["decision"] == "none"
     assert "not valid JSON" in entry["error"]
+
+
+@pytest.mark.parametrize(("mode", "blocking"), [(None, False), ("enforce", True)])
+def test_a_broken_ledger_never_takes_the_built_in_rules_with_it(
+    gate_env, mode, blocking
+) -> None:
+    _broken_ledger(gate_env)
+    result = run("rm -rf /", gate_env, mode)
+    assert result.decision.effect == "deny"
+    assert result.blocking is blocking
+    assert "not valid JSON" in result.decision.error
+    (entry,) = audit_entries(gate_env)
+    # Observe mode still records what would have been denied.
+    assert entry["decision"] == "deny"
+    assert entry["rules"][0] == "builtin.delete.protected"
 
 
 FAILING_CALLS = [

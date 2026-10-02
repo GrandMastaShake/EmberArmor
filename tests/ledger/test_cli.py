@@ -231,7 +231,8 @@ def test_rules_add_rejects_bad_rules(cli_env, capsys, argv, message) -> None:
     code, _, err = run_cli(capsys, "rules", "add", *argv)
     assert code == 1
     assert message in err
-    assert not Path(cli_env["EMBER_LEDGER"]).exists()
+    stored = json.loads(Path(cli_env["EMBER_LEDGER"]).read_text(encoding="utf-8"))
+    assert stored["rules"] == []
 
 
 def test_rules_edit_targets(cli_env, capsys, tmp_path: Path, monkeypatch) -> None:
@@ -342,3 +343,15 @@ def test_real_entry_point_runs(cli_env) -> None:
     assert json.loads(done.stdout)["decision"] == "ask"
     usage = run_gate([], cli_env)
     assert usage.returncode == 2
+
+
+def test_rule_text_the_console_cannot_encode_is_escaped(cli_env) -> None:
+    text = "never push to main \u2192 open a PR \u2014 \u65e5\u672c"
+    write_ledger(Path(cli_env["EMBER_LEDGER"]), rule("arrow", text=text))
+    env = {**cli_env, "PYTHONIOENCODING": "cp1252"}
+    listed = run_gate(["rules", "list"], env)
+    assert listed.returncode == 0, listed.stderr
+    assert b"never push to main \\u2192 open a PR" in listed.stdout
+    checked = run_gate(["check", "git push --force"], env)
+    assert checked.returncode == 0, checked.stderr
+    assert b"arrow [deny] never push to main \\u2192" in checked.stdout

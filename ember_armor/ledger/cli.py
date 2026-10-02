@@ -8,6 +8,7 @@ Subcommands: ``check``, ``rules list|add|confirm|remove``, ``lint``,
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import os
 import sys
@@ -89,10 +90,17 @@ def _target_ledger(args: argparse.Namespace) -> Path:
 def _cmd_rules_list(args: argparse.Namespace) -> int:
     rules = store.load_all(args.cwd or os.getcwd(), os.environ)
     if args.json:
-        _print_json([{**rule.raw, "origin": rule.origin} for rule in rules])
+        _print_json(
+            [
+                {**rule.raw, "origin": rule.origin, "confirmed": rule.confirmed}
+                for rule in rules
+            ]
+        )
         return EXIT_OK
     for rule in rules:
         state = "confirmed" if rule.confirmed else "unconfirmed (warn only)"
+        if not store.evaluated(rule):
+            state = "unconfirmed, not evaluated: it holds a regular expression"
         expires = f", expires {rule.expires}" if rule.expires else ""
         print(f"{rule.id}  [{rule.effect}, {state}{expires}]  ({rule.origin})")
         print(f"    {rule.text}")
@@ -139,6 +147,11 @@ def _cmd_rules_add(args: argparse.Namespace) -> int:
 
 def _cmd_rules_confirm(args: argparse.Namespace) -> int:
     path = _target_ledger(args)
+    if args.project and not args.ledger:
+        # A project ledger is confirmed on this machine, not in the repository.
+        store.confirm_project_rule(os.environ, path, args.rule_id)
+        print(f"confirmed {args.rule_id} of {path} on this machine")
+        return EXIT_OK
     store.confirm_rule(path, args.rule_id)
     print(f"confirmed {args.rule_id} in {path}")
     return EXIT_OK
@@ -278,7 +291,10 @@ def _cmd_install(args: argparse.Namespace) -> int:
 def _add_ledger_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--ledger", help="ledger file to edit")
     parser.add_argument(
-        "--project", action="store_true", help="edit the project ledger (.ember/)"
+        "--project",
+        action="store_true",
+        help="the project ledger (.ember/); confirming records the approval "
+        "in the Ember home, not in the repository",
     )
 
 
@@ -366,6 +382,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Run ``ember-gate`` and return its exit code."""
+    for stream in (sys.stdout, sys.stderr):
+        # Rule text may hold characters the console encoding lacks (cp1252).
+        if isinstance(stream, io.TextIOWrapper):
+            stream.reconfigure(errors="backslashreplace")
     args = build_parser().parse_args(argv)
     try:
         return int(args.func(args))

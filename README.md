@@ -28,7 +28,7 @@ Each item below was checked against this code (Python 3.12, Windows 11).
 - There is no audit log. `AuditLogger` is created at start-up and never called. The JWT and PBKDF2 helpers in `ember_armor/security/` are not used by any route.
 - There is no Dockerfile or other container file, and no CI workflow.
 - There is no module-level `app`, so `uvicorn ember_armor.api.main:app` fails. Use the factory form shown below.
-- `ember_proxy/` is a sketch of a Windows proxy. It does not work as shipped and should not be installed. See [ember_proxy/README.md](ember_proxy/README.md).
+- `ember_proxy/` is a sketch of a Windows proxy. It is experimental, it does not work as shipped, and it should not be installed: its installer adds a root certificate to the Windows Trusted Root store and its launcher runs `git pull` on every start. If you already ran the installer, follow the removal steps in [ember_proxy/README.md](ember_proxy/README.md).
 
 Earlier versions of this README published detection, false-positive and latency figures and a model comparison table; those were measured in April 2026 on a different scorer that is not in this repository, against a 91-case development set that scorer had been tuned on, so they do not describe this code and have been removed.
 
@@ -42,7 +42,7 @@ uv pip install -e ".[dev]"
 uv run --no-sync pytest tests/ -q
 ```
 
-197 tests are collected. Three runs on 2026-10-02 gave 197 passed, 196 passed with 1 failed, and 197 passed. Two tests use sub-second timing windows and have been seen to fail on a slow or busy machine: `tests/test_circuit_breaker.py::TestCircuitBreakerStateMachine::test_half_open_after_recovery_timeout` and `tests/test_rate_limit.py::test_limit_resets_after_window`. `ember_proxy/` has no tests.
+197 tests are collected. One of them is timing-sensitive: `tests/test_rate_limit.py::test_limit_resets_after_window` needs three requests to land inside a 0.3 second window, so it can fail on a slow or busy machine. It has failed on this machine when the suite ran slowly; the three most recent runs on 2026-10-02 passed all 197. `ember_proxy/` has no tests.
 
 Start the service on localhost with two generated secrets:
 
@@ -64,7 +64,7 @@ curl -s -X POST http://127.0.0.1:8000/v1/dissonance/check \
 The response (the token and timing differ on each call):
 
 ```json
-{"is_safe":true,"safety_level":"SAFE","confidence":1.0,"contradiction_score":0.0,"detected_patterns":[],"canary_token":"...","processing_time_ms":0.63,"session_id":null}
+{"is_safe":true,"safety_level":"SAFE","confidence":1.0,"contradiction_score":0.0,"detected_patterns":[],"canary_token":"...","processing_time_ms":1.13,"session_id":null}
 ```
 
 That input is a plain injection attempt and the placeholder passes it. Stop the server with `kill %1`.
@@ -72,7 +72,8 @@ That input is a plain injection attempt and the placeholder passes it. Stop the 
 ## Known issues
 
 - The anchor `GET` route reports success for ids it has never seen (described above).
-- One detector regex backtracks badly on crafted input: about 1.5 s for 2,400 characters here, growing roughly eightfold each time the length doubles. It runs inside the event loop, so one request can stall the server.
+- One detector regex backtracks badly on crafted input: about 0.7 to 0.9 s for 2,400 characters and 6 to 8 s for 4,800 on this machine, roughly eightfold each time the length doubles. It runs inside the event loop, so the server answers nothing else in the meantime; a `GET /ready` sent during the 4,800-character request waited more than 5 s.
+- The `canary_token` in each response and the `X-Canary-Token` header are fresh random values that are not stored anywhere, so nothing can recognise them later.
 - Uvicorn by default replaces the peer address with `X-Forwarded-For` on connections from 127.0.0.1, which lets a local client sidestep the rate limit. `--no-proxy-headers`, used above, turns that off.
 - The `emberarmor_*` counters in `/v1/metrics` stay at 0 after checks and failed auth attempts.
 - The Sonar response parser reads `VERDICT: NOT SAFE` as `SAFE`.

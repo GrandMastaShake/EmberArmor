@@ -22,21 +22,23 @@ This is what the batch files do, from reading them.
 
 - clones the default branch of this repository to `%USERPROFILE%\EmberArmor`, or runs `git pull` there if it already exists
 - runs `pip install` for this package and for mitmproxy with whichever `pip` is on the PATH; it does not create a virtual environment
-- starts `mitmdump` briefly to generate a certificate authority, then adds `%USERPROFILE%\.mitmproxy\mitmproxy-ca-cert.cer` to the Windows Trusted Root store with `certutil -addstore`
-- asks for a Perplexity API key and writes it in plain text to `%USERPROFILE%\EmberArmor\.env`
+- starts `mitmdump` briefly to generate a certificate authority, force-kills every running `mitmdump.exe`, then adds `%USERPROFILE%\.mitmproxy\mitmproxy-ca-cert.cer` to the machine-wide Windows Trusted Root store with `certutil -addstore`, asking for elevation if that fails
+- asks for a Perplexity API key and writes it in plain text to `%USERPROFILE%\EmberArmor\.env`, replacing any file already there
 - creates an "EmberArmor Proxy" shortcut on the Desktop
 
 `start.bat`:
 
 - runs `git pull` on every launch
-- force-kills the processes that `netstat` shows on ports 8000, 8080 and 7070
-- waits for the API; if the API ever answered, it would set the per-user Windows proxy to `127.0.0.1:8080` and run `mitmdump` with no host filter, so everything that honours the system proxy would go through TLS interception, not only the AI hosts
+- force-kills every process that has a `netstat` line matching port 8000, 8080 or 7070
+- waits for the API in a loop with no timeout; if the API ever answered, it would set the per-user Windows proxy to `127.0.0.1:8080` and run `mitmdump` with no host filter, so everything that honours the system proxy would go through TLS interception, not only the AI hosts
 
 `stop.bat` kills `mitmdump.exe` and the API window and switches the Windows proxy setting off.
 
+Two of these matter even though the proxy never gets as far as running. The root certificate stays trusted after the installer exits, and mitmproxy keeps the private key that signs for it in `%USERPROFILE%\.mitmproxy`, where any program running as that user can read it. And because `start.bat` pulls the default branch on every launch, whatever is on that branch at that moment is what runs next.
+
 ## If you already ran the installer
 
-1. Check for the certificate: `certutil -store Root mitmproxy`.
+1. Check for the certificate: `certutil -store Root mitmproxy` for the machine store and `certutil -user -store Root mitmproxy` for the current-user store. A store that does not hold it answers "Object was not found".
 2. Remove it. In an administrator prompt run `certutil -delstore Root mitmproxy`, then do the same for the current-user store with `certutil -user -delstore Root mitmproxy`.
 3. Delete `%USERPROFILE%\.mitmproxy`. mitmproxy keeps the private key for that certificate there.
 4. Check that the Windows proxy setting is off: Settings, Network & internet, Proxy, "Use a proxy server".

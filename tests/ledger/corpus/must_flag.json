@@ -2059,5 +2059,362 @@
   "command": "rm -rf \"$REPO/.git\"",
   "effect": "deny",
   "rule": "builtin.delete.git-dir"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "[void](Remove-Item -Recurse -Force C:\\Users\\alexa)",
+  "effect": "deny",
+  "rule": "builtin.delete.protected",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "[string]$r = Remove-Item -Recurse -Force C:\\Users\\alexa",
+  "effect": "deny",
+  "rule": "builtin.delete.protected",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "$x = @{ a = (Remove-Item -Recurse -Force C:\\Users\\alexa) }",
+  "effect": "deny",
+  "rule": "builtin.delete.protected",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "$p.Add((Remove-Item -Recurse -Force C:\\Users\\alexa))",
+  "effect": "deny",
+  "rule": "builtin.delete.protected",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "@(1,2).ForEach({ Remove-Item -Recurse -Force C:\\Users\\alexa })",
+  "effect": "deny",
+  "rule": "builtin.delete.protected",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "[void](git reset --hard)",
+  "effect": "ask",
+  "rule": "builtin.git.reset-hard"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "$a, $b = git reset --hard",
+  "effect": "ask",
+  "rule": "builtin.git.reset-hard"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "$a = $b = git reset --hard",
+  "effect": "ask",
+  "rule": "builtin.git.reset-hard"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "!(git reset --hard)",
+  "effect": "ask",
+  "rule": "builtin.git.reset-hard"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "return git reset --hard",
+  "effect": "ask",
+  "rule": "builtin.git.reset-hard"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "$x = [int](git reset --hard)",
+  "effect": "ask",
+  "rule": "builtin.git.reset-hard"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "[System.IO.File]::WriteAllText('a', (git reset --hard))",
+  "effect": "ask",
+  "rule": "builtin.git.reset-hard"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "& { param($force) git reset --hard }",
+  "effect": "ask",
+  "rule": "builtin.git.reset-hard"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "$x = @\"\nstate: $(git reset --hard)\n\"@",
+  "effect": "ask",
+  "rule": "builtin.git.reset-hard"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Invoke-RestMethod -Uri http://localhost -Headers @{ a = (git push --force) }",
+  "effect": "ask",
+  "rule": "builtin.git.force-push"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "\"notes\" > src; Remove-Item -Recurse src",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "sudo Remove-Item C:\\Users\\alexa -Recurse -Force",
+  "effect": "deny",
+  "rule": "builtin.delete.protected",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "gsudo git reset --hard",
+  "effect": "ask",
+  "rule": "builtin.git.reset-hard"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "npx vercel rm my-app",
+  "effect": "ask",
+  "rule": "builtin.cloud.vercel-remove"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "pnpm dlx vercel remove my-app --yes",
+  "effect": "ask",
+  "rule": "builtin.cloud.vercel-remove"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Remove-Item C:\\Users\\alexa \u2013Recurse \u2013Force",
+  "effect": "deny",
+  "rule": "builtin.delete.protected",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "powershell \u2013Command 'Remove-Item src -Recurse'",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Microsoft.PowerShell.Management\\Remove-Item C:\\Users\\alexa -Recurse",
+  "effect": "deny",
+  "rule": "builtin.delete.protected",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "$f = '--force'; git push $f",
+  "effect": "ask",
+  "rule": "builtin.git.force-push"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "$q = \"DROP TABLE users\"; psql -c $q",
+  "effect": "ask",
+  "rule": "builtin.sql.destructive"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "$a = 'destroy'; terraform $a",
+  "effect": "ask",
+  "rule": "builtin.cloud.terraform-destroy"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "$w = '-WhatIf'; Remove-Item src -Recurse $w",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Remove-Item \"$($env:USERPROFILE)\" -Recurse",
+  "effect": "deny",
+  "rule": "builtin.delete.protected",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Start-Process git -ArgumentList 'reset','--hard'",
+  "effect": "ask",
+  "rule": "builtin.git.reset-hard"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Start-Process -FilePath powershell -ArgumentList '-NoProfile','-Command','Remove-Item src -Recurse' -Verb RunAs",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Start-Process cmd -ArgumentList '/c rd /s /q src' -Wait",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "wsl rm -rf src",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "wsl -d Ubuntu -- bash -c 'git reset --hard'",
+  "effect": "ask",
+  "rule": "builtin.git.reset-hard"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "iex \"git reset --hard > $null\"",
+  "effect": "ask",
+  "rule": "builtin.git.reset-hard"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "cmd /c \"for /f %i in ('git reset --hard') do echo %i\"",
+  "effect": "ask",
+  "rule": "builtin.git.reset-hard"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo git status",
+  "effect": "ask",
+  "rule": "builtin.shell.unreadable"
+ },
+ {
+  "tool": "Bash",
+  "command": "[[ -n $(git reset --hard) ]] && echo clean",
+  "effect": "ask",
+  "rule": "builtin.git.reset-hard"
+ },
+ {
+  "tool": "Bash",
+  "command": "echo ${x:-$(git reset --hard)}",
+  "effect": "ask",
+  "rule": "builtin.git.reset-hard"
+ },
+ {
+  "tool": "Bash",
+  "command": "echo \"${x:=$(git reset --hard)}\"",
+  "effect": "ask",
+  "rule": "builtin.git.reset-hard"
+ },
+ {
+  "tool": "Bash",
+  "command": "echo $(( $(git reset --hard | wc -l) + 1 ))",
+  "effect": "ask",
+  "rule": "builtin.git.reset-hard"
+ },
+ {
+  "tool": "Bash",
+  "command": "(( n = $(git clean -fd | wc -l) ))",
+  "effect": "ask",
+  "rule": "builtin.git.clean"
+ },
+ {
+  "tool": "Bash",
+  "command": "cat <<EOF > notes.md\nstate: $(git reset --hard)\nEOF",
+  "effect": "ask",
+  "rule": "builtin.git.reset-hard"
+ },
+ {
+  "tool": "Bash",
+  "command": "cat <<EOF\nrun `git reset --hard` to start over\nEOF",
+  "effect": "ask",
+  "rule": "builtin.git.reset-hard"
+ },
+ {
+  "tool": "Bash",
+  "command": "bash <<EOF | tee log\ngit reset --hard\nEOF",
+  "effect": "ask",
+  "rule": "builtin.git.reset-hard"
+ },
+ {
+  "tool": "Bash",
+  "command": "coproc git reset --hard",
+  "effect": "ask",
+  "rule": "builtin.git.reset-hard"
+ },
+ {
+  "tool": "Bash",
+  "command": "coproc W { git reset --hard; }",
+  "effect": "ask",
+  "rule": "builtin.git.reset-hard"
+ },
+ {
+  "tool": "Bash",
+  "command": "trap 'git reset --hard' EXIT",
+  "effect": "ask",
+  "rule": "builtin.git.reset-hard"
+ },
+ {
+  "tool": "Bash",
+  "command": "trap 'rm -rf src' EXIT; make",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "Bash",
+  "command": "time { git reset --hard; }",
+  "effect": "ask",
+  "rule": "builtin.git.reset-hard"
+ },
+ {
+  "tool": "Bash",
+  "command": "$((cd sub; git reset --hard))",
+  "effect": "ask",
+  "rule": "builtin.git.reset-hard"
+ },
+ {
+  "tool": "Bash",
+  "command": "eval \"X=1; git reset --hard\"",
+  "effect": "ask",
+  "rule": "builtin.git.reset-hard"
+ },
+ {
+  "tool": "Bash",
+  "command": "sh -c \"cd $(pwd) && git reset --hard\"",
+  "effect": "ask",
+  "rule": "builtin.git.reset-hard"
+ },
+ {
+  "tool": "Bash",
+  "command": "find . -name '*.orig' -exec sudo git reset --hard \\;",
+  "effect": "ask",
+  "rule": "builtin.git.reset-hard"
+ },
+ {
+  "tool": "Bash",
+  "command": "find . -type d -exec sh -c 'rm -rf src' \\;",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "Bash",
+  "command": "sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo sudo ls",
+  "effect": "ask",
+  "rule": "builtin.shell.unreadable"
+ },
+ {
+  "tool": "Bash",
+  "command": "wsl rm -rf src",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "Bash",
+  "command": "uv run git reset --hard",
+  "effect": "ask",
+  "rule": "builtin.git.reset-hard"
+ },
+ {
+  "tool": "Bash",
+  "command": "TOOL=git; DIR=/usr/bin; $DIR/$TOOL reset --hard",
+  "effect": "ask",
+  "rule": "builtin.git.reset-hard"
  }
 ]

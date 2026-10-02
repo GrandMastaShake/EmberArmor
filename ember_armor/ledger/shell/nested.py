@@ -87,7 +87,7 @@ class Nested:
     index: int = 0
 
 
-def _join(args: Sequence[str], quote: str) -> str:
+def join_arguments(args: Sequence[str], quote: str) -> str:
     """Rebuild a script from several arguments, re-quoting ones with spaces."""
     if len(args) == 1:
         return args[0]
@@ -149,7 +149,7 @@ def _powershell(argv: Sequence[str]) -> Nested:
                 return Nested("powershell", "stdin")
             if option is None and rest[0].lower().endswith(".ps1"):
                 return Nested("powershell", "file")
-            return Nested("powershell", "script", _join(rest, "'"), start)
+            return Nested("powershell", "script", join_arguments(rest, "'"), start)
         if option == "file":
             return Nested("powershell", "file")
         if option == "encodedcommand":
@@ -167,7 +167,7 @@ def _cmd(argv: Sequence[str]) -> Nested | None:
             rest = argv[i + 1 :]
             if not rest:
                 return None
-            return Nested("cmd", "script", _join(rest, '"'), i + 1)
+            return Nested("cmd", "script", join_arguments(rest, '"'), i + 1)
     return None
 
 

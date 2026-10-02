@@ -1617,5 +1617,137 @@
  {
   "tool": "Bash",
   "command": "rm -rf \"$BUILD_DIR/node_modules\""
+ },
+ {
+  "tool": "PowerShell",
+  "command": "[void]$list.Add('x')"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "$h = @{ format = 'C:'; Path = 'x' }"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "$o = [pscustomobject]@{ Name = 'a'; Recurse = $true }"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "[string]$name = 'src'"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "$a, $b = 1, 2"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "$x = [int]'5'"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "git log --format=%(refname)"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Start-Process notepad"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Start-Process code -ArgumentList '.'"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "wsl --shutdown"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "wsl -l -v"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "sudo netstat -an"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "$m = 'fix: typo'; git commit -m $m"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "$x = @\"\nrm -rf / is how you lose a disk\n\"@"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "& { param($n) Write-Host $n } 5"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Get-ChildItem | Where-Object { $_.Name -match '(a|b)' } | Select-Object -First 1"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "$items.ForEach({ Write-Host $_ })"
+ },
+ {
+  "tool": "Bash",
+  "command": "[[ -d node_modules ]] && echo yes"
+ },
+ {
+  "tool": "Bash",
+  "command": "[[ $(git status --porcelain) ]] && echo dirty"
+ },
+ {
+  "tool": "Bash",
+  "command": "echo ${x:-default} $(( a + b )) $((i+1)) $(( n * (m + 1) ))"
+ },
+ {
+  "tool": "Bash",
+  "command": "echo $(( $(wc -l < file.txt) + 1 ))"
+ },
+ {
+  "tool": "Bash",
+  "command": "cat <<'EOF' > notes.md\nnever run $(git reset --hard) or `rm -rf src`\nEOF"
+ },
+ {
+  "tool": "Bash",
+  "command": "cat <<EOF\ntotal: $(wc -l < file.txt)\nEOF"
+ },
+ {
+  "tool": "Bash",
+  "command": "tmp=$(mktemp -d); trap 'rm -rf \"$tmp\"' EXIT; make"
+ },
+ {
+  "tool": "Bash",
+  "command": "trap - EXIT"
+ },
+ {
+  "tool": "Bash",
+  "command": "trap '' INT"
+ },
+ {
+  "tool": "Bash",
+  "command": "time ls"
+ },
+ {
+  "tool": "Bash",
+  "command": "time -p make"
+ },
+ {
+  "tool": "Bash",
+  "command": "coproc cat"
+ },
+ {
+  "tool": "Bash",
+  "command": "for ((i=0;i<3;i++)); do echo $i; done"
+ },
+ {
+  "tool": "Bash",
+  "command": "uv run pytest -q"
+ },
+ {
+  "tool": "Bash",
+  "command": "wsl --shutdown"
+ },
+ {
+  "tool": "Bash",
+  "command": "find . -name '*.py' -exec grep -l TODO {} +"
  }
 ]

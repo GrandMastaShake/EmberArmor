@@ -14,7 +14,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field, replace
 
-from ember_armor.ledger.shell import nested
+from ember_armor.ledger.shell import nested, wrappers
 from ember_armor.ledger.shell.core import (
     BASH_SHELLS,
     DECODERS,
@@ -57,81 +57,14 @@ _VAR_RE = re.compile(r"[A-Za-z_]\w*|[0-9@*#?$!-]")
 _ONLY_VAR_RE = re.compile(r"\$\{?(\w+)\}?")
 _PLAIN_VAR_RE = re.compile(r"\$\{?[A-Za-z_]\w*\}?")
 _TEST_END_RE = re.compile(r"(?<=\s)\]\](?=[\s;&|)]|$)")
+#: Two words side by side: a command, where arithmetic would have an operator.
+_COMMAND_LIKE_RE = re.compile(r"[A-Za-z_]\w*[ \t]+-{0,2}[A-Za-z_./~$\"']")
+_SUBSTITUTION_RE = re.compile(r"\$\([^()`]*\)|\$\{[^{}]*\}|`[^`]*`")
 _ANSI_C = {"n": "\n", "t": "\t", "r": "\r", "\\": "\\", "'": "'", '"': '"', "0": "\0"}
 _EXTGLOB = frozenset("?*+@!")
 _MAX_BRACE_WORDS = 64
-_MAX_WRAPPERS = 32
 #: Where ``mktemp -d`` creates its directory when no template names a place.
 _MKTEMP_DIR = "/tmp/mktemp"  # noqa: S108 - a path pattern, nothing is created
-
-
-@dataclass(frozen=True)
-class _Wrapper:
-    """A program that runs another command given in its arguments.
-
-    ``value_flags`` take a value; ``leads`` are the subcommands that make
-    the program a wrapper (``pnpm dlx``, ``docker compose exec``); ``skip``
-    positionals stand before the wrapped command (a duration, a container);
-    ``versioned`` runners accept ``name@version`` for the command.
-    """
-
-    value_flags: frozenset[str] = frozenset()
-    skip: int = 0
-    leads: tuple[tuple[str, ...], ...] = ()
-    versioned: bool = False
-
-
-_CONTAINER_FLAGS = frozenset(
-    {"-f", "--file", "-p", "--project-name", "--profile", "--env-file", "-e",
-     "--env", "-u", "--user", "-w", "--workdir", "-H", "--host", "--context",
-     "-c", "--index"}
-)  # fmt: skip
-_CONTAINER = _Wrapper(_CONTAINER_FLAGS, 1, (("exec",), ("compose", "exec")))
-_WRAPPERS: dict[str, _Wrapper] = {
-    "sudo": _Wrapper(
-        frozenset({"-u", "-g", "-h", "-p", "-C", "-D", "-R", "-T", "-r", "-t",
-                   "--user", "--group", "--host", "--prompt", "--chdir"})
-    ),
-    "doas": _Wrapper(frozenset({"-u", "-C"})),
-    "env": _Wrapper(frozenset({"-u", "-C", "--unset", "--chdir"})),
-    "nohup": _Wrapper(),
-    "time": _Wrapper(frozenset({"-f", "-o"})),
-    "nice": _Wrapper(frozenset({"-n"})),
-    "ionice": _Wrapper(frozenset({"-c", "-n", "-p"})),
-    "timeout": _Wrapper(frozenset({"-s", "-k", "--signal", "--kill-after"}), 1),
-    "stdbuf": _Wrapper(frozenset({"-i", "-o", "-e"})),
-    "command": _Wrapper(),
-    "builtin": _Wrapper(),
-    "exec": _Wrapper(frozenset({"-a"})),
-    "xargs": _Wrapper(
-        frozenset({"-I", "-n", "-P", "-L", "-d", "-E", "-s", "-a", "--max-args",
-                   "--max-procs", "--delimiter"})
-    ),
-    "setsid": _Wrapper(),
-    "winpty": _Wrapper(),
-    "busybox": _Wrapper(),
-    "npx": _Wrapper(frozenset({"-p", "--package"}), versioned=True),
-    "bunx": _Wrapper(versioned=True),
-    "uvx": _Wrapper(frozenset({"--from", "--with", "-p", "--python"}), versioned=True),
-    "npm": _Wrapper(
-        frozenset({"--prefix", "-w", "--workspace", "-p", "--package"}),
-        leads=(("exec",), ("x",)),
-        versioned=True,
-    ),
-    "pnpm": _Wrapper(
-        frozenset({"-C", "--dir", "-F", "--filter"}),
-        leads=(("dlx",), ("exec",)),
-        versioned=True,
-    ),
-    "yarn": _Wrapper(leads=(("dlx",), ("exec",)), versioned=True),
-    "bun": _Wrapper(leads=(("x",),), versioned=True),
-    "pipx": _Wrapper(
-        frozenset({"--spec", "--python"}), leads=(("run",),), versioned=True
-    ),
-    "docker": _CONTAINER,
-    "podman": _CONTAINER,
-    "docker-compose": _Wrapper(_CONTAINER_FLAGS, 1, (("exec",),)),
-}  # fmt: skip
 
 
 @dataclass
@@ -160,6 +93,11 @@ class _Word:
     marks: list[int] = field(default_factory=list)
     array: list[_Word] | None = None
 
+    @property
+    def only_expansion(self) -> bool:
+        """True when the whole word is one expansion: nothing of it is known."""
+        return self.expands and len(self.parts) == 1
+
     def literal(self, text: str) -> None:
         self.parts.append(text)
         self.size += len(text)
@@ -176,12 +114,19 @@ class _Word:
 
 @dataclass
 class _Heredoc:
-    """A here-document; ``command`` is the index of the command it feeds."""
+    """A here-document; ``command`` is the index of the command it feeds.
+
+    ``expands`` is set for an unquoted delimiter: the shell then runs the
+    substitutions in the body.  ``shell`` names the shell that reads the
+    body as a script, when the command ended before the body was read.
+    """
 
     delimiter: str
     strip_tabs: bool
+    expands: bool = False
     body: str = ""
     command: int = -1
+    shell: str = ""
 
 
 @dataclass
@@ -204,56 +149,15 @@ class _Stage:
     feed: tuple[str, ...]
 
 
-def _wrapped_at(words: list[_Word], start: int, spec: _Wrapper) -> int | None:
-    """Index of the command a wrapper at *start* runs, or ``None`` if none."""
-    env = program_name(words[start].text) == "env"
-    lead: tuple[str, ...] = ()
-    pending = bool(spec.leads)
-    skip = spec.skip
-    i = start + 1
-    while i < len(words):
-        text = words[i].text
-        if text == "--":
-            return None if pending else i + 1 + skip
-        if (env and words[i].assign_at >= 0) or (text.startswith("-") and text != "-"):
-            i += 2 if text in spec.value_flags else 1
-        elif pending:
-            lead += (text,)
-            if not any(known[: len(lead)] == lead for known in spec.leads):
-                return None
-            pending = lead not in spec.leads
-            i += 1
-        elif skip:
-            return i + skip
-        else:
-            return i
-    return None
-
-
-def _strip_wrappers(words: list[_Word]) -> list[_Word]:
+def _strip_wrappers(words: list[_Word]) -> tuple[list[_Word], wrappers.Unwrapped]:
     """Remove ``sudo``-like wrappers so the wrapped command is in front."""
-    start = 0
-    for _ in range(_MAX_WRAPPERS):
-        if start >= len(words):
-            break
-        head = words[start]
-        name = program_name(head.text)
-        spec = _WRAPPERS.get(name)
-        if spec is None or head.tail_dynamic:
-            break
-        probe = words[start + 1 : start + 3]
-        if name == "command" and any(w.text in ("-v", "-V") for w in probe):
-            break
-        inner = _wrapped_at(words, start, spec)
-        if inner is None or inner >= len(words):
-            break
-        start = inner
-        version = words[start].text.find("@", 1) if spec.versioned else -1
-        if version > 0:
-            words = [*words[:start], _Word(text=words[start].text[:version])] + words[
-                start + 1 :
-            ]
-    return words[start:]
+    found = wrappers.unwrap(
+        [word.text for word in words], [not word.tail_dynamic for word in words]
+    )
+    rest = words[found.start :]
+    if found.program is not None and rest:
+        rest = [_Word(text=found.program), *rest[1:]]
+    return rest, found
 
 
 def _first_group(tokens: list[tuple[str, bool]]) -> tuple[int, list[int], int] | None:
@@ -377,23 +281,72 @@ class _Bash:
 
     def _read_heredocs(self) -> None:
         s, n = self.s, self.n
+        expanded: list[tuple[int, int]] = []
         for doc in self.pending:
             lines: list[str] = []
+            start = stop = self.i
             while self.i < n:
                 end = s.find("\n", self.i)
                 end = n if end < 0 else end
                 line = s[self.i : end].rstrip("\r")
+                stop = self.i
                 self.i = min(end + 1, n)
                 if (line.lstrip("\t") if doc.strip_tabs else line) == doc.delimiter:
                     break
                 lines.append(line)
+                stop = self.i
             doc.body = "\n".join(lines)
+            if doc.expands:
+                expanded.append((start, stop))
             if doc.command >= 0:
                 # The command ended before its body was read (``<<EOF | x``).
                 fed = self.out.commands[doc.command]
                 text = f"{fed.stdin}\n{doc.body}".lstrip("\n")
                 self.out.commands[doc.command] = replace(fed, stdin=text)
+        scripts = [doc for doc in self.pending if doc.shell]
         self.pending.clear()
+        for doc in scripts:
+            self.out.merge(self.recurse(doc.body, doc.shell, self.depth + 1))
+        for start, stop in expanded:
+            # An unquoted delimiter: the shell runs the body's substitutions.
+            self._scan(start, stop, quotes=False)
+
+    def _scan(
+        self, start: int, end: int, *, quotes: bool = True
+    ) -> list[tuple[int, int]]:
+        """Parse the substitutions in a stretch of text the shell expands.
+
+        The inside of ``[[ ]]``, of ``${name:-...}``, of arithmetic and of an
+        unquoted here-document is not split into words, but ``$(...)`` and
+        backticks in it still run.  Returns the command ranges they gave.
+        With *quotes* false, quote characters are ordinary text (a
+        here-document body).
+        """
+        s = self.s
+        resume, limit = self.i, self.n
+        holder = _Word()
+        double = False
+        self.i, self.n = start, end
+        try:
+            while self.i < end:
+                char = s[self.i]
+                if char == "\\":
+                    self.i += 2
+                elif char == "'" and quotes and not double:
+                    close = s.find("'", self.i + 1, end)
+                    self.i = end if close < 0 else close + 1
+                elif char == '"' and quotes:
+                    double = not double
+                    self.i += 1
+                elif s.startswith(("$(", "${"), self.i):
+                    self._dollar(holder, in_quotes=True)
+                elif char == "`":
+                    self._backtick(holder)
+                else:
+                    self.i += 1
+        finally:
+            self.i, self.n = resume, limit
+        return holder.spans
 
     def _word(self) -> _Word:
         s, n = self.s, self.n
@@ -504,15 +457,20 @@ class _Bash:
 
     def _dollar(self, word: _Word, *, in_quotes: bool) -> None:
         s, start = self.s, self.i
-        if s.startswith("$((", start):
+        if s.startswith("$((", start) and self._arithmetic(start + 1):
             self.i = self._balanced(start + 1, "(", ")")
+            word.spans += self._scan(start + 3, self.i - 2)
             word.expansion(s[start : self.i])
         elif s.startswith("$(", start):
             self._substitution(word, start, 2)
         elif s.startswith("${", start):
             self.i = self._balanced(start + 1, "{", "}")
             raw = s[start : self.i]
-            word.expansion(raw, plain=_PLAIN_VAR_RE.fullmatch(raw) is not None)
+            plain = _PLAIN_VAR_RE.fullmatch(raw) is not None
+            if not plain:
+                # ``${x:-$(cmd)}``: the default is expanded when it is used.
+                word.spans += self._scan(start + 2, self.i - 1)
+            word.expansion(raw, plain=plain)
         elif not in_quotes and s.startswith("$'", start):
             self._ansi_c(word)
         elif not in_quotes and s.startswith('$"', start):
@@ -542,6 +500,22 @@ class _Bash:
                     return i + 1
             i += 1
         raise ParseError(f"unterminated {opener}")
+
+    def _arithmetic(self, start: int) -> bool:
+        """True when the ``((`` at *start* opens arithmetic, not two subshells.
+
+        Arithmetic closes with ``))`` and never has two words side by side;
+        ``((cd x; make) && (ls))`` does and is parsed as commands.
+        """
+        end = self._balanced(start, "(", ")")
+        inner = self.s[start + 2 : end - 2]
+        for _ in range(MAX_DEPTH):
+            # Substitutions are operands here; they are parsed on their own.
+            inner, found = _SUBSTITUTION_RE.subn("0", inner)
+            if not found:
+                break
+        closed = self.s.startswith("))", end - 2)
+        return closed and _COMMAND_LIKE_RE.search(inner) is None
 
     def _ansi_c(self, word: _Word) -> None:
         s, i = self.s, self.i + 2
@@ -637,11 +611,11 @@ class _Bash:
 
     def _open_paren(self, cur: _Pending, stages: list[_Stage]) -> _Pending:
         """Handle ``(``: subshell, arithmetic command or function definition."""
-        if self.s.startswith("(", self.i):
+        if self.s.startswith("(", self.i) and self._arithmetic(self.i - 1):
             end = self._balanced(self.i - 1, "(", ")")
-            if self.s.startswith("))", end - 2):
-                self.i = end
-                return _Pending()
+            self._scan(self.i + 1, end - 2)
+            self.i = end
+            return _Pending()
         if cur.words and self.s[self.i :].lstrip(" \t").startswith(")"):
             self._token()
             return _Pending()
@@ -654,6 +628,7 @@ class _Bash:
         match = _TEST_END_RE.search(self.s, self.i)
         if match is None:
             raise ParseError("unterminated [[")
+        self._scan(self.i, match.start())
         self.i = match.end()
 
     def _redirect(self, op: str, cur: _Pending) -> None:
@@ -661,7 +636,7 @@ class _Bash:
         if not isinstance(target, _Word):
             raise ParseError(f"redirection {op} without a target ({kind})")
         if op in ("<<", "<<-"):
-            doc = _Heredoc(target.text, op == "<<-")
+            doc = _Heredoc(target.text, op == "<<-", expands=not target.quoted)
             self.pending.append(doc)
             cur.heredocs.append(doc)
         elif op == "<<<":
@@ -708,6 +683,50 @@ class _Bash:
             else:
                 self.out.assign(name, self._value(word))
 
+    @staticmethod
+    def _time_flags(words: list[_Word]) -> bool:
+        """True when ``time`` is the program (it has flags other than ``-p``)."""
+        return bool(words) and words[0].text.startswith("-") and words[0].text != "-p"
+
+    def _record_assigned(self, words: list[_Word]) -> None:
+        """Note the names of assignment words (see ``ParseResult.assigned``)."""
+        for word in words:
+            if word.assign_at >= 0:
+                self.out.assigned.append(word.text[: word.assign_at - 1].rstrip("+"))
+
+    def _resolved_program(self, head: _Word) -> _Word:
+        """The command word with variables that hold literal text filled in.
+
+        ``BIN=./node_modules/.bin; $BIN/vercel rm x`` then names its program.
+        """
+        if not head.tail_dynamic or head.opaque:
+            return head
+        variables = self.out.variables
+
+        def value(match: re.Match[str]) -> str:
+            known = variables.get(match.group().strip("${}"))
+            return match.group() if known is None else known
+
+        text = _PLAIN_VAR_RE.sub(value, head.text)
+        return head if "$" in text else _Word(text=text, quoted=True)
+
+    def _exec_command(self, argv: tuple[str, ...]) -> None:
+        """Add a command that ``find -exec`` runs (wrappers and shells followed)."""
+        found = wrappers.unwrap(argv, [True] * len(argv))
+        argv = (found.program or argv[found.start], *argv[found.start + 1 :])
+        self._add(SimpleCommand(argv, "bash"))
+        script = nested.inspect(argv)
+        if script is not None and script.kind == "script":
+            self.out.merge(self.recurse(script.script, script.shell, self.depth + 1))
+
+    def _trap(self, words: list[_Word]) -> None:
+        """Parse the command a ``trap`` installs (its first operand)."""
+        operands = [word for word in words if not word.text.startswith("-")]
+        listing = any(word.text in ("-l", "-p") for word in words[:1])
+        if listing or len(operands) < 2 or not operands[0].text:
+            return
+        self.out.merge(self.recurse(operands[0].text, "bash", self.depth + 1))
+
     def _bind_loop(self, words: list[_Word]) -> None:
         """Record the variable of ``for NAME in WORDS`` (after ``for``)."""
         if not words or not _NAME_RE.fullmatch(words[0].text):
@@ -752,6 +771,15 @@ class _Bash:
                 first += 1
             elif head == "function":
                 first += 2
+            elif head == "time" and not self._time_flags(words[first + 1 :]):
+                # The reserved word: ``time { a; b; }`` and ``time -p cmd``.
+                first += 1
+                while first < len(words) and words[first].text == "-p":
+                    first += 1
+            elif head == "coproc":
+                # ``coproc NAME { ...; }`` or ``coproc command``.
+                named = [word.text for word in words[first + 2 : first + 3]] == ["{"]
+                first += 2 if named else 1
             elif head in ("for", "select", "case"):
                 if head != "case":
                     self._bind_loop(words[first + 1 :])
@@ -764,12 +792,17 @@ class _Bash:
         if leading == len(words):
             # Assignments in front of a command only apply to that command.
             self._record_variables(words[first:leading])
-        words = _strip_wrappers(self._substitute(words[leading:]))
+        self._record_assigned(words[first:leading])
+        words, wrapped = _strip_wrappers(self._substitute(words[leading:]))
+        self.out.assigned += wrapped.assigned
+        if wrapped.capped:
+            self.out.dynamic.append(Dynamic("parse_error", "too many wrappers"))
         redirects = tuple(cur.redirects)
         if not words:
             if redirects:
                 self._add(SimpleCommand((), "bash", redirects))
             return
+        words[0] = self._resolved_program(words[0])
         argv = tuple(word.text for word in words)
         program = program_name(argv[0])
         stdin = [doc.body for doc in cur.heredocs if doc.body]
@@ -784,13 +817,18 @@ class _Bash:
             self.out.dynamic.append(Dynamic("variable_command", argv[0][:200]))
         if program in _DECLARERS:
             self._record_variables(words[1:])
+            self._record_assigned(words[1:])
         elif program in _BINDERS:
             for word in words[1:]:
                 if _NAME_RE.fullmatch(word.text):
                     self.out.forget(word.text)
+                    if program == "unset":
+                        self.out.assigned.append(word.text)
+        elif program == "trap":
+            self._trap(words[1:])
         if program == "find":
             for inner in find_exec(argv[1:]):
-                self._add(SimpleCommand(inner, "bash"))
+                self._exec_command(inner)
         found = nested.inspect(argv)
         downloaded = program in _RUNNERS and self._spans_download(
             self._code_words(words, program, found)
@@ -800,8 +838,10 @@ class _Bash:
         if program == "eval":
             if not downloaded:
                 self.out.dynamic.append(Dynamic("eval", " ".join(argv)[:200]))
-            if not any(word.expands for word in words[1:]):
-                self.out.merge(self.recurse(" ".join(argv[1:]), "bash", self.depth + 1))
+            if not all(word.only_expansion for word in words[1:]):
+                # Read as written: what a variable adds to it is not known.
+                script = " ".join(argv[1:])
+                self.out.merge(self.recurse(script, "bash", self.depth + 1))
         piped = self._descend(cur, words, program, found, downloaded)
         stages.append(_Stage(program, piped, feed if program in SELECTORS else argv))
 
@@ -839,12 +879,11 @@ class _Bash:
             rest = words[found.index :]
             if found.shell == "bash":
                 rest = rest[:1]
-            opaque = any(word.spans for word in rest) or any(
-                word.expands and _ONLY_VAR_RE.fullmatch(word.text) for word in rest[:1]
-            )
-            if not opaque:
+            unknown = any(word.only_expansion for word in rest[:1])
+            if not unknown:
+                # With substitutions in it the script is read as written.
                 self.out.merge(self.recurse(found.script, found.shell, self.depth + 1))
-            elif not downloaded:
+            if (unknown or any(word.spans for word in rest)) and not downloaded:
                 self.out.dynamic.append(Dynamic("nested_dynamic", program))
         if found.kind != "stdin":
             return False
@@ -858,6 +897,10 @@ class _Bash:
         if not shell:
             return
         text = cur.heredocs[-1].body if cur.heredocs else ""
+        if cur.heredocs and any(doc is cur.heredocs[-1] for doc in self.pending):
+            # ``bash <<EOF | tee log``: the body is read at the next newline.
+            cur.heredocs[-1].shell = shell
+            return
         if cur.herestring is not None:
             if cur.herestring.expands:
                 self.out.dynamic.append(Dynamic("nested_dynamic", program))

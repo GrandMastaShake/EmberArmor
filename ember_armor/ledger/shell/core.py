@@ -94,7 +94,10 @@ class ParseResult:
     Names are as written for Bash and lower-cased for PowerShell.
     ``scopes`` are index ranges of commands that run in a process of their
     own (a subshell, a substitution, a nested shell): a ``cd`` inside one
-    does not move the commands after it.
+    does not move the commands after it.  ``assigned`` names every variable
+    the string sets in the environment of a command: any assignment in Bash
+    (alone, in front of a command, through ``export`` or ``env``, also
+    ``unset``), and ``$env:NAME`` in PowerShell.
     """
 
     commands: list[SimpleCommand] = field(default_factory=list)
@@ -103,6 +106,7 @@ class ParseResult:
     choices: dict[str, tuple[str, ...]] = field(default_factory=dict)
     unknown: set[str] = field(default_factory=set)
     scopes: list[tuple[int, int]] = field(default_factory=list)
+    assigned: list[str] = field(default_factory=list)
 
     def assign(self, name: str, value: str | tuple[str, ...] | None) -> None:
         """Record an assignment to *name*.
@@ -133,6 +137,7 @@ class ParseResult:
         self.scopes += [(low + offset, high + offset) for low, high in other.scopes]
         self.commands.extend(other.commands)
         self.dynamic.extend(other.dynamic)
+        self.assigned.extend(other.assigned)
         for name in other.unknown:
             self.forget(name)
         for name, value in other.variables.items():

@@ -62,6 +62,7 @@ class _Cmd:
         self.argv: list[str] = []
         self.redirects: list[Redirect] = []
         self.in_for_header = False
+        self.for_output = False
 
     def finish(self) -> None:
         """Close the command read so far."""
@@ -69,7 +70,13 @@ class _Cmd:
         self.argv, self.redirects = [], []
         lowered = [arg.lower() for arg in argv]
         if lowered[:1] == ["for"] or self.in_for_header:
-            # ``for %i in (set) do command``: only what follows ``do`` runs.
+            # ``for %i in (set) do command``: what follows ``do`` runs, and so
+            # does a quoted command in the set of ``for /f``.
+            if lowered[:1] == ["for"]:
+                self.for_output = "/f" in lowered
+            elif self.for_output and argv and argv[0][:1] in ("'", "`"):
+                script = " ".join(argv).strip("'`")
+                self.out.merge(self.recurse(script, "cmd", self.depth + 1))
             self.in_for_header = "do" not in lowered
             argv = [] if self.in_for_header else argv[lowered.index("do") + 1 :]
         command = _strip_prefixes(argv)

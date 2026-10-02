@@ -48,7 +48,9 @@ PARSES = [
         "if (cd build && make); then rm -rf src; fi",
         [["cd", "build"], ["make"], ["rm", "-rf", "src"]],
     ),
-    ("time (git push --force)", [["git", "push", "--force"], ["time"]]),
+    ("time (git push --force)", [["git", "push", "--force"]]),
+    ("time { git push --force; }", [["git", "push", "--force"]]),
+    ("time -p git push --force", [["git", "push", "--force"]]),
     ("foo() { ls; }; foo", [["ls"], ["foo"]]),
 ]
 

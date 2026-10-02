@@ -11,19 +11,22 @@ removal and reading aliases are mapped to their cmdlets.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from collections.abc import Sequence
+from dataclasses import dataclass, field, replace
 
 from ember_armor.ledger.shell import nested
 from ember_armor.ledger.shell.core import (
+    DECODERS,
     DOWNLOADERS,
+    MAX_COMMANDS,
     MAX_DEPTH,
+    SELECTORS,
     Dynamic,
     ParseError,
     ParseResult,
     Recurse,
     Redirect,
     SimpleCommand,
-    pipe_kind,
     program_name,
 )
 
@@ -54,6 +57,16 @@ ALIASES = {
     "ac": "Add-Content",
     "sls": "Select-String",
     "tee": "Tee-Object",
+    "popd": "Pop-Location",
+    "gci": "Get-ChildItem",
+    "ls": "Get-ChildItem",
+    "dir": "Get-ChildItem",
+    "%": "ForEach-Object",
+    "foreach": "ForEach-Object",
+    "?": "Where-Object",
+    "where": "Where-Object",
+    "select": "Select-Object",
+    "sort": "Sort-Object",
 }
 _KEYWORDS = frozenset(
     {"if", "elseif", "else", "foreach", "for", "while", "do", "until", "switch",
@@ -65,6 +78,7 @@ _BARE_END = frozenset(" \t\r\n;|)},>")
 _TAIL_END = frozenset(" \t\r\n;|)},")
 _REDIRECT_RE = re.compile(r"[1-6*]?>>?(&[1-6])?")
 _VAR_RE = re.compile(r"\$(\{[^}]*\}|[\w:?^$]+)")
+_PLAIN_VAR_RE = re.compile(r"\$(\{[\w:]+\}|[\w:]+)")
 _ASSIGN_RE = re.compile(r"(?:[-+*/%]|\?\?)?=(?!=)")
 _NUMBER_RE = re.compile(r"\d+(?:\.\d+)?(?:[kmgtp]b)?(?:\.\.\S+)?", re.IGNORECASE)
 _DOWNLOAD_RE = re.compile(
@@ -73,6 +87,7 @@ _DOWNLOAD_RE = re.compile(
     re.IGNORECASE,
 )
 _DECODE_RE = re.compile(r"frombase64string", re.IGNORECASE)
+_CLOSERS = {"(": ")", "[": "]", "{": "}"}
 
 
 @dataclass
@@ -89,12 +104,44 @@ class _Word:
     spans: list[tuple[int, int]] = field(default_factory=list)
 
 
-_Stage = tuple[str, bool, str]
+@dataclass(frozen=True)
+class _Stage:
+    """One pipeline element.
+
+    ``index`` is its position in the command list (``-1`` for an
+    expression) and ``blocks`` the command ranges of its script blocks.
+    """
+
+    program: str
+    piped_script: bool
+    raw: str
+    index: int = -1
+    blocks: tuple[tuple[int, int], ...] = ()
 
 
-def _variable_name(reference: str) -> str:
-    """Upper-cased name of ``$name``, ``${name}`` or ``$env:NAME``."""
-    return reference.lstrip("$").strip("{}").split(":")[-1].upper()
+def _variable_key(reference: str) -> str:
+    """Key of ``$name``, ``${name}`` or ``$scope:name`` in the parse result.
+
+    Lower-cased, without the scope.  An environment variable keeps its
+    drive: ``$env:TEMP`` is ``env:temp``.
+    """
+    name = reference.lstrip("$").strip("{}").lower()
+    return name if name.startswith("env:") else name.rsplit(":", 1)[-1]
+
+
+def _join_path(texts: Sequence[str]) -> str | None:
+    """Path a literal ``Join-Path a b`` evaluates to, or ``None``."""
+    if len(texts) < 3 or texts[0].lower() != "join-path":
+        return None
+    parts: list[str] = []
+    for text in texts[1:]:
+        named = text.lower()
+        if len(named) > 1 and named[0] == "-":
+            if not any(p.startswith(named) for p in ("-path", "-childpath")):
+                return None
+        else:
+            parts.append(text.rstrip("/\\"))
+    return "/".join(parts) if len(parts) >= 2 else None
 
 
 class _PowerShell:
@@ -247,10 +294,8 @@ class _PowerShell:
             char = s[self.i]
             if char in _TAIL_END or (char == "=" and stop_at_equals):
                 return
-            if char == "(":
-                self.i = self._balanced(self.i, "(", ")")
-            elif char == "[":
-                self.i = self._balanced(self.i, "[", "]")
+            if char in _CLOSERS:
+                self.i = self._balanced(self.i, char, _CLOSERS[char])
             else:
                 self.i += 1
 
@@ -262,6 +307,9 @@ class _PowerShell:
         if s.startswith(("@(", "$("), start) or char == "(":
             self.i = start + (1 if char == "(" else 2)
             span = self._nested(")")
+            joined = self._joined(span) if char == "(" else None
+            if joined is not None:
+                return _Word(joined, literal="$" not in joined)
             self._tail(False)
             return _Word(s[start : self.i], "group", False, [span])
         if char == "{":
@@ -279,6 +327,13 @@ class _PowerShell:
             return _Word(s[start : self.i], "var", False)
         return self._bare()
 
+    def _joined(self, span: tuple[int, int]) -> str | None:
+        """Value of a ``(Join-Path a b)`` group that is used as it stands."""
+        made = self.out.commands[span[0] : span[1]]
+        if len(made) != 1 or self.s[self.i : self.i + 1] not in _TAIL_END | {""}:
+            return None
+        return _join_path(made[0].argv)
+
     def _string(self) -> _Word:
         if self.s[self.i] == "@":
             return self._here_string()
@@ -294,7 +349,7 @@ class _PowerShell:
         parts: list[str] = []
         while self.i < n:
             char = s[self.i]
-            if char in _BARE_END or s.startswith("&&", self.i):
+            if char in _BARE_END or char == "{" or s.startswith("&&", self.i):
                 break
             if char == "`":
                 if s.startswith(("`\n", "`\r\n"), self.i):
@@ -307,8 +362,8 @@ class _PowerShell:
                 parts.append(self._double(word))
             elif char == "$" and self._expansion(word, parts):
                 continue
-            elif char in "({":
-                end = self._balanced(self.i, char, ")" if char == "(" else "}")
+            elif char == "(":
+                end = self._balanced(self.i, "(", ")")
                 parts.append(s[self.i : end])
                 self.i = end
             else:
@@ -370,8 +425,31 @@ class _PowerShell:
             for command in commands[low:high]
         )
 
+    def _add(self, command: SimpleCommand) -> int:
+        """Append a command and return its index."""
+        if len(self.out.commands) >= MAX_COMMANDS:
+            raise ParseError("too many commands")
+        self.out.commands.append(command)
+        return len(self.out.commands) - 1
+
+    @staticmethod
+    def _value(words: list[_Word]) -> str | None:
+        """Text an assignment gives its variable (``None``: unknown).
+
+        A string, a plain variable or ``Join-Path`` over those; references
+        to other variables stay in the text as written.
+        """
+        kinds = ("bare", "string", "var")
+        if any(word.spans or word.kind not in kinds for word in words):
+            return None
+        if any(w.kind == "var" and not _PLAIN_VAR_RE.fullmatch(w.text) for w in words):
+            return None
+        if len(words) == 1 and words[0].kind != "bare":
+            return words[0].text
+        return _join_path([word.text for word in words])
+
     def _assignment(self, words: list[_Word]) -> list[_Word]:
-        """Drop a leading ``$name =`` and remember a literal string value."""
+        """Drop a leading ``$name =`` and remember what it was given."""
         if len(words) < 2 or words[0].kind != "var" or words[1].kind != "bare":
             return words
         match = _ASSIGN_RE.match(words[1].text)
@@ -379,15 +457,28 @@ class _PowerShell:
             return words
         attached = words[1].text[match.end() :]
         value = ([_Word(attached)] if attached else []) + words[2:]
-        if len(value) == 1 and value[0].kind == "string" and value[0].literal:
-            self.out.variables[_variable_name(words[0].text)] = value[0].text
+        if _PLAIN_VAR_RE.fullmatch(words[0].text):
+            compound = match.group() != "="
+            key = _variable_key(words[0].text)
+            self.out.assign(key, None if compound else self._value(value))
         return value
+
+    def _bind_loop(self, words: list[_Word]) -> None:
+        """Record the variable of ``foreach ($name in 'a', 'b')``."""
+        heads = [(word.kind, word.text.lower()) for word in words[:2]]
+        if len(words) < 3 or heads[0][0] != "var" or heads[1] != ("bare", "in"):
+            return
+        items = words[2:]
+        literal = all(item.kind == "string" and item.literal for item in items)
+        value = tuple(item.text for item in items) if literal else None
+        self.out.assign(_variable_key(words[0].text), value)
 
     def _end_statement(
         self, words: list[_Word], redirects: list[Redirect], stages: list[_Stage]
     ) -> None:
         """Finish one pipeline element and add it to *stages*."""
         raw = " ".join(word.text for word in words)
+        self._bind_loop(words)
         words = self._assignment(words)
         called = bool(words) and (
             words[0].kind == "call" or (words[0].kind, words[0].text) == ("bare", ".")
@@ -396,14 +487,13 @@ class _PowerShell:
             words = words[1:]
         if not words:
             if redirects:
-                bare = SimpleCommand((), "powershell", tuple(redirects))
-                self.out.commands.append(bare)
+                self._add(SimpleCommand((), "powershell", tuple(redirects)))
             return
         first = words[0]
         if called and first.kind == "var":
             # ``$exe = 'C:\tool.exe'; & $exe run`` reads as the command it is.
-            known = self.out.variables.get(_variable_name(first.text))
-            if known is not None:
+            known = self.out.variables.get(_variable_key(first.text))
+            if known is not None and "$" not in known:
                 first = _Word(known, "string")
                 words = [first, *words[1:]]
         if first.kind in ("var", "group", "expr") and called:
@@ -413,17 +503,20 @@ class _PowerShell:
         )
         name = first.text
         if expression or not name or name[0] in "-!" or _NUMBER_RE.fullmatch(name):
-            stages.append(("", False, raw))
+            stages.append(_Stage("", False, raw))
             return
-        if first.kind == "bare" and name.lower() in _KEYWORDS and not called:
-            stages.append(("", False, raw))
+        keyword = first.kind == "bare" and name.lower() in _KEYWORDS and not called
+        if keyword and not (stages and name.lower() == "foreach"):
+            stages.append(_Stage("", False, raw))
             return
         if not first.literal and "$" in name.replace("\\", "/").rsplit("/", 1)[-1]:
             self.out.dynamic.append(Dynamic("variable_command", name[:200]))
         program = ALIASES.get(name.lower(), name)
         argv = (program, *(word.text for word in words[1:]))
-        self.out.commands.append(SimpleCommand(argv, "powershell", tuple(redirects)))
-        stages.append((program_name(program), self._descend(words, argv, raw), raw))
+        index = self._add(SimpleCommand(argv, "powershell", tuple(redirects)))
+        blocks = tuple(span for w in words if w.kind == "block" for span in w.spans)
+        piped = self._descend(words, argv, raw)
+        stages.append(_Stage(program_name(program), piped, raw, index, blocks))
 
     def _descend(self, words: list[_Word], argv: tuple[str, ...], raw: str) -> bool:
         """Handle Invoke-Expression and nested shells; True if fed by a pipe."""
@@ -456,17 +549,28 @@ class _PowerShell:
         return found.kind == "stdin"
 
     def _end_pipeline(self, stages: list[_Stage]) -> None:
-        for index, (program, piped_script, _) in enumerate(stages):
-            if not (index and piped_script):
-                continue
-            upstream = " | ".join(raw for _, _, raw in stages[:index])
-            if _DOWNLOAD_RE.search(upstream):
-                kind = "download_pipe"
-            elif _DECODE_RE.search(upstream):
-                kind = "decoder_pipe"
-            else:
-                kind = pipe_kind([name for name, _, _ in stages[:index]])
-            self.out.dynamic.append(Dynamic(kind, program))
+        """Mark shells fed by a pipe and tell each command what feeds it."""
+        commands = self.out.commands
+        download = decoder = False
+        feed: tuple[str, ...] = ()
+        for position, stage in enumerate(stages):
+            if position and stage.piped_script:
+                kind = "pipe_to_shell"
+                if download:
+                    kind = "download_pipe"
+                elif decoder:
+                    kind = "decoder_pipe"
+                self.out.dynamic.append(Dynamic(kind, stage.program))
+            fed = [stage.index] if stage.index >= 0 else []
+            if stage.program == "foreach-object":
+                fed += [i for low, high in stage.blocks for i in range(low, high)]
+            for index in fed if feed else ():
+                commands[index] = replace(commands[index], upstream=feed)
+            name, raw = stage.program, stage.raw
+            download = download or name in DOWNLOADERS or bool(_DOWNLOAD_RE.search(raw))
+            decoder = decoder or name in DECODERS or bool(_DECODE_RE.search(raw))
+            if name not in SELECTORS:
+                feed = commands[stage.index].argv if stage.index >= 0 else ()
 
 
 def parse_powershell(text: str, depth: int, recurse: Recurse) -> ParseResult:

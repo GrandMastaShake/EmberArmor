@@ -255,7 +255,9 @@ def test_literal_assignments_are_recorded() -> None:
     result = parse_shell(
         'S=/tmp/x; export T="C:/y" U=$(pwd); V=$S/z; local W=1', "bash"
     )
-    assert result.variables == {"S": "/tmp/x", "T": "C:/y", "W": "1"}
+    # A value made of literals and plain references is kept as written.
+    assert result.variables == {"S": "/tmp/x", "T": "C:/y", "V": "$S/z", "W": "1"}
+    assert result.unknown == {"U"}
 
 
 SUBSTITUTION_CASES = [

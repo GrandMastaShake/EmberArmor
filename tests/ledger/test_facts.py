@@ -283,12 +283,25 @@ def test_cwd_is_normalised_for_both_flavours() -> None:
     )
 
 
-def test_non_string_command_is_not_parsed() -> None:
-    facts = extract(
-        make_call("Bash", {"command": ["rm", "-rf", "/"]}), windows=False, env={}
-    )
-    assert facts.commands == ()
-    assert facts.args == {"command": ["rm", "-rf", "/"]}
+@pytest.mark.parametrize(
+    "tool_input",
+    [{"command": ["rm", "-rf", "/"]}, {"command": None}, {"command": 5}, {},
+     {"cmd": "rm -rf /"}],
+)  # fmt: skip
+@pytest.mark.parametrize("tool", ["Bash", "PowerShell", "bash"])
+def test_a_shell_call_without_a_command_string_is_an_error(
+    tool: str, tool_input: dict[str, Any]
+) -> None:
+    # Never "no commands": the gate turns the error into ask in enforce mode.
+    with pytest.raises(ValueError, match="no command string"):
+        extract(make_call(tool, tool_input), windows=False, env={})
+
+
+@pytest.mark.parametrize("tool_input", [[], "", 0, "rm -rf /"])
+def test_a_tool_input_that_is_not_an_object_is_an_error(tool_input: Any) -> None:
+    call = {"tool_name": "Bash", "cwd": "/", "tool_input": tool_input}
+    with pytest.raises(ValueError, match="not an object"):
+        extract(call, windows=False, env={})
 
 
 @pytest.mark.parametrize(

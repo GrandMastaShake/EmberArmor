@@ -9,16 +9,25 @@ reasons and the structured arguments.
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-from ember_armor.ledger.paths import PATH_VARIABLES, normalize
-from ember_armor.ledger.shell import Dynamic, SimpleCommand, parse_shell
+from ember_armor.ledger.paths import PATH_VARIABLES, Lookup, normalize
+from ember_armor.ledger.shell import Dynamic, ParseResult, SimpleCommand, parse_shell
 from ember_armor.ledger.shellpaths import PathFact, shell_paths
 
 #: Tools whose ``command`` input is a shell string, and the shell that reads it.
-SHELL_TOOLS = {"Bash": "bash", "PowerShell": "powershell"}
+SHELL_TOOLS = {
+    "Bash": "bash",
+    "PowerShell": "powershell",
+    "mcp__Windows-MCP__PowerShell": "powershell",
+}
+_SHELLS_BY_TOOL = {name.lower(): shell for name, shell in SHELL_TOOLS.items()}
+#: A longer path is not matched against rules; the call is marked instead.
+MAX_PATH_CHARS = 1024
+_MAX_ALTERNATIVES = 64
 #: File tools: the input field holding the path, and what the tool does to it.
 FILE_TOOLS = {
     "Read": ("file_path", "read"),
@@ -50,6 +59,11 @@ class Facts:
     variables: Mapping[str, str] = field(default_factory=dict)
 
 
+def shell_of(tool: str) -> str | None:
+    """Shell that reads the ``command`` of *tool* (any letter case), if any."""
+    return _SHELLS_BY_TOOL.get(tool.lower())
+
+
 def path_variables(env: Mapping[str, str]) -> dict[str, str]:
     """Variables from *env* that may be expanded in paths, upper-cased."""
     found = {k.upper(): v for k, v in env.items() if k.upper() in PATH_VARIABLES and v}
@@ -57,6 +71,73 @@ def path_variables(env: Mapping[str, str]) -> dict[str, str]:
     if home:
         found.setdefault("HOME", home)
     return found
+
+
+def _lookup(
+    shell: str, parsed: ParseResult, env: Mapping[str, str], current: str
+) -> Lookup:
+    """Resolver for plain ``$NAME`` references of one shell.
+
+    Bash names are case-sensitive and fall back to the environment unless
+    the command string assigns them.  PowerShell names are case-insensitive
+    and never read the environment (that is ``$env:NAME``); ``$HOME`` and
+    ``$PWD`` are automatic.  A name the parser marked unknown stays as
+    written.
+    """
+
+    def bash(name: str) -> str | None:
+        if name == "PWD":
+            return current
+        if name in parsed.unknown:
+            return None
+        if name in parsed.variables:
+            # Assigning an environment name: which value holds where is not
+            # tracked, so neither is trusted.
+            return None if name in env else parsed.variables[name]
+        return env.get(name)
+
+    def powershell(name: str) -> str | None:
+        key = name.lower()
+        if key in parsed.unknown:
+            return None
+        if key in parsed.variables:
+            return parsed.variables[key]
+        automatic = {"pwd": current, "home": env.get("HOME")}
+        return automatic.get(key)
+
+    return {"bash": bash, "powershell": powershell}.get(shell, lambda name: None)
+
+
+def _environment(
+    shell: str, parsed: ParseResult, env: Mapping[str, str]
+) -> Mapping[str, str]:
+    """Environment for ``$env:NAME``, without names the command reassigns."""
+    if shell != "powershell":
+        return env
+    assigned = parsed.unknown | parsed.variables.keys()
+    return {k: v for k, v in env.items() if f"env:{k.lower()}" not in assigned}
+
+
+def _alternatives(
+    raw: str, choices: Mapping[str, tuple[str, ...]], fold: bool
+) -> list[str]:
+    """*raw* with each loop variable or literal array replaced by its values."""
+    texts = [raw]
+    for name, values in choices.items():
+        escaped = re.escape(name)
+        reference = re.compile(
+            rf"\$\{{{escaped}(?:\[[@*]\])?\}}|\${escaped}(?![\w\[])",
+            re.IGNORECASE if fold else 0,
+        )
+        if not reference.search(raw):
+            continue
+        # Splitting and joining puts the value in as it is (no escapes).
+        texts = [
+            value.join(reference.split(text)) for text in texts for value in values
+        ]
+        if len(texts) > _MAX_ALTERNATIVES:
+            return [raw]
+    return texts
 
 
 def extract(
@@ -84,9 +165,11 @@ def extract(
         If the call has no tool name or its input is not an object.
     """
     tool = call.get("tool_name")
-    tool_input = call.get("tool_input") or {}
+    tool_input = call.get("tool_input", {})
     if not isinstance(tool, str) or not tool:
         raise ValueError("tool call has no tool_name")
+    if tool_input is None:
+        tool_input = {}
     if not isinstance(tool_input, Mapping):
         raise ValueError("tool_input is not an object")
     windows = os.name == "nt" if windows is None else windows
@@ -98,26 +181,48 @@ def extract(
     commands: tuple[SimpleCommand, ...] = ()
     dynamic: tuple[Dynamic, ...] = ()
     paths: list[PathFact] = []
-    command = tool_input.get("command")
-    if tool in SHELL_TOOLS and isinstance(command, str):
-        parsed = parse_shell(command, SHELL_TOOLS[tool])
-        known = {**variables, **parsed.variables}
+    shell = shell_of(tool)
+    if shell is not None:
+        command = tool_input.get("command")
+        if not isinstance(command, str):
+            raise ValueError(f"{tool} call has no command string")
+        parsed = parse_shell(command, shell)
+        overlong = False
 
-        def resolve(raw: str, current: str) -> str:
-            return normalize(
-                raw,
-                current,
-                windows=windows,
-                home=home,
-                variables={**known, "PWD": current},
-            )
+        def resolve(raw: str, current: str, command_shell: str) -> list[str]:
+            nonlocal overlong
+            if len(raw) > MAX_PATH_CHARS:
+                overlong = True
+                return []
+            lookup = _lookup(command_shell, parsed, variables, current)
+            fold = command_shell == "powershell"
+            return [
+                normalize(
+                    text,
+                    current,
+                    windows=windows,
+                    home=home,
+                    variables=_environment(command_shell, parsed, variables),
+                    lookup=lookup,
+                )
+                for text in _alternatives(raw, parsed.choices, fold)
+            ]
 
+        paths = shell_paths(parsed, cwd, resolve, home)
         commands, dynamic = tuple(parsed.commands), tuple(parsed.dynamic)
-        paths = shell_paths(parsed, cwd, resolve)
+        if overlong:
+            dynamic += (Dynamic("parse_error", "path too long"),)
     elif tool in FILE_TOOLS:
         key, op = FILE_TOOLS[tool]
         target = tool_input.get(key)
+        pattern = tool_input.get("glob") if tool == "Grep" else None
+        if isinstance(pattern, str) and pattern:
+            # Grep with a glob reads every file of that name below the path.
+            start = target if isinstance(target, str) and target else "."
+            target = f"{start}/**/{pattern}"
         if isinstance(target, str) and target:
+            if len(target) > MAX_PATH_CHARS:
+                raise ValueError(f"path longer than {MAX_PATH_CHARS} characters")
             resolved = normalize(
                 target, cwd, windows=windows, home=home, variables=variables
             )

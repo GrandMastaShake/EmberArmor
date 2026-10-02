@@ -10,14 +10,29 @@ can be tested on any machine.  Nothing here touches the filesystem.
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from functools import lru_cache
 
 _DRIVE_RE = re.compile(r"([A-Za-z]):(.*)", re.DOTALL)
 _MSYS_RE = re.compile(r"/([A-Za-z])(/.*)?", re.DOTALL)
 _UNC_RE = re.compile(r"//([^/]+)/([^/]+)(/.*)?", re.DOTALL)
-_VAR_RE = re.compile(r"\$\{(?:env:)?(\w+)\}|\$(?:env:)?(\w+)|%(\w+)%", re.IGNORECASE)
+_DEVICE_RE = re.compile(r"//[?.]/(UNC/)?", re.IGNORECASE)
+_LOCAL_SHARE_RE = re.compile(
+    r"//(?:localhost|127\.0\.0\.1)/([A-Za-z])\$(/.*)?", re.IGNORECASE | re.DOTALL
+)
+_MOUNT_RE = re.compile(r"/(?:mnt|cygdrive)/([A-Za-z])(/.*)?", re.DOTALL)
+_VAR_RE = re.compile(
+    r"\$\{env:(\w+)\}|\$env:(\w+)|%(\w+)%|\$\{(\w+)\}|\$(\w+)", re.IGNORECASE
+)
 _WILD_ROOT_RE = re.compile(r"(\*\*|[?*]:)")
+_CLASS_RE = re.compile(r"\[[^\]]*\]")
+_WILDCARDS = frozenset("*?[")
+_MAX_EXPANSIONS = 4
+#: Stands in for a rule pattern that names an unset variable: no path has it.
+NO_PATH = "\x00"
+
+#: ``lookup(name)`` gives the value of a shell variable, or ``None``.
+Lookup = Callable[[str], str | None]
 
 #: Environment variables that may be expanded inside a path.
 PATH_VARIABLES = (
@@ -35,23 +50,47 @@ PATH_VARIABLES = (
 )
 
 
-def expand_variables(text: str, variables: Mapping[str, str]) -> str:
+def expand_variables(
+    text: str, variables: Mapping[str, str], lookup: Lookup | None = None
+) -> str:
     """Replace ``$NAME``, ``${NAME}``, ``$env:NAME`` and ``%NAME%``.
 
-    Only names present in *variables* (looked up in upper case) are replaced;
-    anything else is left exactly as written.
+    ``$env:NAME`` and ``%NAME%`` are environment variables: they are looked
+    up in *variables* in upper case.  A plain ``$NAME`` is a shell variable:
+    *lookup* resolves it when given (case rules are the shell's), otherwise
+    it is read from *variables* too.  A value may itself hold references;
+    they are expanded as well, a bounded number of times.  Anything unknown
+    is left exactly as written.
     """
 
     def substitute(match: re.Match[str]) -> str:
         name = next(g for g in match.groups() if g)
-        return variables.get(name.upper(), match.group(0))
+        plain = match.group(4) or match.group(5)
+        if plain and lookup is not None:
+            value = lookup(plain)
+        else:
+            value = variables.get(name.upper())
+        return match.group(0) if value is None else value
 
-    return _VAR_RE.sub(substitute, text) if variables else text
+    if not variables and lookup is None:
+        return text
+    for _ in range(_MAX_EXPANSIONS):
+        expanded = _VAR_RE.sub(substitute, text)
+        if expanded == text:
+            break
+        text = expanded
+    return text
 
 
 def _split_root(text: str, windows: bool) -> tuple[str | None, str]:
     """Return ``(root, rest)``; ``root`` is ``None`` for a relative path."""
     if windows:
+        if match := _DEVICE_RE.match(text):
+            # ``\\?\C:\x`` is ``C:\x``; ``\\?\UNC\host\share`` is ``\\host\share``.
+            text = ("//" if match.group(1) else "") + text[match.end() :]
+        local = _LOCAL_SHARE_RE.fullmatch(text) or _MOUNT_RE.fullmatch(text)
+        if local:
+            return f"{local.group(1).upper()}:/", local.group(2) or ""
         if match := _DRIVE_RE.fullmatch(text):
             return f"{match.group(1).upper()}:/", match.group(2)
         if match := _UNC_RE.fullmatch(text):
@@ -70,6 +109,7 @@ def normalize(
     windows: bool,
     home: str | None = None,
     variables: Mapping[str, str] | None = None,
+    lookup: Lookup | None = None,
 ) -> str:
     """Resolve *raw* against *cwd* and return the normalised path.
 
@@ -81,13 +121,17 @@ def normalize(
         Working directory of the call.  It is normalised the same way.
     windows:
         Path flavour.  On Windows backslashes are separators, drive letters
-        are upper-cased and the MSYS form ``/c/Users`` means ``C:/Users``.
+        are upper-cased, the MSYS form ``/c/Users`` means ``C:/Users``, and
+        so do ``/mnt/c/Users``, ``\\\\?\\C:\\Users`` and ``\\\\localhost\\C$\\Users``.
     home:
         Home directory used for ``~``; ``None`` leaves ``~`` untouched.
     variables:
         Upper-case variable names to values, expanded before resolution.
+    lookup:
+        Resolver for plain ``$NAME`` shell variables (see
+        :func:`expand_variables`).
     """
-    text = expand_variables(raw.strip(), variables or {})
+    text = expand_variables(raw.strip(), variables or {}, lookup)
     if windows:
         text = text.replace("\\", "/")
     if home and (text == "~" or text.startswith("~/")):
@@ -127,8 +171,11 @@ def resolve_pattern(
     A pattern starting with ``**``, ``?:`` or ``*:`` is already absolute.
     With *bare_anywhere*, a pattern without any separator (``*.pem``) matches
     that name in any directory.  Everything else is resolved like a path,
-    relative patterns against *base*.
+    relative patterns against *base*.  A pattern whose variable is not set
+    (``$TMPDIR`` on Windows) resolves to :data:`NO_PATH` and matches nothing.
     """
+    if variables is not None and _VAR_RE.search(expand_variables(pattern, variables)):
+        return NO_PATH
     text = pattern.replace("\\", "/") if windows else pattern
     if bare_anywhere and "/" not in text and not text.startswith(("~", "$", "%")):
         return f"**/{text}"
@@ -178,6 +225,54 @@ def matches_glob(path: str, pattern: str, *, windows: bool) -> bool:
     case-insensitive for the Windows flavour.
     """
     return _glob_regex(pattern, windows, False).fullmatch(path) is not None
+
+
+def _names_overlap(a: str, b: str) -> bool:
+    """True when some file name fits both single-segment patterns."""
+    a, b = _CLASS_RE.sub("?", a), _CLASS_RE.sub("?", b)
+    seen: set[tuple[int, int]] = set()
+    todo = [(0, 0)]
+    while todo:
+        i, j = todo.pop()
+        if (i, j) in seen:
+            continue
+        seen.add((i, j))
+        if i == len(a) and j == len(b):
+            return True
+        x, y = a[i : i + 1], b[j : j + 1]
+        if x == "*":
+            todo.append((i + 1, j))
+            if y:
+                todo.append((i, j + 1))
+        elif y == "*":
+            todo.append((i, j + 1))
+            if x:
+                todo.append((i + 1, j))
+        elif x and y and (x == y or "?" in (x, y)):
+            todo.append((i + 1, j + 1))
+    return False
+
+
+def may_match(path: str, pattern: str, *, windows: bool) -> bool:
+    """True when *path* matches *pattern*, or may once a shell expands it.
+
+    A shell operand can still hold wildcards (``cat .env*``).  When its last
+    segment starts with literal text and holds a wildcard, the question is
+    whether some name fits both that segment and the pattern's.  A segment
+    that is only an extension (``*.json``) or only wildcards is too
+    unspecific to count.  The directory part matches as written.
+    """
+    if matches_glob(path, pattern, windows=windows):
+        return True
+    directory, _, name = path.rpartition("/")
+    if not name or name[0] in _WILDCARDS or not _WILDCARDS.intersection(name):
+        return False
+    pattern_directory, _, pattern_name = pattern.rpartition("/")
+    if not matches_glob(directory, pattern_directory, windows=windows):
+        return False
+    if windows:
+        name, pattern_name = name.lower(), pattern_name.lower()
+    return _names_overlap(name, pattern_name)
 
 
 def is_under(path: str, directory: str, *, windows: bool) -> bool:

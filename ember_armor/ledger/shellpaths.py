@@ -3,18 +3,19 @@
 Only recognised commands contribute paths (``rm``, ``cat``, ``Remove-Item``,
 ``del`` and so on), plus every redirection.  Unknown programs contribute
 nothing: the ledger does not guess what an arbitrary tool does with its
-arguments.  ``cd`` is followed so later relative paths resolve correctly.
+arguments.  ``cd``, ``pushd`` and ``popd`` are followed so later relative
+paths resolve correctly; a move inside a subshell ends with the subshell.
 """
 
 from __future__ import annotations
 
 import re
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 
 from ember_armor.ledger.shell import ParseResult, SimpleCommand, program_name
 from ember_armor.ledger.shell.argv import has_flag, operands
-from ember_armor.ledger.shell.core import find_targets
+from ember_armor.ledger.shell.core import find_exec, find_targets, lister_targets
 
 _NULL_TARGETS = frozenset(
     {"/dev/null", "/dev/stdout", "/dev/stderr", "/dev/tty", "nul", "$null"}
@@ -38,6 +39,8 @@ class _Native:
 
     ``op`` applies to every operand after the first ``skip``; ``last`` (if
     set) overrides it for the final operand when there are at least two.
+    ``name_flags`` carry a file-name pattern the program looks for below
+    its operands (``grep --include``, ``rg -g``).
     """
 
     op: str
@@ -46,6 +49,7 @@ class _Native:
     skip: int = 0
     last: str | None = None
     write_flags: tuple[str, ...] = ()
+    name_flags: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -65,7 +69,7 @@ class _Cmdlet:
 
 
 _READERS = ("cat", "tac", "nl", "less", "more", "bat", "strings", "xxd", "od",
-            "hexdump", "base64", "source", ".")  # fmt: skip
+            "hexdump", "base64", "source", ".", "diff")  # fmt: skip
 _GREP_VALUES = frozenset({"-e", "-f", "-m", "-A", "-B", "-C", "-g", "-t",
                           "--include", "--exclude", "--exclude-dir", "--glob",
                           "--type"})  # fmt: skip
@@ -73,10 +77,13 @@ _BASH: dict[str, _Native] = {
     **{name: _Native("read") for name in _READERS},
     "head": _Native("read", frozenset({"-n", "-c"})),
     "tail": _Native("read", frozenset({"-n", "-c"})),
-    "grep": _Native("read", _GREP_VALUES, skip=1),
-    "egrep": _Native("read", _GREP_VALUES, skip=1),
-    "fgrep": _Native("read", _GREP_VALUES, skip=1),
-    "rg": _Native("read", _GREP_VALUES, skip=1),
+    "grep": _Native("read", _GREP_VALUES, skip=1, name_flags=("--include",)),
+    "egrep": _Native("read", _GREP_VALUES, skip=1, name_flags=("--include",)),
+    "fgrep": _Native("read", _GREP_VALUES, skip=1, name_flags=("--include",)),
+    "rg": _Native("read", _GREP_VALUES, skip=1, name_flags=("-g", "--glob")),
+    "awk": _Native("read", frozenset({"-f", "-F", "-v"}), skip=1),
+    "cut": _Native("read", frozenset({"-d", "-f", "-b", "-c"})),
+    "sort": _Native("read", frozenset({"-k", "-t", "-o", "-S", "-T"})),
     "rm": _Native("delete", recursive=("-r", "-R", "--recursive")),
     "rmdir": _Native("delete"),
     "unlink": _Native("delete"),
@@ -155,17 +162,70 @@ _POWERSHELL: dict[str, _Cmdlet] = {
         _path_params("read"), ("pattern", "context"), (None,), rest="read"
     ),
 }
-_CD_PROGRAMS = frozenset({"cd", "pushd", "chdir", "set-location", "push-location"})
-#: A delete whose targets arrive on a pipe (``xargs rm``, ``... | Remove-Item``)
-#: is treated as acting on the working directory: unknown, so assume nearby.
+_CD = frozenset({"cd", "chdir", "set-location"})
+_PUSHD = frozenset({"pushd", "push-location"})
+_POPD = frozenset({"popd", "pop-location"})
+_PREVIOUS = frozenset({"-", "~-", "$OLDPWD", "${OLDPWD}"})
+_REMOVERS = frozenset({"rm", "rmdir", "unlink"})
+#: A delete whose targets arrive on a pipe from something that is not a
+#: literal lister is treated as acting on the working directory: unknown,
+#: so assume nearby.
 _UNKNOWN_TARGET = "."
+#: Operands that stand for what the pipe delivers.
+_PIPED = frozenset({"{}", "$_", "$_.fullname", "$psitem", "$psitem.fullname"})
+_WHATIF_ON = frozenset({"", "$true", "true", "1"})
 
-Resolve = Callable[[str, str], str]
+#: ``resolve(raw, cwd, shell)``: the normalised paths *raw* can stand for.
+Resolve = Callable[[str, str, str], list[str]]
+
+
+@dataclass
+class _Location:
+    """Working directory while walking the commands of one call."""
+
+    current: str
+    previous: str
+    stack: list[str] = field(default_factory=list)
 
 
 def _is_null(target: str) -> bool:
     lowered = target.lower()
     return lowered in _NULL_TARGETS or lowered.startswith(("/dev/fd/", "&"))
+
+
+def _piped_targets(
+    command: SimpleCommand, targets: list[str], recursive: bool, op: str
+) -> tuple[list[str], bool]:
+    """Targets of a delete or read, taken from the feeding lister if none is named.
+
+    ``find . -name x | xargs rm -rf`` and ``Get-ChildItem dist | Remove-Item``
+    act on what the lister prints.  A lister that walks a whole tree makes a
+    delete recursive.  A delete fed by anything else falls back to the
+    working directory.
+    """
+    if targets and not all(target.lower() in _PIPED for target in targets):
+        return targets, recursive
+    listed = lister_targets(command.upstream)
+    if listed is not None:
+        return listed[0], op == "delete" and (recursive or listed[1])
+    if op == "delete":
+        return targets or [_UNKNOWN_TARGET], recursive
+    return targets, recursive
+
+
+def _named_below(command: SimpleCommand, flags: Sequence[str]) -> list[str]:
+    """File-name patterns given with *flags* (``--include=X``, ``-g X``)."""
+    args = command.argv[1:]
+    names: list[str] = []
+    for index, arg in enumerate(args):
+        flag, attached, value = arg.partition("=")
+        if flag not in flags:
+            continue
+        if not attached:
+            value = args[index + 1] if index + 1 < len(args) else ""
+        if value and not value.startswith("!"):
+            names.append(value)
+    return names
 
 
 def _native_paths(command: SimpleCommand, spec: _Native) -> list[tuple[str, str, bool]]:
@@ -175,11 +235,14 @@ def _native_paths(command: SimpleCommand, spec: _Native) -> list[tuple[str, str,
     op = spec.op
     if any(has_flag(command, flag) for flag in spec.write_flags):
         op = "write"
-    if op == "delete" and not targets:
-        targets = [_UNKNOWN_TARGET]
+    if op in ("delete", "read"):
+        targets, recursive = _piped_targets(command, targets, recursive, op)
     found = [(target, op, recursive) for target in targets]
     if spec.last and len(found) >= 2:
         found[-1] = (found[-1][0], spec.last, False)
+    for name in _named_below(command, spec.name_flags):
+        roots = [root.rstrip("/") for root in targets or ["."]]
+        found += [(f"{root}/**/{name}", op, False) for root in roots]
     return found
 
 
@@ -191,8 +254,20 @@ def _resolve_param(name: str, spec: _Cmdlet) -> str | None:
     return next((p for p in spec.params if p.startswith(lowered)), None)
 
 
+def _what_if(command: SimpleCommand) -> bool:
+    """True when the cmdlet only reports what it would do (``-WhatIf``).
+
+    ``-WhatIf:$false`` switches the preview off: the command really runs.
+    """
+    for arg in command.argv[1:]:
+        name, _, value = arg.lower().partition(":")
+        if len(name) > 1 and "-whatif".startswith(name) or name == "-wi":
+            return value in _WHATIF_ON
+    return False
+
+
 def _cmdlet_paths(command: SimpleCommand, spec: _Cmdlet) -> list[tuple[str, str, bool]]:
-    if has_flag(command, "-whatif"):
+    if _what_if(command):
         return []
     recursive = has_flag(command, "-recurse")
     found: list[tuple[str, str | None]] = []
@@ -219,8 +294,13 @@ def _cmdlet_paths(command: SimpleCommand, spec: _Cmdlet) -> list[tuple[str, str,
         found.append((arg, op))
     if spec.last and "destination" not in named and len(loose) >= 2:
         found[-1] = (loose[-1], spec.last)
-    if spec.rest == "delete" and not found:
-        found.append((_UNKNOWN_TARGET, "delete"))
+    named_targets = [path for path, op in found if op]
+    if spec.rest in ("delete", "read"):
+        targets, recursive = _piped_targets(
+            command, named_targets, recursive, spec.rest
+        )
+        if targets != named_targets:
+            found = [(target, spec.rest) for target in targets]
     return [(path, op, recursive and op == "delete") for path, op in found if op]
 
 
@@ -235,10 +315,20 @@ def _dd_paths(command: SimpleCommand) -> list[tuple[str, str, bool]]:
 
 
 def _find_paths(command: SimpleCommand) -> list[tuple[str, str, bool]]:
-    if "-delete" not in command.argv:
-        return []
-    targets, named = find_targets(command.argv[1:])
-    return [(target, "delete", not named) for target in targets]
+    """What a ``find`` deletes with ``-delete`` or ``-exec rm``.
+
+    Without a ``-name`` filter the whole tree goes, however the removal is
+    spelled (``find ~ -type f -exec rm -f {} +``).  With one, ``-exec rm``
+    is already covered by the command it runs.
+    """
+    args = command.argv[1:]
+    targets, named = find_targets(args)
+    if "-delete" in args:
+        return [(target, "delete", not named) for target in targets]
+    removes = any(program_name(inner[0]) in _REMOVERS for inner in find_exec(args))
+    if removes and not named:
+        return [(target, "delete", True) for target in targets]
+    return []
 
 
 def _command_paths(command: SimpleCommand) -> list[tuple[str, str, bool]]:
@@ -254,19 +344,39 @@ def _command_paths(command: SimpleCommand) -> list[tuple[str, str, bool]]:
     return _native_paths(command, _BASH[name]) if name in _BASH else []
 
 
-def _change_directory(command: SimpleCommand, cwd: str, resolve: Resolve) -> str:
-    """Working directory after a ``cd``-like command (unchanged if unclear)."""
+def _change_directory(
+    command: SimpleCommand, place: _Location, resolve: Resolve, home: str | None
+) -> None:
+    """Follow ``cd``, ``pushd`` or ``popd`` (no move if the target is unclear)."""
+    name = program_name(command.argv[0])
     if command.shell == "powershell":
         targets = [a for a in command.argv[1:] if not a.startswith("-")]
     else:
         targets = operands(command, slash_flags=command.shell == "cmd")
-    if len(targets) != 1 or targets[0] == "-":
-        return cwd
-    resolved = resolve(targets[0], cwd)
-    return cwd if "$" in resolved else resolved
+    destination: str | None = None
+    if name in _POPD:
+        destination = place.stack.pop() if place.stack else None
+    elif not targets:
+        if name in _PUSHD:
+            destination = place.stack.pop() if place.stack else None
+        elif command.shell == "bash":
+            destination = home
+    elif len(targets) == 1 and targets[0] in _PREVIOUS:
+        destination = place.previous
+    elif len(targets) == 1:
+        resolved = resolve(targets[0], place.current, command.shell)
+        if len(resolved) == 1 and "$" not in resolved[0]:
+            destination = resolved[0]
+    if destination is None:
+        return
+    if name in _PUSHD:
+        place.stack.append(place.current)
+    place.previous, place.current = place.current, destination
 
 
-def shell_paths(parsed: ParseResult, cwd: str, resolve: Resolve) -> list[PathFact]:
+def shell_paths(
+    parsed: ParseResult, cwd: str, resolve: Resolve, home: str | None = None
+) -> list[PathFact]:
     """Paths touched by the parsed commands, normalised and de-duplicated.
 
     Parameters
@@ -276,23 +386,37 @@ def shell_paths(parsed: ParseResult, cwd: str, resolve: Resolve) -> list[PathFac
     cwd:
         Normalised working directory of the call.
     resolve:
-        ``resolve(raw_path, cwd)`` returning the normalised path.
+        ``resolve(raw_path, cwd, shell)`` returning the normalised paths the
+        operand can stand for (several for a loop variable).
+    home:
+        Normalised home directory, where a bare ``cd`` goes in Bash.
     """
     facts: dict[PathFact, None] = {}
-    current = cwd
-    for command in parsed.commands:
+    place = _Location(cwd, cwd)
+    opening: dict[int, list[int]] = {}
+    for low, high in parsed.scopes:
+        if high > low:
+            opening.setdefault(low, []).append(high)
+    left: list[tuple[int, _Location]] = []
+    for index, command in enumerate(parsed.commands):
+        while left and left[-1][0] <= index:
+            place = left.pop()[1]
+        for high in sorted(opening.get(index, ()), reverse=True):
+            left.append((high, replace(place, stack=list(place.stack))))
         for redirect in command.redirects:
             if not _is_null(redirect.target):
-                facts[PathFact(resolve(redirect.target, current), redirect.op)] = None
+                for path in resolve(redirect.target, place.current, command.shell):
+                    facts[PathFact(path, redirect.op)] = None
         if not command.argv:
             continue
-        if program_name(command.argv[0]) in _CD_PROGRAMS:
-            current = _change_directory(command, current, resolve)
+        if program_name(command.argv[0]) in _CD | _PUSHD | _POPD:
+            _change_directory(command, place, resolve, home)
             continue
         for raw, op, recursive in _command_paths(command):
             if _PROVIDER_RE.match(raw):
                 continue
             if recursive:
                 raw = _WILD_TAIL_RE.sub(r"\1.", raw)
-            facts[PathFact(resolve(raw, current), op, recursive)] = None
+            for path in resolve(raw, place.current, command.shell):
+                facts[PathFact(path, op, recursive)] = None
     return list(facts)

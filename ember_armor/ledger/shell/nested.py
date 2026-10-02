@@ -171,9 +171,15 @@ def _cmd(argv: Sequence[str]) -> Nested | None:
     return None
 
 
+def _inline_code(arg: str) -> bool:
+    """True for a flag that carries the code or module (``-c``, ``-mjson.tool``)."""
+    attached = arg[:2] in ("-c", "-e", "-m") and not arg.startswith("--")
+    return attached or arg in _INLINE_CODE_FLAGS
+
+
 def _interpreter(argv: Sequence[str]) -> Nested | None:
     args = argv[1:]
-    if any(a in _INLINE_CODE_FLAGS for a in args):
+    if any(_inline_code(a) for a in args):
         return None
     if any(not a.startswith("-") for a in args):
         return None

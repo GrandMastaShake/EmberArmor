@@ -64,13 +64,13 @@ def has_flag(command: SimpleCommand, flag: str) -> bool:
     return False
 
 
-def operands(
+def operand_positions(
     command: SimpleCommand,
     value_flags: Collection[str] = (),
     *,
     slash_flags: bool = False,
-) -> list[str]:
-    """Non-flag arguments of a native (non-cmdlet) command, in order.
+) -> list[int]:
+    """Indexes in ``argv`` of the non-flag arguments of a native command.
 
     Parameters
     ----------
@@ -82,13 +82,13 @@ def operands(
     slash_flags:
         Treat ``/x`` arguments as flags (``cmd.exe`` built-ins).
     """
-    found: list[str] = []
-    args = command.argv[1:]
-    i, only_operands = 0, False
-    while i < len(args):
-        arg = args[i]
+    found: list[int] = []
+    argv = command.argv
+    i, only_operands = 1, False
+    while i < len(argv):
+        arg = argv[i]
         if only_operands:
-            found.append(arg)
+            found.append(i)
         elif arg == "--":
             only_operands = True
         elif arg in value_flags:
@@ -98,6 +98,20 @@ def operands(
         ):
             pass
         else:
-            found.append(arg)
+            found.append(i)
         i += 1
     return found
+
+
+def operands(
+    command: SimpleCommand,
+    value_flags: Collection[str] = (),
+    *,
+    slash_flags: bool = False,
+) -> list[str]:
+    """Non-flag arguments of a native (non-cmdlet) command, in order.
+
+    Takes the parameters of :func:`operand_positions`.
+    """
+    positions = operand_positions(command, value_flags, slash_flags=slash_flags)
+    return [command.argv[i] for i in positions]

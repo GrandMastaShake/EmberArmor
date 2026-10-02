@@ -53,7 +53,7 @@ ARGV_CASES = [
     ("cat x", [["Get-Content", "x"]]),
     ("type x", [["Get-Content", "x"]]),
     ("gc x", [["Get-Content", "x"]]),
-    ("iex 'ls'", [["Invoke-Expression", "ls"], ["ls"]]),
+    ("iex 'ls'", [["Invoke-Expression", "ls"], ["Get-ChildItem"]]),
     # parameters, lists, attached values
     ("Remove-Item a, b ,c -Recurse", [["Remove-Item", "a", "b", "c", "-Recurse"]]),
     ("Remove-Item -Path a,b", [["Remove-Item", "-Path", "a", "b"]]),
@@ -70,7 +70,7 @@ ARGV_CASES = [
     ),
     ("& git status", [["git", "status"]]),
     ("npm test & git push --force", [["npm", "test"], ["git", "push", "--force"]]),
-    ("Start-Job { ls } &", [["ls"], ["Start-Job", "{ ls }"]]),
+    ("Start-Job { ls } &", [["Get-ChildItem"], ["Start-Job", "{ ls }"]]),
     (". .\\profile.ps1", [[".\\profile.ps1"]]),
     ("& { Get-Date }", [["Get-Date"]]),
     ('"just a string"', []),
@@ -81,7 +81,7 @@ ARGV_CASES = [
     # assignments and control flow
     ("$x = Get-Content f", [["Get-Content", "f"]]),
     ("$x = 5", []),
-    ("$x=5; ls", [["ls"]]),
+    ("$x=5; ls", [["Get-ChildItem"]]),
     ("$env:FOO = 'bar'; node app.js", [["node", "app.js"]]),
     (
         "if (Test-Path x) { rm x } else { ni x }",
@@ -96,7 +96,7 @@ ARGV_CASES = [
     ("function Clean { rm tmp }", [["Remove-Item", "tmp"]]),
     (
         "ls | ForEach-Object { rm $_ }",
-        [["ls"], ["Remove-Item", "$_"], ["ForEach-Object", "{ rm $_ }"]],
+        [["Get-ChildItem"], ["Remove-Item", "$_"], ["ForEach-Object", "{ rm $_ }"]],
     ),
     ("Write-Host (Get-Date)", [["Get-Date"], ["Write-Host", "(Get-Date)"]]),
     ('Write-Host "now $(Get-Date)"', [["Get-Date"], ["Write-Host", "now $(Get-Date)"]]),
@@ -222,7 +222,8 @@ def test_literal_assignments_are_recorded() -> None:
     result = parse_shell(
         "$dir = 'C:\\tmp'; $n = 5; $env:OUT = \"D:\\out\"", "powershell"
     )
-    assert result.variables == {"DIR": "C:\\tmp", "OUT": "D:\\out"}
+    assert result.variables == {"dir": "C:\\tmp", "env:out": "D:\\out"}
+    assert result.unknown == {"n"}
 
 
 def test_called_variable_with_a_known_literal_value_is_resolved() -> None:

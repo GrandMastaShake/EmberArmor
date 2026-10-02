@@ -48,7 +48,7 @@ _DECLARERS = frozenset({"export", "declare", "local", "readonly", "typeset"})
 _RUNNERS = BASH_SHELLS | POWERSHELLS | INTERPRETERS | {"source", ".", "eval"}
 _NAME_RE = re.compile(r"[A-Za-z_]\w*\+?")
 _VAR_RE = re.compile(r"[A-Za-z_]\w*|[0-9@*#?$!-]")
-_ONLY_VAR_RE = re.compile(r"\$\{?\w+\}?")
+_ONLY_VAR_RE = re.compile(r"\$\{?(\w+)\}?")
 _TEST_END_RE = re.compile(r"(?<=\s)\]\](?=[\s;&|)]|$)")
 _ANSI_C = {"n": "\n", "t": "\t", "r": "\r", "\\": "\\", "'": "'", '"': '"', "0": "\0"}
 
@@ -91,6 +91,7 @@ class _Word:
     expands: bool = False
     tail_dynamic: bool = False
     assign_at: int = -1
+    seen_equals: bool = False
     spans: list[tuple[int, int]] = field(default_factory=list)
 
     def literal(self, text: str) -> None:
@@ -246,9 +247,12 @@ class _Bash:
             elif char == "`":
                 self._backtick(word)
             else:
-                if char == "=" and word.assign_at < 0 and not word.quoted:
+                if char == "=" and not word.seen_equals:
+                    # Only the first "=" can make the word an assignment.
+                    word.seen_equals = True
                     name = "".join(word.parts)
-                    if not word.expands and _NAME_RE.fullmatch(name):
+                    plain = not word.quoted and not word.expands
+                    if plain and _NAME_RE.fullmatch(name):
                         word.assign_at = len(name) + 1
                 word.literal(char)
                 self.i += 1
@@ -465,6 +469,23 @@ class _Bash:
                 name = word.text[: word.assign_at - 1].rstrip("+")
                 self.out.variables[name.upper()] = word.text[word.assign_at :]
 
+    def _substitute(self, words: list[_Word]) -> list[_Word]:
+        """Replace ``$NAME`` words whose literal value was assigned earlier.
+
+        ``PY=/venv/bin/python; "$PY" -m pytest`` then reads as the command it
+        is.  An unquoted reference is split on whitespace, as the shell does.
+        """
+        result: list[_Word] = []
+        for word in words:
+            match = _ONLY_VAR_RE.fullmatch(word.text) if word.expands else None
+            value = self.out.variables.get(match.group(1).upper()) if match else None
+            if value is None:
+                result.append(word)
+            else:
+                parts = [value] if word.quoted else value.split()
+                result.extend(_Word(text=part, quoted=word.quoted) for part in parts)
+        return result
+
     def _end_command(self, cur: _Pending, stages: list[tuple[str, bool]]) -> None:
         """Finish the simple command in *cur* and add it to the pipeline."""
         words = list(cur.words)
@@ -482,7 +503,7 @@ class _Bash:
         while leading < len(words) and words[leading].assign_at >= 0:
             leading += 1
         self._record_variables(words[:leading])
-        words = _strip_wrappers(words[leading:])
+        words = _strip_wrappers(self._substitute(words[leading:]))
         redirects = tuple(cur.redirects)
         if not words:
             if redirects:

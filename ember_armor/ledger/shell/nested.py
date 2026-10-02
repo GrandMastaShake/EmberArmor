@@ -108,7 +108,7 @@ def _bash(argv: Sequence[str]) -> Nested:
             return Nested("bash", "stdin")
         if arg.startswith("--"):
             i += 2 if arg in ("--rcfile", "--init-file") else 1
-        elif arg[0] in "-+" and len(arg) > 1:
+        elif len(arg) > 1 and arg[0] in "-+":
             cluster = arg[1:]
             if arg[0] == "-" and "c" in cluster:
                 if i + 1 < len(argv):

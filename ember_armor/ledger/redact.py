@@ -40,8 +40,12 @@ _SHAPES = (
 
 
 def redact_text(text: str, limit: int = MAX_TEXT) -> str:
-    """Replace secret-shaped substrings of *text* and cap its length."""
-    text = _ASSIGNMENT_RE.sub(rf"\1\2{REDACTED}", text)
+    """Replace secret-shaped substrings of *text* and cap its length.
+
+    Only the first ``8 * limit`` characters are examined, so a huge argument
+    cannot make the patterns slow; everything past *limit* is cut anyway.
+    """
+    text = _ASSIGNMENT_RE.sub(rf"\1\2{REDACTED}", text[: 8 * limit])
     for pattern, replacement in _SHAPES:
         text = pattern.sub(replacement, text)
     if len(text) > limit:

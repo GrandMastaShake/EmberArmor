@@ -271,6 +271,50 @@
   "command": "(cd repo && git status)"
  },
  {
+  "tool": "Bash",
+  "command": "PY=/venv/bin/python; \"$PY\" -m pytest -q 2>&1 | tail -15"
+ },
+ {
+  "tool": "Bash",
+  "command": "git commit -q -F - <<'EOF'\nfix: (parens) and 'quotes'\nEOF\ngit log --oneline | head -5"
+ },
+ {
+  "tool": "Bash",
+  "command": "git worktree remove ../wt-fixture --force"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm -f .git/index.lock"
+ },
+ {
+  "tool": "Bash",
+  "command": "kill $(lsof -t -i:8768) 2>/dev/null || true"
+ },
+ {
+  "tool": "Bash",
+  "command": "diff <(jq -S . a.json) <(jq -S . b.json) | head -40"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Remove-Item -Recurse -Force \"$env:TEMP\\claude\\scratch\" -ErrorAction SilentlyContinue",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "try { Remove-Item .\\dist -Recurse -ErrorAction Stop } catch {}",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "git commit -m @'\nfix: thing\nwith $literal dollars\n'@",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "$ErrorActionPreference = 'Stop'; npm test; if ($LASTEXITCODE -ne 0) { throw 'failed' }",
+  "platform": "windows"
+ },
+ {
   "tool": "PowerShell",
   "command": "Remove-Item -Path \"C:\\work\\app\\dist\\*\" -Recurse -Force",
   "platform": "windows"

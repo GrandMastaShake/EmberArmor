@@ -140,26 +140,32 @@ def _resolve(pattern: str, rule: Rule, facts: Facts, *, bare: bool = False) -> s
     )
 
 
-def _under_any(path: str, directories: Iterable[str], rule: Rule, facts: Facts) -> bool:
-    return any(
-        is_under(path, _resolve(directory, rule, facts), windows=facts.windows)
-        for directory in directories
-    )
+def _under_any(path: str, directories: Iterable[str], windows: bool) -> bool:
+    """True when *path* is inside one of the resolved *directories*."""
+    return any(is_under(path, directory, windows=windows) for directory in directories)
 
 
-def _path_matches(path: PathFact, pred: PathPred, rule: Rule, facts: Facts) -> bool:
-    if pred.op != "any" and path.op != pred.op:
-        return False
-    if pred.recursive is not None and path.recursive != pred.recursive:
-        return False
-    if pred.under and not _under_any(path.path, pred.under, rule, facts):
-        return False
-    if _under_any(path.path, pred.not_under, rule, facts):
-        return False
-    globs = (_resolve(glob, rule, facts, bare=True) for glob in pred.glob)
-    return not pred.glob or any(
-        matches_glob(path.path, glob, windows=facts.windows) for glob in globs
-    )
+def _path_holds(pred: PathPred, rule: Rule, facts: Facts) -> bool:
+    """True when one path of the call satisfies every field of *pred*."""
+    windows = facts.windows
+    under = [_resolve(d, rule, facts) for d in pred.under]
+    not_under = [_resolve(d, rule, facts) for d in pred.not_under]
+    globs = [_resolve(g, rule, facts, bare=True) for g in pred.glob]
+
+    def matches(path: PathFact) -> bool:
+        if pred.op != "any" and path.op != pred.op:
+            return False
+        if pred.recursive is not None and path.recursive != pred.recursive:
+            return False
+        if under and not _under_any(path.path, under, windows):
+            return False
+        if _under_any(path.path, not_under, windows):
+            return False
+        return not globs or any(
+            matches_glob(path.path, glob, windows=windows) for glob in globs
+        )
+
+    return any(matches(path) for path in facts.paths)
 
 
 def _lookup(args: Any, dotted: str) -> Any:
@@ -257,7 +263,7 @@ def _holds(pred: Predicate, facts: Facts, ctx: _Context) -> bool:
     if isinstance(pred, CommandPred):
         return any(_command_matches(c, pred) for c in facts.commands if c.argv)
     if isinstance(pred, PathPred):
-        return any(_path_matches(p, pred, ctx.rule, facts) for p in facts.paths)
+        return _path_holds(pred, ctx.rule, facts)
     if isinstance(pred, ArgPred):
         return _arg_holds(pred, facts)
     if isinstance(pred, ExprPred):
@@ -289,7 +295,8 @@ def _in_scope(rule: Rule, facts: Facts) -> bool:
     tools, directories = rule.applies.tools, rule.applies.cwd_under
     if tools and not any(fnmatchcase(facts.tool, tool) for tool in tools):
         return False
-    return not directories or _under_any(facts.cwd, directories, rule, facts)
+    resolved = [_resolve(directory, rule, facts) for directory in directories]
+    return not resolved or _under_any(facts.cwd, resolved, facts.windows)
 
 
 def evaluate(

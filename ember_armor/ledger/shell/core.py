@@ -10,6 +10,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 
 MAX_COMMAND_CHARS = 200_000
+MAX_COMMANDS = 2_000
 MAX_DEPTH = 8
 
 #: Reason kinds a call can be marked ``dynamic_shell`` with.

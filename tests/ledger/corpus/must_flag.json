@@ -341,6 +341,25 @@
  },
  {
   "tool": "Bash",
+  "command": "RM='rm -rf'; $RM src",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "Bash",
+  "command": "F=--force; git push $F origin main",
+  "effect": "ask",
+  "rule": "builtin.git.force-push"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "$git = 'C:\\Git\\bin\\git.exe'; & $git reset --hard",
+  "platform": "windows",
+  "effect": "ask",
+  "rule": "builtin.git.reset-hard"
+ },
+ {
+  "tool": "Bash",
   "command": "rm -rf\\\n  src",
   "effect": "ask",
   "rule": "builtin.delete.recursive"

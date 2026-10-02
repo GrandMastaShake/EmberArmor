@@ -92,6 +92,11 @@ class _Word:
 _Stage = tuple[str, bool, str]
 
 
+def _variable_name(reference: str) -> str:
+    """Upper-cased name of ``$name``, ``${name}`` or ``$env:NAME``."""
+    return reference.lstrip("$").strip("{}").split(":")[-1].upper()
+
+
 class _PowerShell:
     """Single-pass lexer and parser over one PowerShell string."""
 
@@ -370,8 +375,7 @@ class _PowerShell:
         attached = words[1].text[match.end() :]
         value = ([_Word(attached)] if attached else []) + words[2:]
         if len(value) == 1 and value[0].kind == "string" and value[0].literal:
-            name = words[0].text.lstrip("$").split(":")[-1].strip("{}")
-            self.out.variables[name.upper()] = value[0].text
+            self.out.variables[_variable_name(words[0].text)] = value[0].text
         return value
 
     def _end_statement(
@@ -391,6 +395,12 @@ class _PowerShell:
                 self.out.commands.append(bare)
             return
         first = words[0]
+        if called and first.kind == "var":
+            # ``$exe = 'C:\tool.exe'; & $exe run`` reads as the command it is.
+            known = self.out.variables.get(_variable_name(first.text))
+            if known is not None:
+                first = _Word(known, "string")
+                words = [first, *words[1:]]
         if first.kind in ("var", "group", "expr") and called:
             self.out.dynamic.append(Dynamic("variable_command", first.text[:200]))
         expression = first.kind in ("var", "group", "expr", "block") or (

@@ -11,6 +11,7 @@ from ember_armor.ledger.shell.bash import parse_bash
 from ember_armor.ledger.shell.cmd import parse_cmd
 from ember_armor.ledger.shell.core import (
     MAX_COMMAND_CHARS,
+    MAX_COMMANDS,
     MAX_DEPTH,
     Dynamic,
     ParseResult,
@@ -54,4 +55,8 @@ def parse_shell(text: str, shell: str, depth: int = 0) -> ParseResult:
         return ParseResult(dynamic=[Dynamic("parse_error", "command too long")])
     if depth > MAX_DEPTH:
         return ParseResult(dynamic=[Dynamic("parse_error", "shell nesting too deep")])
-    return _PARSERS[shell](text, depth, parse_shell)
+    result = _PARSERS[shell](text, depth, parse_shell)
+    if depth == 0 and len(result.commands) > MAX_COMMANDS:
+        del result.commands[MAX_COMMANDS:]
+        result.dynamic.append(Dynamic("parse_error", "too many commands"))
+    return result

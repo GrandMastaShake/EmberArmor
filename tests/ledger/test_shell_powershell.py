@@ -223,6 +223,18 @@ def test_literal_assignments_are_recorded() -> None:
     assert result.variables == {"DIR": "C:\\tmp", "OUT": "D:\\out"}
 
 
+def test_called_variable_with_a_known_literal_value_is_resolved() -> None:
+    result = parse_shell(
+        "$git = 'C:\\Git\\bin\\git.exe'; & $git push --force", "powershell"
+    )
+    assert [list(c.argv) for c in result.commands] == [
+        ["C:\\Git\\bin\\git.exe", "push", "--force"]
+    ]
+    assert result.dynamic == []
+    unknown = parse_shell("$git = Get-Command git; & $git push", "powershell")
+    assert [d.kind for d in unknown.dynamic] == ["variable_command"]
+
+
 def test_encoded_command_is_decoded_and_parsed() -> None:
     # base64 of UTF-16LE "Remove-Item x"
     command = "powershell -EncodedCommand UgBlAG0AbwB2AGUALQBJAHQAZQBtACAAeAA="

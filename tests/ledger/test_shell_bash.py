@@ -258,6 +258,27 @@ def test_literal_assignments_are_recorded() -> None:
     assert result.variables == {"S": "/tmp/x", "T": "C:/y", "W": "1"}
 
 
+SUBSTITUTION_CASES = [
+    ('PY=/venv/bin/python; "$PY" -m pytest', [["/venv/bin/python", "-m", "pytest"]]),
+    ("RM='rm -rf'; $RM src", [["rm", "-rf", "src"]]),
+    ("RM='rm -rf'; \"$RM\" src", [["rm -rf", "src"]]),
+    ("F=--force; git push ${F} origin", [["git", "push", "--force", "origin"]]),
+    ("SUDO=sudo; $SUDO rm x", [["rm", "x"]]),
+    ("EMPTY=; echo $EMPTY done", [["echo", "done"]]),
+    ("ls $LATER; LATER=x", [["ls", "$LATER"]]),
+    ("D=/data; ls $D/sub", [["ls", "$D/sub"]]),
+]
+
+
+@pytest.mark.parametrize(("command", "expected"), SUBSTITUTION_CASES)
+def test_variables_assigned_earlier_are_substituted(
+    command: str, expected: list[list[str]]
+) -> None:
+    result = parse_shell(command, "bash")
+    assert [list(c.argv) for c in result.commands] == expected
+    assert result.dynamic == []
+
+
 def test_encoded_powershell_is_decoded_and_parsed() -> None:
     # base64 of UTF-16LE "Remove-Item x"
     command = "powershell -enc UgBlAG0AbwB2AGUALQBJAHQAZQBtACAAeAA="
@@ -272,3 +293,18 @@ def test_oversized_and_deeply_nested_input_is_dynamic() -> None:
         nested = "bash -c " + "'" + nested.replace("'", "'\\''") + "'"
     assert "parse_error" in kinds(nested)
     assert "parse_error" in kinds("$(" * 2000)
+
+
+def test_too_many_commands_are_capped_and_reported() -> None:
+    result = parse_shell("true; " * 5000, "bash")
+    assert len(result.commands) == 2000
+    assert [(d.kind, d.detail) for d in result.dynamic] == [
+        ("parse_error", "too many commands")
+    ]
+    assert parse_shell("true; " * 2000, "bash").dynamic == []
+
+
+def test_very_long_words_parse_quickly() -> None:
+    for command in ("echo x" + "=" * 150_000, "echo " + "\\" * 150_000, "'a'" * 60_000):
+        result = parse_shell(command, "bash")
+        assert len(result.commands) == 1

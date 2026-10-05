@@ -211,20 +211,29 @@ def test_ember_gate_hook_reminds_like_the_module(world) -> None:
             "hookEventName": "PreToolUse",
             "additionalContext": f"{STANDING}\n{CLOSING}",
         }
-    # An event nobody knows is a gate failure, never a usage error: exit
-    # status 2 would block the call on the host.
-    for mode, printed in (("observe", b""), ("remind", b"")):
-        done = run_gate(
-            ["hook", "--event", "bogus"], world["env"], stdin="{}", mode=mode
-        )
-        assert (done.returncode, done.stdout) == (0, printed)
+
+
+@pytest.mark.parametrize(
+    "arguments", [["--event", "bogus"], ["--bogus"], ["extra"], ["--event"]]
+)
+def test_ember_gate_hook_never_ends_in_a_usage_error(world, arguments) -> None:
+    # Arguments nobody knows are a gate failure: exit status 2 would block
+    # the call on the host.
+    for mode in ("observe", "remind"):
+        done = run_gate(["hook", *arguments], world["env"], stdin="{}", mode=mode)
+        assert (done.returncode, done.stdout) == (0, b"")
         assert b"unknown hook arguments" in done.stderr
-    done = run_gate(
-        ["hook", "--event", "bogus"], world["env"], stdin="{}", mode="enforce"
-    )
+    done = run_gate(["hook", *arguments], world["env"], stdin="{}", mode="enforce")
     assert done.returncode == 0
     specific = json.loads(done.stdout)["hookSpecificOutput"]
     assert specific["permissionDecision"] == "ask"
+    assert "unknown hook arguments" in specific["permissionDecisionReason"]
+
+
+def test_ember_gate_hook_help_is_still_help(world) -> None:
+    done = run_gate(["hook", "--help"], world["env"])
+    assert done.returncode == 0
+    assert b"session-start" in done.stdout
 
 
 def test_install_prints_the_session_start_entry_next_to_the_other(capsys) -> None:

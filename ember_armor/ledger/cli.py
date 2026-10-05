@@ -532,9 +532,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_replay.add_argument("--json", action="store_true", help="print JSON")
     p_replay.set_defaults(func=_cmd_replay)
 
+    # Parsed here for --help only: main() hands the arguments of "hook" to
+    # the hook as they are (see there).
     p_hook = commands.add_parser("hook", help="Claude Code hook (stdin)")
-    # No ``choices``: an unknown event must not end in exit status 2, which
-    # the host reads as "block this call".  The hook handles it as a failure.
     p_hook.add_argument(
         "--event",
         default=hook.PRE_TOOL_USE,
@@ -557,7 +557,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         # Rule text may hold characters the console encoding lacks (cp1252).
         if isinstance(stream, io.TextIOWrapper):
             stream.reconfigure(errors="backslashreplace")
-    args = build_parser().parse_args(argv)
+    arguments = sys.argv[1:] if argv is None else list(argv)
+    if arguments[:1] == ["hook"] and not {"-h", "--help"}.intersection(arguments):
+        # The hook reads its own arguments.  One it does not know must end
+        # as a gate failure with exit status 0, never as a usage error:
+        # exit status 2 would block the call on the host.
+        return hook.main(arguments[1:])
+    args = build_parser().parse_args(arguments)
     try:
         return int(args.func(args))
     except (LedgerError, OSError, json.JSONDecodeError) as exc:

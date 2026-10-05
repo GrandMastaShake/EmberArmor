@@ -137,7 +137,7 @@ def test_what_was_announced_is_in_the_audit_log(world) -> None:
     run(world, start(world))
     (entry,) = entries(world)
     assert entry["event"] == "session-start"
-    assert entry["announced"] == ["theirs", "mine"]
+    assert entry["announced"] == ["project:theirs", "mine"]
     assert (entry["session"], entry["source"], entry["mode"]) == (
         "s-1",
         "compact",
@@ -165,7 +165,13 @@ def test_only_unconfirmed_rules_print_nothing(world) -> None:
     for mode in MODES:
         done = run(world, start(world), mode)
         assert (done.returncode, done.stdout, done.stderr) == (0, b"", b"")
-    assert entries(world) == []
+    # The start is recorded where reminders are sent (the limit starts again
+    # after a compaction), with nothing announced.
+    logged = [(e["event"], e["mode"], e["announced"]) for e in entries(world)]
+    assert logged == [
+        ("session-start", "remind", []),
+        ("session-start", "enforce", []),
+    ]
 
 
 def test_a_hostile_rule_is_silent_until_confirmed_and_then_sanitised(world) -> None:
@@ -431,13 +437,20 @@ def test_unreadable_input_prints_nothing(world, mode, stdin) -> None:
 
 
 @pytest.mark.parametrize("mode", [None, *MODES])
-def test_a_broken_ledger_or_configuration_prints_nothing(world, mode) -> None:
+def test_a_broken_ledger_takes_only_its_own_rules_out(world, mode) -> None:
     ledger = world["home"] / "ledger.json"
     good = ledger.read_text(encoding="utf-8")
     ledger.write_text("{broken", encoding="utf-8")
     done = run(world, start(world), mode)
-    assert (done.returncode, done.stdout) == (0, b"")
-    assert (b"not valid JSON" in done.stderr) == (mode in ("remind", "enforce"))
+    assert done.returncode == 0
+    if mode in ("remind", "enforce"):
+        # The project rule confirmed on this machine is still listed.
+        assert summary_of(done.stdout) == "\n".join(
+            [quoted("theirs", "Run the link checker before a commit."), CLOSING]
+        )
+        assert b"not valid JSON" in done.stderr
+    else:
+        assert (done.stdout, done.stderr) == (b"", b"")
     ledger.write_text(good, encoding="utf-8")
     (world["home"] / "config.json").write_text('{"mod": "remind"}', encoding="utf-8")
     done = run(world, start(world), mode)
@@ -446,11 +459,40 @@ def test_a_broken_ledger_or_configuration_prints_nothing(world, mode) -> None:
     assert b"unknown setting" in done.stderr or mode == "observe"
 
 
-def test_a_broken_project_ledger_prints_nothing(world) -> None:
-    (world["repo"] / ".ember" / "ledger.json").write_text("[]", encoding="utf-8")
-    done = run(world, start(world))
-    assert (done.returncode, done.stdout) == (0, b"")
-    assert done.stderr.startswith(b"ember-gate: session start: LedgerError: ")
+@pytest.mark.parametrize(
+    "content",
+    [
+        "[]",
+        "{",
+        '{"version": 1, "rules": [{"id": "HOSTILE words"}]}',
+        # A predicate type that is no string, and rules nested too deep to walk.
+        json.dumps({"version": 1, "rules": [rule("p", when={"type": []})]}),
+        '{"version": 1, "rules": [{"id": "p", "text": "t", "source": "s", '
+        '"effect": "warn", "when": '
+        + '{"type": "not", "of": ' * 600
+        + '{"type": "dynamic_shell"}'
+        + "}" * 600
+        + "}]}",
+    ],
+    ids=["list", "cut-short", "bad-id", "type", "deep"],
+)
+def test_a_broken_project_ledger_leaves_the_owners_rules_listed(world, content) -> None:
+    (world["repo"] / ".ember" / "ledger.json").write_text(content, encoding="utf-8")
+    for mode in ("remind", "enforce"):
+        done = run(world, start(world), mode)
+        assert done.returncode == 0
+        assert summary_of(done.stdout) == "\n".join(
+            [quoted("mine", "Never deploy on a Friday."), CLOSING]
+        )
+        # Fixed words on standard error: not the reason, not the path.
+        fixed = f"ember-gate: session start: {store.PROJECT_LEDGER_FAILED}"
+        assert done.stderr.decode().strip() == fixed
+    done = run(world, start(world), "observe")
+    assert (done.returncode, done.stdout, done.stderr) == (0, b"", b"")
+    last = entries(world)[-1]
+    assert last["announced"] == ["mine"]
+    # The reason in full is in the log, as for a call.
+    assert "ledger.json" in last["error"]
 
 
 def test_a_failed_repository_lookup_prints_nothing(world) -> None:
@@ -463,7 +505,16 @@ def test_a_failed_repository_lookup_prints_nothing(world) -> None:
     payload = json.loads(start(world))
     with pytest.raises(OSError, match="repository lookup failed"):
         announce(payload, env=env, repo_root=refuse)
-    assert entries(world) == []
+    # Nothing was announced; the start after a compaction is recorded.
+    (entry,) = entries(world)
+    assert (entry["event"], entry["announced"]) == ("session-start", [])
+    assert "repository lookup failed" in entry["error"]
+    (world["home"] / "config.json").write_text(
+        '{"announce_on": ["startup"]}', encoding="utf-8"
+    )
+    with pytest.raises(OSError, match="repository lookup failed"):
+        announce({**payload, "source": "startup"}, env=env, repo_root=refuse)
+    assert len(entries(world)) == 1
 
 
 def test_an_audit_log_that_cannot_be_written_prints_nothing(world, monkeypatch) -> None:
@@ -487,7 +538,7 @@ def test_announce_in_process(world) -> None:
     dry = announce(payload, env=env, record=False, now=now)
     assert (dry.text, dry.rules, dry.left_out, dry.mode) == (
         EXPECTED,
-        ("theirs", "mine"),
+        ("project:theirs", "mine"),
         0,
         "enforce",
     )

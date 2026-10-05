@@ -42,9 +42,9 @@ from ember_armor.ledger.remind import (
     Reminder,
     clean,
     compose,
-    last_reminded,
     quote,
     remind,
+    reminded_within,
 )
 from tests.ledger.helpers import make_call, rule, run_gate, write_ledger
 
@@ -175,7 +175,9 @@ def test_what_the_hook_prints(
     elif confirmed:
         assert reminder_of(done.stdout) == reminder_text(quoted("standing"))
         assert b"permissionDecision" not in done.stdout
-        assert entry["reminded"] == ["standing"]
+        # By rule key: a project rule is told apart from a user rule.
+        key = "standing" if origin == "user" else "project:standing"
+        assert entry["reminded"] == [key]
     else:
         # Fired and logged only: not one character reaches the agent.
         assert done.stdout == b""
@@ -729,24 +731,28 @@ def test_an_entry_from_the_future_holds_nothing_back(warn_env) -> None:
     assert told(warn_env, 0).reminder.quoted == ("standing",)
 
 
-def test_last_reminded_reads_only_what_was_sent() -> None:
+def test_reminded_within_reads_only_what_was_sent() -> None:
     stamp = "2026-10-05T12:00:00.000+00:00"
     later = "2026-10-05T12:10:00.000+00:00"
-    found = last_reminded(
-        [
-            {"ts": stamp, "rules": ["a", "b"], "reminded": ["a"]},
-            {"ts": later, "rules": ["a"], "reminded": []},
-            {"ts": later, "rules": ["b"]},
-            {"ts": "not a time", "reminded": ["c"]},
-            {"reminded": ["d"]},
-            {"ts": later, "reminded": "a"},
-            {"ts": later, "reminded": [5, "e"]},
-        ]
-    )
-    assert found == {
-        "a": datetime.fromisoformat(stamp).timestamp(),
-        "e": datetime.fromisoformat(later).timestamp(),
-    }
+    log = [
+        {"ts": stamp, "rules": ["a", "b"], "reminded": ["a"]},
+        {"ts": later, "rules": ["a"], "reminded": []},
+        {"ts": later, "rules": ["b"]},
+        {"ts": "not a time", "reminded": ["c"]},
+        {"reminded": ["d"]},
+        {"ts": later, "reminded": "a"},
+        {"ts": later, "reminded": [5, "e"]},
+        # Times no clock holds, with and without an offset.
+        {"ts": "1960-01-01T00:00:00", "reminded": ["f"]},
+        {"ts": "0001-01-01T00:00:00", "reminded": ["g"]},
+        {"ts": "9999-12-31T23:59:59", "reminded": ["h"]},
+    ]
+    now = datetime.fromisoformat(later).timestamp()
+    assert reminded_within(log, now, 15 * 60) == {"a", "e"}
+    assert reminded_within(log, now, 5 * 60) == {"e"}
+    assert reminded_within(log, now + 15 * 60, 15 * 60) == set()
+    # Before the reminder of "e" was sent, it holds nothing back.
+    assert reminded_within(log, now - 1, 15 * 60) == {"a"}
 
 
 def test_remind_asks_for_nothing_it_does_not_need() -> None:

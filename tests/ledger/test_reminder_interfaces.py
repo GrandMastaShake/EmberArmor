@@ -149,11 +149,14 @@ def test_check_does_not_take_words_from_an_unconfirmed_rule_into_a_reminder(
     write_ledger(world["project"], theirs)
     args = ["check", "deploy-site", "--cwd", str(world["repo"]), "--json"]
     report = json.loads(run_gate(args, world["env"], mode="remind").stdout)
-    assert report["delivery"] == {"standing": REMINDED, "theirs": LOGGED_UNCONFIRMED}
+    assert report["delivery"] == {
+        "standing": REMINDED,
+        "project:theirs": LOGGED_UNCONFIRMED,
+    }
     assert "UNVOUCHED" not in report["reminder"]
     store.confirm_project_rule(world["env"], world["project"], "theirs")
     report = json.loads(run_gate(args, world["env"], mode="remind").stdout)
-    assert report["delivery"] == {"theirs": REMINDED, "standing": REMINDED}
+    assert report["delivery"] == {"project:theirs": REMINDED, "standing": REMINDED}
     assert '"UNVOUCHED words."' in report["reminder"]
 
 

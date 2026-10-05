@@ -37,7 +37,7 @@ BROKEN: list[Any] = [
     {"version": 1, "rules": [rule("r", when={"type": "HOSTILE fix.sh"})]},
     {"version": 1, "rules": [rule("r", when={"type": "command", "HOSTILE": 1})]},
 ]
-FIXED = "could not be loaded (ember-gate rules list, run in that directory, says why)"
+FIXED = store.PROJECT_LEDGER_FAILED
 
 
 @pytest.fixture
@@ -81,11 +81,10 @@ def test_the_reason_stays_with_the_owner_and_is_not_said(world, document) -> Non
     with pytest.raises(LedgerError) as raised:
         store.load_all(str(world["repo"]), env)
     assert str(raised.value) == decision.error
-    # What the hook prints is the file's name and fixed words.
-    said = decision.said
-    assert said.startswith("the project ledger ") and said.endswith(f" {FIXED}")
-    assert Path(said[len("the project ledger ") : -len(FIXED) - 1]) == world["ledger"]
-    assert decision.reason() == f"EmberArmor gate failure: {said}"
+    # What the hook prints is fixed words: not the reason, not the path.
+    assert decision.said == FIXED
+    assert world["repo"].name not in FIXED
+    assert decision.reason() == f"EmberArmor gate failure: {FIXED}"
 
 
 @pytest.mark.parametrize("mode", MODES)

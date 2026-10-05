@@ -14,6 +14,7 @@ from ember_armor.ledger.shell.core import (
     BASH_SHELLS,
     INTERPRETERS,
     POWERSHELLS,
+    UNKNOWN_DIR,
     program_name,
 )
 
@@ -76,13 +77,16 @@ class Nested:
     ``kind`` is ``script`` (literal text in ``script``, starting at argument
     ``index``), ``stdin`` (the script arrives on standard input), ``file``
     (a script file is run) or ``encoded`` (an encoded command that could not
-    be decoded).  ``shell`` is empty for a non-shell interpreter.
+    be decoded).  ``shell`` is empty for a non-shell interpreter.  ``chdir``
+    is the directory the shell is told to start in (``pwsh
+    -WorkingDirectory dir``), empty when it starts where its parent is.
     """
 
     shell: str
     kind: str
     script: str = ""
     index: int = 0
+    chdir: str = ""
 
 
 def join_arguments(args: Sequence[str], quote: str) -> str:
@@ -141,6 +145,7 @@ def _decode(encoded: str) -> str | None:
 
 def _powershell(argv: Sequence[str]) -> Nested:
     i = 1
+    chdir = ""
     while i < len(argv):
         option = _ps_option(argv[i])
         if option is None or option == "command":
@@ -150,14 +155,18 @@ def _powershell(argv: Sequence[str]) -> Nested:
                 return Nested("powershell", "stdin")
             if option is None and rest[0].lower().endswith(".ps1"):
                 return Nested("powershell", "file")
-            return Nested("powershell", "script", join_arguments(rest, "'"), start)
+            joined = join_arguments(rest, "'")
+            return Nested("powershell", "script", joined, start, chdir)
         if option == "file":
             return Nested("powershell", "file")
         if option == "encodedcommand":
             script = _decode(argv[i + 1]) if i + 1 < len(argv) else None
             if script is None:
                 return Nested("powershell", "encoded")
-            return Nested("powershell", "script", script, len(argv))
+            return Nested("powershell", "script", script, len(argv), chdir)
+        if option == "workingdirectory":
+            # Without a value the directory is not the parent's, and not known.
+            chdir = argv[i + 1] if i + 1 < len(argv) else UNKNOWN_DIR
         i += 2 if option in _PS_VALUE_OPTIONS else 1
     return Nested("powershell", "stdin")
 

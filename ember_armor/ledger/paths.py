@@ -11,8 +11,24 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
+
+from ember_armor.ledger.shell.core import UNKNOWN_DIR
+
+__all__ = [
+    "NO_PATH",
+    "PATH_VARIABLES",
+    "UNKNOWN_DIR",
+    "Lookup",
+    "PathFact",
+    "expand_variables",
+    "is_under",
+    "matches_glob",
+    "may_match",
+    "normalize",
+    "resolve_pattern",
+]
 
 _DRIVE_RE = re.compile(r"([A-Za-z]):(.*)", re.DOTALL)
 _MSYS_RE = re.compile(r"/([A-Za-z])(/.*)?", re.DOTALL)
@@ -27,6 +43,8 @@ _MOUNT_RE = re.compile(r"/(?:mnt|cygdrive)/([A-Za-z])(/.*)?", re.DOTALL)
 _VAR_RE = re.compile(
     r"\$\{env:(\w+)\}|\$env:(\w+)|%(\w+)%|\$\{(\w+)\}|\$(\w+)", re.IGNORECASE
 )
+#: A path segment that still holds a variable or a substitution.
+_OPEN_RE = re.compile(r"[$`]|%\w+%")
 _WILD_ROOT_RE = re.compile(r"(\*\*|[?*]:)")
 _CLASS_RE = re.compile(r"\[[^\]]*\]")
 _WILDCARDS = frozenset("*?[")
@@ -40,11 +58,20 @@ Lookup = Callable[[str], str | None]
 
 @dataclass(frozen=True)
 class PathFact:
-    """One path a call touches: ``op`` is ``read``, ``write`` or ``delete``."""
+    """One path a call touches: ``op`` is ``read``, ``write`` or ``delete``.
+
+    ``cwd`` is the directory in effect where a shell command touches the
+    path: empty for the working directory of the call, :data:`UNKNOWN_DIR`
+    when it cannot be known.  ``source`` is the index of that command among
+    the commands of the call (``-1`` for a file tool).  Neither is part of
+    the fact's identity.
+    """
 
     path: str
     op: str
     recursive: bool = False
+    cwd: str = field(default="", compare=False)
+    source: int = field(default=-1, compare=False)
 
 
 #: Environment variables that may be expanded inside a path.
@@ -170,7 +197,11 @@ def normalize(
         if segment in ("", "."):
             continue
         if segment == "..":
-            if segments:
+            # What lies above a segment that was not resolved is not known:
+            # ``$DIR/..`` stays as written, it is not the directory before it.
+            if segments and (segments[-1] == ".." or _OPEN_RE.search(segments[-1])):
+                segments.append(segment)
+            elif segments:
                 segments.pop()
             continue
         segments.append(segment)

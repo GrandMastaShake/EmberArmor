@@ -14,13 +14,16 @@ import os
 import sys
 from collections import Counter
 from collections.abc import Sequence
-from dataclasses import asdict
+from datetime import date
+from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import Any
 
 from ember_armor.ledger import hook, store
+from ember_armor.ledger.config import ConfigError, rule_exceptions
+from ember_armor.ledger.exceptions import RuleException
 from ember_armor.ledger.gate import audit_log, check, configured_shell_tools
-from ember_armor.ledger.model import LedgerError, parse_predicate
+from ember_armor.ledger.model import LedgerError, exceptable, parse_predicate
 
 EXIT_OK = 0
 EXIT_ERROR = 1
@@ -64,6 +67,8 @@ def _cmd_check(args: argparse.Namespace) -> int:
     print(f"decision: {decision.effect} (mode: {result.mode})")
     for rule in decision.fired:
         print(f"  {rule.id} [{rule.effect}] {rule.text} (source: {rule.source})")
+    for dropped in decision.excepted:
+        print(f"  excepted: {dropped.rule} (reason: {dropped.reason})")
     if decision.error:
         print(f"  gate failure: {decision.error}")
     if result.facts and result.facts.dynamic:
@@ -89,15 +94,46 @@ def _target_ledger(args: argparse.Namespace) -> Path:
     return Path(override) if override else user
 
 
+def _owner_exceptions() -> tuple[RuleException, ...]:
+    """Every exception of ``config.json``, expired ones included."""
+    try:
+        return rule_exceptions(os.environ)
+    except ConfigError as exc:
+        raise LedgerError(str(exc)) from exc
+
+
+def _describe_exception(exception: RuleException) -> str:
+    """One line saying where an exception holds, why, and until when."""
+    places = [f"under {directory}" for directory in exception.cwd_under]
+    places += [f"repository {directory}" for directory in exception.repo_root]
+    parts = [" or ".join(places)] if places else []
+    if exception.tools:
+        parts.append(f"tools {', '.join(exception.tools)}")
+    if exception.when is not None:
+        parts.append("with a condition")
+    until = ""
+    if exception.expires is not None:
+        past = date.today() > exception.expires
+        until = f", {'expired' if past else 'expires'} {exception.expires}"
+    return f"{'; '.join(parts)} (reason: {exception.reason}{until})"
+
+
 def _cmd_rules_list(args: argparse.Namespace) -> int:
     rules = store.load_all(args.cwd or os.getcwd(), os.environ)
+    exceptions = _owner_exceptions()
+
+    def excepting(rule_id: str) -> list[RuleException]:
+        if not exceptable(rule_id):
+            return []
+        return [e for e in exceptions if fnmatchcase(rule_id, e.rule)]
+
     if args.json:
-        _print_json(
-            [
-                {**rule.raw, "origin": rule.origin, "confirmed": rule.confirmed}
-                for rule in rules
-            ]
-        )
+        listed = []
+        for rule in rules:
+            entry = {**rule.raw, "origin": rule.origin, "confirmed": rule.confirmed}
+            found = [dict(exception.raw) for exception in excepting(rule.id)]
+            listed.append({**entry, "exceptions": found} if found else entry)
+        _print_json(listed)
         return EXIT_OK
     for rule in rules:
         state = "confirmed" if rule.confirmed else "unconfirmed (warn only)"
@@ -106,6 +142,14 @@ def _cmd_rules_list(args: argparse.Namespace) -> int:
         expires = f", expires {rule.expires}" if rule.expires else ""
         print(f"{rule.id}  [{rule.effect}, {state}{expires}]  ({rule.origin})")
         print(f"    {rule.text}")
+        for exception in excepting(rule.id):
+            print(f"    exception: {_describe_exception(exception)}")
+    unused = [
+        e for e in exceptions if not any(fnmatchcase(r.id, e.rule) for r in rules)
+    ]
+    for exception in unused:
+        print(f"exception for {exception.rule}, which names no rule in effect:")
+        print(f"    {_describe_exception(exception)}")
     return EXIT_OK
 
 
@@ -131,7 +175,12 @@ def _rule_from_args(args: argparse.Namespace) -> dict[str, Any]:
         key: json.loads(args.when if args.when is not None else args.require),
     }
     parse_predicate(rule[key], key)
-    applies = {"tools": args.tools, "cwd_under": args.cwd_under}
+    applies = {
+        "tools": args.tools,
+        "cwd_under": args.cwd_under,
+        "cwd_not_under": args.cwd_not_under,
+        "repo_root": args.repo_root,
+    }
     if any(applies.values()):
         rule["applies"] = {k: v for k, v in applies.items() if v}
     if args.expires:
@@ -171,7 +220,7 @@ def _cmd_rules_remove(args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------------------
 def _cmd_lint(args: argparse.Namespace) -> int:
     """Check the ledger itself: 0 when clean, 1 with findings, 3 without Z3."""
-    from ember_armor.ledger.lint import SolverUnavailableError, lint
+    from ember_armor.ledger.lint import SolverUnavailableError, finding_data, lint
 
     rules = store.load_all(args.cwd or os.getcwd(), os.environ)
     try:
@@ -180,7 +229,9 @@ def _cmd_lint(args: argparse.Namespace) -> int:
         print(f"ember-gate: {exc}", file=sys.stderr)
         return EXIT_NO_SOLVER
     if args.json:
-        _print_json({"rules": len(rules), "findings": [asdict(f) for f in findings]})
+        _print_json(
+            {"rules": len(rules), "findings": [finding_data(f) for f in findings]}
+        )
     else:
         for finding in findings:
             print(f"{finding.kind}: {finding.message}")
@@ -334,6 +385,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_add.add_argument("--require", help="predicate JSON; the rule fires when false")
     p_add.add_argument("--tools", nargs="+", help="tool names or globs")
     p_add.add_argument("--cwd-under", nargs="+", help="directories the rule covers")
+    p_add.add_argument(
+        "--cwd-not-under", nargs="+", help="directories the rule leaves out"
+    )
+    p_add.add_argument(
+        "--repo-root",
+        nargs="+",
+        help="repositories the rule covers, by their top-level directory",
+    )
     p_add.add_argument("--expires", help="ISO date after which the rule is ignored")
     _add_ledger_options(p_add)
     p_add.set_defaults(func=_cmd_rules_add)

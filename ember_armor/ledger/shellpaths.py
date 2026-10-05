@@ -10,15 +10,25 @@ paths resolve correctly; a move inside a subshell ends with the subshell.
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 
-from ember_armor.ledger.paths import PathFact
+from ember_armor.ledger.paths import UNKNOWN_DIR, PathFact
 from ember_armor.ledger.shell import ParseResult, SimpleCommand, program_name
-from ember_armor.ledger.shell.argv import has_flag, operand_positions, operands
-from ember_armor.ledger.shell.core import find_exec, find_targets, lister_targets
+from ember_armor.ledger.shell.argv import (
+    has_flag,
+    operand_positions,
+    operands,
+    option_args,
+)
+from ember_armor.ledger.shell.core import (
+    MOVERS,
+    find_exec,
+    find_targets,
+    lister_targets,
+)
 
-__all__ = ["PathFact", "shell_paths"]
+__all__ = ["PathFact", "shell_facts", "shell_paths"]
 
 _NULL_TARGETS = frozenset(
     {"/dev/null", "/dev/stdout", "/dev/stderr", "/dev/tty", "nul", "$null"}
@@ -203,7 +213,10 @@ _TAR_VALUES = frozenset(
     {"-C", "--directory", "-T", "--files-from", "-X", "--exclude-from",
      "--exclude", "-I", "--use-compress-program"}
 )  # fmt: skip
-_GIT_VALUES = frozenset({"-C", "-c", "--git-dir", "--work-tree", "--namespace"})
+_GIT_VALUES = frozenset(
+    {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--super-prefix",
+     "--config-env", "--attr-source"}
+)  # fmt: skip
 _CD = frozenset({"cd", "chdir", "set-location"})
 _PUSHD = frozenset({"pushd", "push-location"})
 _POPD = frozenset({"popd", "pop-location"})
@@ -221,6 +234,131 @@ _WHATIF_ON = frozenset({"", "$true", "true", "1"})
 Resolve = Callable[[str, str, str], list[str]]
 
 
+class _Chdir:
+    """Options of a program that make it run in another directory.
+
+    ``flags`` take the directory as their value.  ``value_flags`` are other
+    options in front of the subcommand that take a value.  ``late`` says
+    what such a flag means after the first operand: the program reads it all
+    the same (``read``), it is another option there (``ignore``), or that
+    depends on the subcommand (``unknown``).  ``attached`` accepts ``-Cdir``.
+    ``unknown`` options name the place in a way the gate does not follow,
+    and ``plus`` allows a ``+toolchain`` word in front of the options.
+    ``cluster`` are the letters of options without a value that may stand
+    in one word in front of the directory option (``make -sC dir``), and
+    ``shortest`` is the length from which the start of a long option is
+    read as that option (``make --dir=x``; 0: never).
+
+    Like ``_Where`` and ``_Places`` below this is a plain class: every
+    shell call loads this module, and defining a dataclass takes the hook
+    about as long as parsing a short command.
+    """
+
+    __slots__ = ("attached", "cluster", "flags", "late", "plus", "shortest",
+                 "unknown", "value_flags")  # fmt: skip
+
+    def __init__(
+        self,
+        flags: Iterable[str],
+        value_flags: Iterable[str] = (),
+        *,
+        late: str = "unknown",
+        attached: bool = False,
+        unknown: Iterable[str] = (),
+        plus: bool = False,
+        cluster: str = "",
+        shortest: int = 0,
+    ) -> None:
+        self.flags = frozenset(flags)
+        self.value_flags = frozenset(value_flags)
+        self.late = late
+        self.attached = attached
+        self.unknown = frozenset(unknown)
+        self.plus = plus
+        self.cluster = frozenset(cluster)
+        self.shortest = shortest
+
+    def spelled(self, flag: str) -> str:
+        """The option *flag* stands for: itself, or the one it abbreviates."""
+        if not self.shortest or len(flag) < self.shortest or flag[:2] != "--":
+            return flag
+        found = [known for known in self.flags if known.startswith(flag)]
+        return found[0] if len(found) == 1 else flag
+
+    def split(self, arg: str) -> str:
+        """*arg* without the value-less options clustered in front of a flag.
+
+        ``-sC`` and ``-skCdir`` become ``-C`` and ``-Cdir``; anything else
+        comes back as it is.
+        """
+        if not self.cluster or arg[:1] != "-" or arg[:2] == "--":
+            return arg
+        for at in range(1, len(arg)):
+            if f"-{arg[at]}" in self.flags:
+                return f"-{arg[at:]}"
+            if arg[at] not in self.cluster:
+                break
+        return arg
+
+
+_MAKE = _Chdir(
+    ("-C", "--directory"),
+    late="read",
+    attached=True,
+    cluster="bBdehiknpqrRsStvw",
+    shortest=4,
+)
+#: Programs whose own options say where they run.
+_CHDIR: dict[str, _Chdir] = {
+    # After the subcommand ``-C`` is another option (``git commit -C HEAD``).
+    "git": _Chdir(
+        ("-C",), _GIT_VALUES, late="ignore", unknown=("--git-dir", "--work-tree")
+    ),
+    "make": _MAKE,
+    "gmake": _MAKE,
+    "npm": _Chdir(("--prefix", "-C"), late="read"),
+    "pnpm": _Chdir(("-C", "--dir"), ("-F", "--filter")),
+    "yarn": _Chdir(("--cwd",)),
+    "cargo": _Chdir(("-C",), ("-Z", "--config", "--color"), plus=True),
+}
+#: A directory nobody can name from the command string: a wildcard, a
+#: command substitution, what a pipe delivers, another user's home.
+_VAGUE_RE = re.compile(r"[*?\[`]|\{\}|^~[^/\\]")
+#: The same in a resolved path, where a variable may have brought it in
+#: (``for d in */; do cd "$d"``); a ``~`` that is still there names no home
+#: the gate knows.
+_VAGUE_PATH_RE = re.compile(r"[*?\[`]|\{\}|(?:^|/)~")
+_UNRESOLVED_RE = re.compile(r"\$|%\w+%")
+#: ``D:`` and ``D:dir``: the directory the shell last had on that drive.
+_DRIVE_RELATIVE_RE = re.compile(r"[A-Za-z]:(?![/\\])")
+#: Passes over the commands of loops before the directory inside them is
+#: simply taken as unknown (see ``_Tracker``).
+_TRIAL_STEPS = 20_000
+#: Directories the shell may be in at once, for relative paths, before the
+#: call is marked as one the gate could not read in full.
+MAX_PLACES = 8
+#: ``pushd +1`` and ``popd -2`` rotate the directory stack.
+_STACK_ENTRY_RE = re.compile(r"[+-]\d*")
+#: Stand in for an unknown directory, to tell an absolute target from a
+#: relative one: only an absolute one resolves the same from both.
+_NOWHERE, _ELSEWHERE = "/\x00nowhere", "/\x00elsewhere"
+_CD_FLAGS = frozenset("LPe@")
+#: Parameters of ``Set-Location``, ``Push-Location`` and ``Pop-Location``;
+#: the ones in :data:`_PS_VALUES` take a value that is not a directory.
+_PS_VALUES = frozenset(
+    {"erroraction", "warningaction", "informationaction", "errorvariable",
+     "warningvariable", "informationvariable", "outvariable", "outbuffer",
+     "pipelinevariable"}
+)  # fmt: skip
+_PS_LOCATION = ("path", "literalpath", "passthru", "stackname", "verbose", "debug",
+                "usetransaction", *sorted(_PS_VALUES))  # fmt: skip
+_PS_ALIASES = {"ea": "erroraction", "wa": "warningaction", "ev": "errorvariable",
+               "infa": "informationaction", "wv": "warningvariable",
+               "iv": "informationvariable", "ov": "outvariable", "ob": "outbuffer",
+               "pv": "pipelinevariable", "vb": "verbose", "db": "debug",
+               "pspath": "literalpath", "lp": "literalpath"}  # fmt: skip
+
+
 @dataclass(eq=False, repr=False)
 class _Location:
     """Working directory while walking the commands of one call."""
@@ -228,6 +366,42 @@ class _Location:
     current: str
     previous: str
     stack: list[str] = field(default_factory=list)
+
+
+class _Where:
+    """The directory commands run in while walking one call.
+
+    ``None`` stands for a directory the command string does not name.
+    ``moves`` counts the commands that moved the shell so far.
+    """
+
+    __slots__ = ("current", "moves", "previous", "stack")
+
+    def __init__(
+        self,
+        current: str | None,
+        previous: str | None = None,
+        stack: Sequence[str | None] = (),
+        moves: int = 0,
+    ) -> None:
+        self.current = current
+        self.previous = previous
+        self.stack = list(stack)
+        self.moves = moves
+
+    def copy(self) -> _Where:
+        """The same place, with a directory stack of its own."""
+        return _Where(self.current, self.previous, self.stack, self.moves)
+
+    def lose(self) -> None:
+        """Nothing is known any more: not the directory, not the stack."""
+        self.current = self.previous = None
+        self.stack = [None] * len(self.stack)
+        self.moves += 1
+
+    def differs(self, other: _Where) -> bool:
+        """True when the shell is not where *other* is, or its stack differs."""
+        return self.current != other.current or self.stack != other.stack
 
 
 def _is_null(target: str) -> bool:
@@ -530,44 +704,534 @@ def _change_directory(
     place.previous, place.current = place.current, destination
 
 
-def shell_paths(
-    parsed: ParseResult, cwd: str, resolve: Resolve, home: str | None = None
-) -> list[PathFact]:
-    """Paths touched by the parsed commands, normalised and de-duplicated.
+def _moved_too(
+    also: list[str],
+    command: SimpleCommand,
+    current: str,
+    resolve: Resolve,
+    home: str | None,
+) -> list[str]:
+    """The other directories the shell may be in, after *command* moved it.
+
+    Each one moves as the shell did (an absolute ``cd`` brings them all to
+    *current*, where the shell is now).
+    """
+    moved: list[str] = []
+    for other in also:
+        spot = _Location(other, other)
+        _change_directory(command, spot, resolve, home)
+        if spot.current != current and spot.current not in moved:
+            moved.append(spot.current)
+    return moved
+
+
+class _Places:
+    """Works out the directories that commands name (``None``: unknown)."""
+
+    __slots__ = ("resolve", "windows")
+
+    def __init__(self, resolve: Resolve, windows: bool) -> None:
+        self.resolve = resolve
+        self.windows = windows
+
+    def directory(self, target: str, base: str | None, shell: str) -> str | None:
+        """The directory *target* names seen from *base*.
+
+        Unknown: a variable nobody set, a wildcard, an expression, several
+        values, or a relative path seen from a directory that is itself
+        unknown.  In PowerShell and ``cmd.exe`` a path such as ``\\dir`` lies
+        on the drive the shell is on, so it is known only when that is.
+        """
+        if qualified := _FILESYSTEM_RE.match(target):
+            target = target[qualified.end() :]
+        vague = shell == "powershell" and (
+            target[:1] in "(@{" or _PROVIDER_RE.match(target) is not None
+        )
+        if vague or _VAGUE_RE.search(target):
+            return None
+        if self.windows and _DRIVE_RELATIVE_RE.match(target):
+            # Known only when the shell is on that drive: then it is a
+            # relative path.
+            on_drive = base is not None and base[:2].upper() == target[:2].upper()
+            if shell == "bash" or not on_drive:
+                return None
+            target = target[2:] or "."
+        found = self.resolve(target, _NOWHERE if base is None else base, shell)
+        if len(found) != 1 or _UNRESOLVED_RE.search(found[0]):
+            return None
+        if _VAGUE_PATH_RE.search(found[0]):
+            return None
+        if base is None and self.resolve(target, _ELSEWHERE, shell) != found:
+            return None
+        path = found[0]
+        if self.windows and shell != "bash" and path[:1] == "/" and path[:2] != "//":
+            if base is None or base[1:3] != ":/":
+                return None
+            return base[:2] + path
+        return path
+
+    def follow(
+        self, targets: Sequence[str], start: str | None, shell: str
+    ) -> str | None:
+        """Where a chain of moves ends, each relative to the one before."""
+        current = start
+        for target in targets:
+            current = self.directory(target, current, shell)
+        return current
+
+
+def _ps_parameter(name: str) -> str | None:
+    """The one parameter of a PowerShell location cmdlet that *name* abbreviates."""
+    if name in _PS_ALIASES:
+        return _PS_ALIASES[name]
+    found = [known for known in _PS_LOCATION if known.startswith(name)]
+    return found[0] if len(found) == 1 else None
+
+
+def _location_targets(command: SimpleCommand) -> list[str] | None:
+    """The directories a ``cd``-like command names, or ``None`` when unclear.
+
+    Unclear: an option that changes what the command does (``pushd -n``,
+    ``popd +1``, ``-StackName``), or one this function does not know.
+    """
+    args = command.argv[1:]
+    if command.shell != "powershell":
+        slash = command.shell == "cmd"
+        for arg in option_args(command):
+            if slash and arg.startswith("/"):
+                known = arg.lstrip("/").lower() == "d"
+            elif arg.startswith("-") and len(arg) > 1:
+                known = not slash and set(arg[1:]) <= _CD_FLAGS
+            else:
+                continue
+            if not known:
+                return None
+        return operands(command, slash_flags=slash)
+    targets: list[str] = []
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if len(arg) > 1 and arg[0] == "-":
+            name, attached, value = arg[1:].partition(":")
+            parameter = _ps_parameter(name.lower())
+            if parameter in ("path", "literalpath"):
+                if not attached:
+                    i += 1
+                    value = args[i] if i < len(args) else ""
+                targets.append(value)
+            elif parameter in _PS_VALUES:
+                i += 0 if attached else 1
+            elif parameter is None or parameter == "stackname":
+                return None
+        else:
+            targets.append(arg)
+        i += 1
+    return targets
+
+
+def _move(
+    command: SimpleCommand, where: _Where, places: _Places, home: str | None
+) -> None:
+    """Follow ``cd``, ``pushd`` or ``popd`` for the directory commands run in.
+
+    Unlike :func:`_change_directory`, a target that is unclear leaves the
+    directory unknown: a rule scoped to a directory must not be escaped by a
+    ``cd`` the gate cannot read.
+    """
+    name = program_name(command.argv[0])
+    shell = command.shell
+    targets = _location_targets(command)
+    destination: str | None = None
+    if targets is None or len(targets) > 1:
+        pass
+    elif name in _POPD:
+        # An empty stack: what an earlier command of the terminal left there.
+        if not targets and where.stack:
+            destination = where.stack.pop()
+    elif not targets:
+        if name in _PUSHD:
+            if shell == "powershell":
+                where.stack.append(where.current)  # it pushes and stays
+            if shell != "bash" or not where.stack:
+                return
+            destination = where.stack.pop()  # Bash swaps the top two
+        elif shell == "bash":
+            destination = home
+        elif shell == "cmd":
+            return  # it prints the directory
+        # PowerShell: home from version 6.2 on, nowhere before that.
+    elif targets[0] in _PREVIOUS:
+        destination = where.previous
+    elif not _STACK_ENTRY_RE.fullmatch(targets[0]):
+        destination = places.directory(targets[0], where.current, shell)
+        plain = shell == "cmd" and name in _CD and not has_flag(command, "/d")
+        if plain and places.windows:
+            # Without ``/d`` cmd.exe stays where it is when the directory
+            # lies on another drive.
+            if destination is None or where.current is None:
+                destination = None
+            elif destination[:2] != where.current[:2]:
+                return
+    if name in _PUSHD:
+        where.stack.append(where.current)
+    where.previous, where.current = where.current, destination
+
+
+def _piped(commands: Sequence[SimpleCommand], index: int) -> bool:
+    """True when the command at *index* is one stage of a pipeline."""
+    command = commands[index]
+    feeds = index + 1 < len(commands) and commands[index + 1].upstream == command.argv
+    return bool(command.upstream) or feeds
+
+
+def _switches_drive(command: SimpleCommand) -> bool:
+    """True for ``D:`` on its own in PowerShell or ``cmd.exe``."""
+    word = command.argv[0]
+    alone = len(command.argv) == 1 and len(word) == 2 and word[1] == ":"
+    return alone and word[0].isalpha() and command.shell != "bash"
+
+
+def _directory_options(command: SimpleCommand, spec: _Chdir) -> list[str] | None:
+    """Directories the command's own options move it to, in order.
+
+    ``None`` when an option says the directory is another one without
+    naming it in a way the gate can follow.
+    """
+    found: list[str] = []
+    late = False
+    args = option_args(command)
+    i = 0
+    while i < len(args):
+        arg = spec.split(args[i])
+        flag, attached, value = arg.partition("=")
+        flag = spec.spelled(flag)
+        named = flag in spec.flags
+        short = spec.attached and arg[:2] in spec.flags and not arg.startswith("--")
+        if named or (short and len(arg) > 2):
+            if named and not attached:
+                i += 1
+                value = args[i] if i < len(args) else ""
+            elif not named:
+                value = arg[2:]
+            if late and spec.late != "read":
+                if spec.late == "unknown":
+                    return None
+            elif not value:
+                return None
+            else:
+                found.append(value)
+        elif flag in spec.unknown and not late:
+            return None
+        elif arg in spec.value_flags and not late:
+            i += 1
+        elif not (arg.startswith("-") and len(arg) > 1):
+            late = late or not (spec.plus and arg.startswith("+"))
+        i += 1
+    return found
+
+
+def _run_directory(
+    command: SimpleCommand, start: str | None, places: _Places, placed: bool = False
+) -> tuple[str | None, str | None]:
+    """Where the command's operands are relative to, and where it runs.
+
+    The first is the shell's directory moved by the wrappers that were
+    removed (``env -C dir``); the second also follows the program's own
+    directory options (``git -C dir``).  ``None`` stands for unknown.  A
+    *placed* command was given the name of each file ``find`` found: a
+    directory option of its own then names a different place every time.
+    """
+    started = places.follow(command.chdir, start, command.shell)
+    spec = _CHDIR.get(program_name(command.argv[0])) if command.argv else None
+    if spec is None:
+        return started, started
+    options = _directory_options(command, spec)
+    if options is None or (options and placed):
+        return started, None
+    return started, places.follow(options, started, command.shell)
+
+
+class _Tracker:
+    """Follows the directory the shell is in through the scopes of one call.
+
+    A scope of the parse result runs in a process of its own (the shell is
+    afterwards where it was before), unless the parser said otherwise:
+
+    - ``maybe``: its commands may not run.  When they move the shell, the
+      directory after them is unknown.
+    - ``loop``: its commands run any number of times.  One pass is tried
+      first: unless it ends where it began (``pushd dir; ...; popd``), the
+      directory is unknown from the first command on, and after the loop.
+    - ``defined``: the body of a function.  The shell is afterwards where it
+      was, and a later call of a function whose body moves makes the
+      directory unknown.
+
+    ``left`` holds the scopes that are open: where each ends, its number,
+    where the shell was when it began, and whether it is a loop that does
+    not end where it began.
+    """
+
+    __slots__ = ("budget", "commands", "functions", "home", "movers", "opening",
+                 "parsed", "places", "settled", "started", "trials")  # fmt: skip
+
+    def __init__(self, parsed: ParseResult, places: _Places, home: str | None) -> None:
+        self.parsed = parsed
+        self.commands = parsed.commands
+        self.places = places
+        self.home = home
+        opening: dict[int, list[tuple[int, int]]] = {}
+        for number, (low, high) in enumerate(parsed.scopes):
+            if high > low:
+                opening.setdefault(low, []).append((high, number))
+        for found in opening.values():
+            found.sort(reverse=True)  # the outer scope first
+        self.opening = opening
+        self.functions = frozenset(parsed.named.values())
+        self.movers: set[str] = set()
+        self.settled: set[str] = set()
+        #: Where a nested shell starts, by scope, for the path tracker.
+        self.started: dict[int, str | None] = {}
+        self.budget = _TRIAL_STEPS
+        self.trials = 0
+
+    def arrive(self, index: int, where: _Where, left: list[_Open]) -> _Where:
+        """Where the shell is when the command at *index* starts."""
+        while left and left[-1][0] <= index:
+            where = self._leave(where, left.pop())
+        for position, (high, number) in enumerate(self.opening.get(index, ())):
+            self._enter(index, position, high, number, where, left)
+        return where
+
+    def _enter(
+        self,
+        low: int,
+        position: int,
+        high: int,
+        number: int,
+        where: _Where,
+        left: list[_Open],
+    ) -> None:
+        kind = self.parsed.guards.get(number, "")
+        before: _Where | None = where.copy()
+        wild = False
+        if kind == "loop":
+            end = self._trial(low, position + 1, high, where)
+            wild = end is None or end.differs(where)
+            if wild:
+                where.lose()
+            elif end is not None and end.previous != where.previous:
+                where.previous = None
+        elif not kind:
+            if number in self.parsed.kept:
+                before = None
+            if number in self.parsed.entered:
+                starter, chain = self.parsed.entered[number]
+                where.current = self.places.follow(chain, where.current, starter)
+                if not self.trials:
+                    self.started[number] = where.current
+        left.append((high, number, before, wild))
+
+    def _leave(self, where: _Where, scope: _Open) -> _Where:
+        _, number, before, wild = scope
+        if before is None:
+            return where  # ``eval``: its moves stay in force
+        kind = self.parsed.guards.get(number, "")
+        if not kind:
+            return before
+        if kind == "defined":
+            name = self.parsed.named.get(number, "")
+            if where.moves != before.moves:
+                self.movers.add(name)
+            self.settled.add(name)
+            return before
+        if wild or where.differs(before):
+            where.lose()
+        elif where.previous != before.previous:
+            where.previous = None
+        return where
+
+    def _trial(
+        self, low: int, position: int, high: int, where: _Where
+    ) -> _Where | None:
+        """Where one pass over a loop ends; ``None`` when that costs too much."""
+        self.budget -= high - low
+        if self.budget < 0:
+            return None
+        where = where.copy()
+        left: list[_Open] = []
+        self.trials += 1
+        try:
+            inner = self.opening.get(low, ())
+            for at in range(position, len(inner)):
+                self._enter(low, at, *inner[at], where, left)
+            for index in range(low, high):
+                if index > low:
+                    where = self.arrive(index, where, left)
+                self.step(index, where)
+            while left:
+                where = self._leave(where, left.pop())
+        finally:
+            self.trials -= 1
+        return where
+
+    def step(self, index: int, where: _Where) -> None:
+        """Let the command at *index* move the shell, if it does."""
+        command = self.commands[index]
+        if not command.argv:
+            return
+        if program_name(command.argv[0]) in MOVERS:
+            if command.shell == "bash" and _piped(self.commands, index):
+                # A stage of a pipeline runs in a process of its own, unless
+                # the shell is told otherwise: the gate takes neither as given,
+                # so neither where the shell is nor where it was is known.
+                where.previous = where.current = None
+            else:
+                _move(command, where, self.places, self.home)
+            where.moves += 1
+        elif _switches_drive(command):
+            # ``D:`` goes to wherever the shell last was on that drive.
+            where.previous, where.current = where.current, None
+            where.moves += 1
+        elif self.functions:
+            word = command.argv[0]
+            name = word if command.shell == "bash" else word.lower()
+            # A function that is defined further on may move as well.
+            unsettled = name in self.movers or name not in self.settled
+            if name in self.functions and unsettled:
+                where.lose()
+
+
+#: An open scope: where it ends, its number, where the shell was when it
+#: began (``None``: its moves stay), and whether it is a loop that moves.
+_Open = tuple[int, int, _Where | None, bool]
+
+
+def shell_facts(
+    parsed: ParseResult,
+    cwd: str,
+    resolve: Resolve,
+    home: str | None = None,
+    *,
+    origin: str | None = None,
+    windows: bool = False,
+    known: bool = True,
+    crowded: Callable[[], None] | None = None,
+) -> tuple[list[PathFact], list[str]]:
+    """Paths the parsed commands touch, and the directory each command runs in.
 
     Parameters
     ----------
     parsed:
         Result of :func:`ember_armor.ledger.shell.parse_shell`.
     cwd:
-        Normalised working directory of the call.
+        Normalised directory the command string starts in.
     resolve:
         ``resolve(raw_path, cwd, shell)`` returning the normalised paths the
         operand can stand for (several for a loop variable).
     home:
         Normalised home directory, where a bare ``cd`` goes in Bash.
+    origin:
+        Normalised working directory of the call, when it is not *cwd*.
+    windows:
+        Path flavour: on Windows a path without a drive letter in
+        PowerShell or ``cmd.exe`` lies on the drive the shell is on.
+    known:
+        False when nothing says where the command string starts: its
+        commands then run in an unknown directory until one names an
+        absolute one.  Paths are still resolved against *cwd*.
+    crowded:
+        Called when moves that may not have run leave the shell in more
+        than :data:`MAX_PLACES` possible directories: the paths are then
+        not all resolved.
+
+    Returns
+    -------
+    tuple[list[PathFact], list[str]]
+        The paths, normalised and de-duplicated, and for each command the
+        directory in effect when it runs: empty for *origin*,
+        :data:`~ember_armor.ledger.paths.UNKNOWN_DIR` when the command
+        string does not say.  The directory follows ``cd``, ``pushd`` and
+        ``popd``, the directory options of wrappers and nested shells, and
+        the program's own (``git -C``, ``make -C``, ``npm --prefix``, ``pnpm
+        -C``, ``yarn --cwd``, ``cargo -C``).  It is unknown after a move
+        that may not have run (a branch, a loop body, the right side of
+        ``&&`` or ``||``) and after a call of a function that moves.  After
+        such a move a relative path is resolved both ways: against the
+        directory the move leads to and against the one before it.
     """
-    facts: dict[PathFact, None] = {}
+    origin = cwd if origin is None else origin
+    places = _Places(resolve, windows)
+
+    def label(directory: str | None) -> str:
+        if directory is None:
+            return UNKNOWN_DIR
+        return "" if directory == origin else directory
+
+    facts: dict[tuple[PathFact, str], PathFact] = {}
+    directories: list[str] = []
     place = _Location(cwd, cwd)
-    opening: dict[int, list[int]] = {}
-    for low, high in parsed.scopes:
-        if high > low:
-            opening.setdefault(low, []).append(high)
-    left: list[tuple[int, _Location]] = []
+    # Where else the shell may be, for relative paths: the directory before
+    # a move that may not have run.
+    also: list[str] = []
+    where = _Where(cwd if known else None)
+    tracker = _Tracker(parsed, places, home)
+    left: list[_Open] = []
+    shelved: list[tuple[int, bool, _Location, list[str]]] = []
     for index, command in enumerate(parsed.commands):
-        while left and left[-1][0] <= index:
-            place = left.pop()[1]
-        for high in sorted(opening.get(index, ()), reverse=True):
-            left.append((high, replace(place, stack=list(place.stack))))
+        while shelved and shelved[-1][0] <= index:
+            _, guarded, before, others = shelved.pop()
+            if not guarded:
+                # A process of its own ends with its moves.
+                place, also = before, others
+                continue
+            # A branch, a loop or a function body: the shell may as well be
+            # wherever it could be before.
+            for other in (before.current, *others):
+                if other in (place.current, *also):
+                    continue
+                if len(also) < MAX_PLACES:
+                    also.append(other)
+                elif crowded is not None:
+                    crowded()
+        where = tracker.arrive(index, where, left)
+        for high, number in tracker.opening.get(index, ()):
+            snapshot = replace(place, stack=list(place.stack))
+            shelved.append((high, number in parsed.guards, snapshot, list(also)))
+            started = tracker.started.pop(number, None)
+            if started is not None:
+                # The paths of a nested shell are relative to where it starts.
+                place.current = started
+        # A redirection is opened by the shell, in the shell's directory.
+        here = label(where.current)
+        bases = (place.current, *also)
         for redirect in command.redirects:
-            if not _is_null(redirect.target):
-                for path in resolve(redirect.target, place.current, command.shell):
-                    facts[PathFact(path, redirect.op)] = None
+            if _is_null(redirect.target):
+                continue
+            for base in bases:
+                for path in resolve(redirect.target, base, command.shell):
+                    fact = PathFact(path, redirect.op, False, here, index)
+                    facts.setdefault((fact, here), fact)
         if not command.argv:
+            directories.append(here)
             continue
-        if program_name(command.argv[0]) in _CD | _PUSHD | _POPD:
+        if program_name(command.argv[0]) in MOVERS:
+            directories.append(here)
             _change_directory(command, place, resolve, home)
+            also = _moved_too(also, command, place.current, resolve, home)
+            tracker.step(index, where)
             continue
+        if _switches_drive(command):
+            directories.append(here)
+            tracker.step(index, where)
+            continue
+        placed = index in parsed.placed
+        started, runs = _run_directory(command, where.current, places, placed)
+        tracker.step(index, where)
+        directory = label(runs)
+        directories.append(directory)
+        # Operands are relative to where the wrappers start the command.
+        if command.chdir and started is not None:
+            bases = (started,)
         for raw, op, recursive in _command_paths(command):
             if qualified := _FILESYSTEM_RE.match(raw):
                 raw = raw[qualified.end() :]
@@ -575,6 +1239,18 @@ def shell_paths(
                 continue
             if recursive:
                 raw = _WILD_TAIL_RE.sub(r"\1.", raw)
-            for path in resolve(raw, place.current, command.shell):
-                facts[PathFact(path, op, recursive)] = None
-    return list(facts)
+            for base in bases:
+                for path in resolve(raw, base, command.shell):
+                    fact = PathFact(path, op, recursive, directory, index)
+                    facts.setdefault((fact, directory), fact)
+    return list(facts.values()), directories
+
+
+def shell_paths(
+    parsed: ParseResult, cwd: str, resolve: Resolve, home: str | None = None
+) -> list[PathFact]:
+    """Paths touched by the parsed commands, normalised and de-duplicated.
+
+    Takes the parameters of :func:`shell_facts`.
+    """
+    return shell_facts(parsed, cwd, resolve, home)[0]

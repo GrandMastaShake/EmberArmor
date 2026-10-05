@@ -92,11 +92,22 @@ def summarise(facts: Facts) -> dict[str, Any]:
 
     Shell commands are stored as parsed argument vectors, never as the raw
     string.  File tools keep only their path; file contents are not logged.
+    A command, and a path it touches, carries the directory it runs in
+    (``cwd``) when that is not the working directory of the call, so that a
+    rule with a directory scope can judge the call again later.
     """
     summary: dict[str, Any] = {"windows": facts.windows}
+    if not facts.located:
+        # The host named no working directory: the entry's "cwd" is only
+        # what the paths were resolved against.
+        summary["located"] = False
     if facts.commands:
         summary["commands"] = [
-            {"shell": command.shell, "argv": redact_argv(command.argv)}
+            {
+                "shell": command.shell,
+                "argv": redact_argv(command.argv),
+                **_elsewhere(command.cwd),
+            }
             for command in facts.commands[:MAX_ITEMS]
         ]
     if facts.paths:
@@ -105,6 +116,7 @@ def summarise(facts: Facts) -> dict[str, Any]:
                 "path": redact_path(path.path),
                 "op": path.op,
                 "recursive": path.recursive,
+                **_elsewhere(path.cwd),
             }
             for path in facts.paths[:MAX_ITEMS]
         ]
@@ -123,6 +135,11 @@ def summarise(facts: Facts) -> dict[str, Any]:
     return summary
 
 
+def _elsewhere(cwd: str) -> dict[str, str]:
+    """The ``cwd`` of a command or path, when it is not that of the call."""
+    return {"cwd": redact_path(cwd)} if cwd else {}
+
+
 def restore(entry: Mapping[str, Any]) -> Facts:
     """Rebuild the facts of an earlier call from its audit entry."""
     call = entry.get("call") or {}
@@ -132,11 +149,20 @@ def restore(entry: Mapping[str, Any]) -> Facts:
         session=str(entry.get("session", "")),
         windows=bool(call.get("windows", False)),
         commands=tuple(
-            SimpleCommand(tuple(c.get("argv", ())), c.get("shell", "bash"))
+            SimpleCommand(
+                tuple(c.get("argv", ())),
+                c.get("shell", "bash"),
+                cwd=str(c.get("cwd", "")),
+            )
             for c in call.get("commands", ())
         ),
         paths=tuple(
-            PathFact(p["path"], p["op"], bool(p.get("recursive", False)))
+            PathFact(
+                p["path"],
+                p["op"],
+                bool(p.get("recursive", False)),
+                str(p.get("cwd", "")),
+            )
             for p in call.get("paths", ())
         ),
         dynamic=tuple(
@@ -145,6 +171,7 @@ def restore(entry: Mapping[str, Any]) -> Facts:
         ),
         assigned=tuple(str(name) for name in call.get("assigned", ())),
         args=call.get("args") or {},
+        located=call.get("located") is not False,
     )
 
 

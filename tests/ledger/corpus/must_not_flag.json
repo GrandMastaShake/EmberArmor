@@ -2346,5 +2346,210 @@
  {
   "tool": "PowerShell",
   "command": "Move-Item -Path build.log -Destination logs"
+ },
+ {
+  "tool": "Bash",
+  "command": "git -C /srv/repo status"
+ },
+ {
+  "tool": "Bash",
+  "command": "git -C /srv/repo commit -C HEAD~1"
+ },
+ {
+  "tool": "Bash",
+  "command": "git -C ../other log --oneline -5"
+ },
+ {
+  "tool": "Bash",
+  "command": "cd /srv/repo && git log --oneline -5; cd -"
+ },
+ {
+  "tool": "Bash",
+  "command": "pushd build && cmake .. && popd"
+ },
+ {
+  "tool": "Bash",
+  "command": "make -C build clean"
+ },
+ {
+  "tool": "Bash",
+  "command": "make --directory=docs html"
+ },
+ {
+  "tool": "Bash",
+  "command": "npm --prefix web run build"
+ },
+ {
+  "tool": "Bash",
+  "command": "npm -C web test"
+ },
+ {
+  "tool": "Bash",
+  "command": "pnpm -C web install"
+ },
+ {
+  "tool": "Bash",
+  "command": "pnpm --dir web exec tsc --noEmit"
+ },
+ {
+  "tool": "Bash",
+  "command": "yarn --cwd web test"
+ },
+ {
+  "tool": "Bash",
+  "command": "yarn --cwd web exec eslint ."
+ },
+ {
+  "tool": "Bash",
+  "command": "cargo -C crate build --release"
+ },
+ {
+  "tool": "Bash",
+  "command": "env -C /srv/app ls -la"
+ },
+ {
+  "tool": "Bash",
+  "command": "env -C /srv/app rm -rf node_modules"
+ },
+ {
+  "tool": "Bash",
+  "command": "pnpm -C web exec rm -rf dist"
+ },
+ {
+  "tool": "Bash",
+  "command": "sudo -D /srv/app git status"
+ },
+ {
+  "tool": "Bash",
+  "command": "uv run --directory tools pytest -q"
+ },
+ {
+  "tool": "Bash",
+  "command": "cd \"$(git rev-parse --show-toplevel)\" && git status"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Push-Location C:\\srv\\repo; git status; Pop-Location",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Set-Location -Path C:\\srv\\repo -ErrorAction Stop; git fetch",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "cmd /c \"cd /d C:\\srv\\repo && git status\"",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Start-Process npm -ArgumentList 'run','build' -WorkingDirectory C:\\srv\\web",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "wsl --cd /srv/repo git status",
+  "platform": "windows"
+ },
+ {
+  "tool": "Bash",
+  "command": "[ -d build ] && cd build; make -j4"
+ },
+ {
+  "tool": "Bash",
+  "command": "if [ -d web ]; then cd web; fi; npm test"
+ },
+ {
+  "tool": "Bash",
+  "command": "for d in api web; do pushd $d; npm ci; popd; done; git status"
+ },
+ {
+  "tool": "Bash",
+  "command": "for d in */; do (cd \"$d\" && git status); done"
+ },
+ {
+  "tool": "Bash",
+  "command": "for d in */; do git -C \"$d\" fetch --all; done"
+ },
+ {
+  "tool": "Bash",
+  "command": "cd \"$(dirname \"$0\")/..\" && git status"
+ },
+ {
+  "tool": "Bash",
+  "command": "cd src || exit 1; pytest -q"
+ },
+ {
+  "tool": "Bash",
+  "command": "run() { cd \"$1\" && make; }; run api; run web"
+ },
+ {
+  "tool": "Bash",
+  "command": "cleanup() { cd /tmp; rm -f run.lock; }; trap cleanup EXIT; make test"
+ },
+ {
+  "tool": "Bash",
+  "command": "make -sC build all"
+ },
+ {
+  "tool": "Bash",
+  "command": "make --dir=build test"
+ },
+ {
+  "tool": "Bash",
+  "command": "find . -maxdepth 2 -name .git -exec git -C {}/.. status \\;"
+ },
+ {
+  "tool": "Bash",
+  "command": "[ -d node_modules ] && cd node_modules; rm -rf .cache"
+ },
+ {
+  "tool": "Bash",
+  "command": "env -C build sh -c 'rm -rf CMakeFiles'"
+ },
+ {
+  "tool": "Bash",
+  "command": "pushd docs && make html && popd; git status"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "cd..; git status",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "if (Test-Path web) { cd web }; npm test",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "function Build { Set-Location src; dotnet build }; Build",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Get-ChildItem -Directory | ForEach-Object { Push-Location $_; git status; Pop-Location }",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "cmd /c \"cd.. && dir\"",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "cmd /c \"if exist build cd build & dir\"",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Start-Process npm -ArgumentList 'test' -WorkingDirectory:C:\\srv\\web",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "try { cd C:\\srv\\repo } catch { Write-Host gone }; git status",
+  "platform": "windows"
  }
 ]

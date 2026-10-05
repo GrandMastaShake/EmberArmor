@@ -7,9 +7,10 @@ tests never touch the real home directory.  ``EMBER_HOME`` replaces
 ``config.json`` in the Ember home may hold ``mode`` (``observe`` or
 ``enforce``), ``builtin`` (``false`` switches the built-in pack off),
 ``disposable`` (directory patterns the built-in delete rules leave alone, in
-addition to the pack's own list) and ``shell_tools`` (tools whose input
-carries a shell command, see :func:`shell_tools`).  Anything else is an
-error: a misspelt setting must not be read as "not set".
+addition to the pack's own list), ``shell_tools`` (tools whose input
+carries a shell command, see :func:`shell_tools`) and ``exceptions`` (the
+owner's exceptions to rules, see :func:`rule_exceptions`).  Anything else is
+an error: a misspelt setting must not be read as "not set".
 """
 
 from __future__ import annotations
@@ -20,11 +21,14 @@ from pathlib import Path
 
 TYPE_CHECKING = False
 if TYPE_CHECKING:
+    from datetime import date
     from typing import Any
+
+    from ember_armor.ledger.exceptions import RuleException
 
 MODES = ("observe", "enforce")
 SHELLS = ("bash", "powershell", "cmd", "native")
-_SETTINGS = ("mode", "builtin", "disposable", "shell_tools")
+_SETTINGS = ("mode", "builtin", "disposable", "shell_tools", "exceptions")
 _SHELL_TOOL_KEYS = ("shell", "field", "cwd")
 _FALSE_WORDS = frozenset({"0", "false", "no", "off"})
 
@@ -61,7 +65,29 @@ def _validate(config: Any, path: Path) -> dict[str, Any]:
     ):
         raise ConfigError(f"{path}: 'disposable' must be a list of path patterns")
     _validate_shell_tools(config.get("shell_tools", {}), path)
+    _exceptions(config.get("exceptions", []), path)
     return config
+
+
+def _exceptions(items: Any, path: Path) -> list[RuleException]:
+    """The validated ``exceptions`` setting.
+
+    The rule model is loaded only when there is an exception to check.
+    """
+    where = f"{path}: 'exceptions'"
+    if not isinstance(items, list):
+        raise ConfigError(f"{where} must be a list of exception objects")
+    if not items:
+        return []
+    from ember_armor.ledger.model import LedgerError, parse_exception
+
+    try:
+        return [
+            parse_exception(item, f"{where}[{index}]")
+            for index, item in enumerate(items)
+        ]
+    except LedgerError as exc:
+        raise ConfigError(str(exc)) from exc
 
 
 def _validate_shell_tools(tools: Any, path: Path) -> None:
@@ -150,6 +176,39 @@ def shell_tools(env: Mapping[str, str]) -> dict[str, dict[str, str]]:
     native shell tools.
     """
     return dict(read_config(env).get("shell_tools", {}))
+
+
+def rule_exceptions(
+    env: Mapping[str, str], today: date | None = None
+) -> tuple[RuleException, ...]:
+    """The owner's exceptions to rules (``exceptions`` in ``config.json``).
+
+    Each is ``{"rule": id or glob, "reason": text}`` with at least one of
+    ``cwd_under``, ``repo_root`` and ``when``, and optionally ``tools`` and
+    ``expires``.  A rule that fires on a command an exception covers is
+    dropped for that command, and the use is recorded.  Only this file can
+    hold exceptions: a ledger, and so a repository, cannot.
+
+    Parameters
+    ----------
+    env:
+        Environment mapping selecting the Ember home.
+    today:
+        Leave out the exceptions that expired before this date; ``None``
+        returns them all.
+
+    Raises
+    ------
+    ConfigError
+        If the configuration cannot be read or an exception is malformed.
+    """
+    path = ember_home(env) / "config.json"
+    found = _exceptions(read_config(env).get("exceptions", []), path)
+    return tuple(
+        exception
+        for exception in found
+        if today is None or exception.expires is None or today <= exception.expires
+    )
 
 
 def disposable_patterns(env: Mapping[str, str]) -> tuple[str, ...]:

@@ -76,6 +76,20 @@ def find_project_ledger(cwd: str) -> Path | None:
     return None
 
 
+def _user_ledgers(user: Path) -> tuple[Path, ...]:
+    """Files that are a user ledger and never the ledger of a project.
+
+    The user ledger in force, and the one in ``~/.ember``: with
+    ``EMBER_HOME`` set, a call made below the home directory would
+    otherwise find that file as the ledger of a project called "home".
+    """
+    try:
+        home = Path.home()
+    except RuntimeError:  # no home directory can be worked out
+        return (user.resolve(),)
+    return (user.resolve(), (home / ".ember" / LEDGER_NAME).resolve())
+
+
 def _read_json(path: Path, what: str) -> Any:
     """Decoded JSON of *path* (a UTF-8 byte order mark is accepted)."""
     try:
@@ -225,7 +239,7 @@ def load_sources(
     user = user_ledger_path(env)
     sources = [("override", Path(override))] if override else [("user", user)]
     found = find_project_ledger(cwd) if project and not override else None
-    if found is not None and found.resolve() != user.resolve():
+    if found is not None and found.resolve() not in _user_ledgers(user):
         sources.append(("project", found))
     for origin, path in sources:
         try:

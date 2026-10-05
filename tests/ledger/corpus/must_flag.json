@@ -3743,5 +3743,322 @@
   "platform": "windows",
   "effect": "ask",
   "rule": "builtin.secrets.read"
+ },
+ {
+  "tool": "Bash",
+  "command": "git -C /srv/repo reset --hard origin/main",
+  "effect": "ask",
+  "rule": "builtin.git.reset-hard"
+ },
+ {
+  "tool": "Bash",
+  "command": "git -C /srv -C repo clean -fd",
+  "effect": "ask",
+  "rule": "builtin.git.clean"
+ },
+ {
+  "tool": "Bash",
+  "command": "cd /srv/repo && git fetch origin && git reset --hard origin/main",
+  "effect": "ask",
+  "rule": "builtin.git.reset-hard"
+ },
+ {
+  "tool": "Bash",
+  "command": "pushd /srv/repo; git clean -fdx; popd",
+  "effect": "ask",
+  "rule": "builtin.git.clean"
+ },
+ {
+  "tool": "Bash",
+  "command": "cd $REPO && git reset --hard",
+  "effect": "ask",
+  "rule": "builtin.git.reset-hard"
+ },
+ {
+  "tool": "Bash",
+  "command": "make -C deploy && git -C deploy push --force",
+  "effect": "ask",
+  "rule": "builtin.git.force-push"
+ },
+ {
+  "tool": "Bash",
+  "command": "sudo -D /srv/app git reset --hard",
+  "effect": "ask",
+  "rule": "builtin.git.reset-hard"
+ },
+ {
+  "tool": "Bash",
+  "command": "find . -name node_modules -prune -o -name .git -execdir git clean -fdx \\;",
+  "effect": "ask",
+  "rule": "builtin.git.clean"
+ },
+ {
+  "tool": "Bash",
+  "command": "env -C /srv/app rm -rf data",
+  "platform": "posix",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "Bash",
+  "command": "env -C / rm -rf home",
+  "platform": "posix",
+  "effect": "deny",
+  "rule": "builtin.delete.protected"
+ },
+ {
+  "tool": "Bash",
+  "command": "env --chdir=/srv/app/.. rm -rf .git",
+  "platform": "posix",
+  "effect": "deny",
+  "rule": "builtin.delete.git-dir"
+ },
+ {
+  "tool": "Bash",
+  "command": "sudo --chdir /srv/app rm -rf uploads",
+  "platform": "posix",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "Bash",
+  "command": "uv run --directory /srv/tool rm -rf state",
+  "platform": "posix",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "Bash",
+  "command": "pnpm -C web exec rm -rf src",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "Bash",
+  "command": "pnpm --dir web exec rm -rf src",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "Bash",
+  "command": "yarn --cwd web exec rm -rf src",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "Bash",
+  "command": "npm -C web exec -- rm -rf src",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Set-Location C:\\srv\\repo; git reset --hard",
+  "platform": "windows",
+  "effect": "ask",
+  "rule": "builtin.git.reset-hard"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Push-Location C:\\srv\\repo; git clean -fdx; Pop-Location",
+  "platform": "windows",
+  "effect": "ask",
+  "rule": "builtin.git.clean"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "cmd /c \"cd /d C:\\srv\\repo && git reset --hard\"",
+  "platform": "windows",
+  "effect": "ask",
+  "rule": "builtin.git.reset-hard"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Start-Process git -ArgumentList 'reset --hard' -WorkingDirectory C:\\srv\\repo",
+  "platform": "windows",
+  "effect": "ask",
+  "rule": "builtin.git.reset-hard"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "pwsh -WorkingDirectory C:\\srv\\repo -Command \"git reset --hard\"",
+  "platform": "windows",
+  "effect": "ask",
+  "rule": "builtin.git.reset-hard"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "wsl --cd /srv/repo git push --force",
+  "platform": "windows",
+  "effect": "ask",
+  "rule": "builtin.git.force-push"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "wsl --cd /srv/app rm -rf data",
+  "platform": "windows",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "Bash",
+  "command": "[ -d /tmp/work ] && cd /tmp/work; rm -rf src",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "Bash",
+  "command": "if [ -d /tmp/work ]; then cd /tmp/work; fi; rm -rf src",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "Bash",
+  "command": "case $1 in ci) cd /tmp/ci;; esac; rm -rf src",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "Bash",
+  "command": "for d in /tmp/a; do cd $d; done; rm -rf src",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "Bash",
+  "command": "cleanup() { cd /tmp; rm -rf scratch; }; rm -rf src",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "Bash",
+  "command": "test -d build && cd build; git reset --hard",
+  "effect": "ask",
+  "rule": "builtin.git.reset-hard"
+ },
+ {
+  "tool": "Bash",
+  "command": "cd /srv/repo || cd /srv/mirror; git reset --hard origin/main",
+  "effect": "ask",
+  "rule": "builtin.git.reset-hard"
+ },
+ {
+  "tool": "Bash",
+  "command": "f() { cd /srv/repo; }; f; git reset --hard",
+  "effect": "ask",
+  "rule": "builtin.git.reset-hard"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "if (Test-Path C:\\tmp\\x) { cd C:\\tmp\\x }; Remove-Item -Recurse src",
+  "platform": "windows",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "function Go { Set-Location $env:TEMP }; Remove-Item -Recurse -Force src",
+  "platform": "windows",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "Bash",
+  "command": "env -C / sh -c 'rm -rf home'",
+  "platform": "posix",
+  "effect": "deny",
+  "rule": "builtin.delete.protected"
+ },
+ {
+  "tool": "Bash",
+  "command": "env -C ~/.ember sh -c 'echo {} > config.json'",
+  "effect": "ask",
+  "rule": "builtin.gate.files"
+ },
+ {
+  "tool": "Bash",
+  "command": "sudo -D /srv/app sh -c 'rm -rf data'",
+  "effect": "ask",
+  "rule": "builtin.delete.recursive"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "pwsh -WorkingDirectory C:\\ -Command \"Remove-Item -Recurse -Force Users\"",
+  "platform": "windows",
+  "effect": "deny",
+  "rule": "builtin.delete.protected"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "pwsh -WorkingDirectory C:\\Users\\dev\\.ember -Command \"Set-Content config.json '{}'\"",
+  "platform": "windows",
+  "effect": "ask",
+  "rule": "builtin.gate.files"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "cmd /c \"cd.. && git reset --hard\"",
+  "platform": "windows",
+  "effect": "ask",
+  "rule": "builtin.git.reset-hard"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "cmd /c \"cd/d C:\\srv\\repo && git reset --hard\"",
+  "platform": "windows",
+  "effect": "ask",
+  "rule": "builtin.git.reset-hard"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "cd..; git reset --hard",
+  "platform": "windows",
+  "effect": "ask",
+  "rule": "builtin.git.reset-hard"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "cd\\; Remove-Item -Recurse -Force Users",
+  "platform": "windows",
+  "effect": "deny",
+  "rule": "builtin.delete.protected"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "cmd /c \"if exist build cd build & git reset --hard\"",
+  "platform": "windows",
+  "effect": "ask",
+  "rule": "builtin.git.reset-hard"
+ },
+ {
+  "tool": "Bash",
+  "command": "git --attr-source HEAD -C /srv/repo reset --hard",
+  "effect": "ask",
+  "rule": "builtin.git.reset-hard"
+ },
+ {
+  "tool": "Bash",
+  "command": "find . -maxdepth 2 -name .git -exec git -C {}/.. reset --hard \\;",
+  "effect": "ask",
+  "rule": "builtin.git.reset-hard"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Start-Process git -ArgumentList 'reset','--hard' -WorkingDirectory:C:\\srv\\repo",
+  "platform": "windows",
+  "effect": "ask",
+  "rule": "builtin.git.reset-hard"
+ },
+ {
+  "tool": "Bash",
+  "command": "cd \"$REPO/..\" && git reset --hard",
+  "effect": "ask",
+  "rule": "builtin.git.reset-hard"
+ },
+ {
+  "tool": "Bash",
+  "command": "for d in */; do git -C \"$d\" reset --hard; done",
+  "effect": "ask",
+  "rule": "builtin.git.reset-hard"
  }
 ]

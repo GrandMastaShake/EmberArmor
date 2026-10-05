@@ -13,12 +13,18 @@ from __future__ import annotations
 
 import os
 from collections.abc import Mapping
-from dataclasses import asdict, dataclass
-from datetime import datetime
+from dataclasses import asdict, dataclass, replace
+from datetime import date, datetime
 
 from ember_armor.ledger.audit import AuditLog, summarise
-from ember_armor.ledger.config import ConfigError, ember_home, gate_mode, shell_tools
-from ember_armor.ledger.engine import History, evaluate
+from ember_armor.ledger.config import (
+    ConfigError,
+    ember_home,
+    gate_mode,
+    rule_exceptions,
+    shell_tools,
+)
+from ember_armor.ledger.engine import History, RepoFinder, evaluate
 from ember_armor.ledger.facts import Facts, ShellTool, extract, shell_tools_from
 from ember_armor.ledger.model import SEVERITY, Decision
 from ember_armor.ledger.redact import MAX_TEXT
@@ -27,6 +33,8 @@ from ember_armor.ledger.store import active_rules, load_sources
 TYPE_CHECKING = False
 if TYPE_CHECKING:
     from typing import Any
+
+    from ember_armor.ledger.exceptions import RuleException
 
 
 @dataclass(frozen=True)
@@ -44,14 +52,20 @@ class GateResult:
         return self.mode == "enforce" and severe
 
     def report(self) -> dict[str, Any]:
-        """The result as JSON data, with the call redacted as in the audit log."""
-        return {
+        """The result as JSON data, with the call redacted as in the audit log.
+
+        ``excepted`` is present when an owner's exception dropped a rule.
+        """
+        report = {
             "decision": self.decision.effect,
             "mode": self.mode,
             "rules": [asdict(rule) for rule in self.decision.fired],
             "error": self.decision.error,
             "call": summarise(self.facts) if self.facts else None,
         }
+        if self.decision.excepted:
+            report["excepted"] = _excepted(self.decision)
+        return report
 
 
 def audit_log(env: Mapping[str, str]) -> AuditLog:
@@ -71,14 +85,34 @@ def configured_shell_tools(env: Mapping[str, str]) -> dict[str, ShellTool]:
         return {}
 
 
+def configured_exceptions(
+    env: Mapping[str, str], today: date
+) -> tuple[RuleException, ...]:
+    """The owner's exceptions in force; none when the configuration is unreadable.
+
+    As for :func:`configured_shell_tools`, the unreadable configuration is
+    reported where the mode is read.  Without it no rule is excepted.
+    """
+    try:
+        return rule_exceptions(env, today)
+    except ConfigError:
+        return ()
+
+
+def _excepted(decision: Decision) -> list[dict[str, str]]:
+    """The exceptions a decision used, as they go into the audit entry."""
+    return [
+        {"rule": item.rule[:MAX_TEXT], "reason": item.reason[:MAX_TEXT]}
+        for item in decision.excepted
+    ]
+
+
 def _failure(mode: str, error: str, earlier: Decision | None = None) -> Decision:
-    fired = earlier.fired if earlier else ()
-    if mode != "enforce":
-        effect = earlier.effect if earlier else "none"
-        return Decision(effect=effect, fired=fired, error=error)
-    if earlier and SEVERITY[earlier.effect] >= SEVERITY["ask"]:
-        return Decision(effect=earlier.effect, fired=fired, error=error)
-    return Decision(effect="ask", fired=fired, error=error)
+    if earlier is None:
+        return Decision(effect="ask" if mode == "enforce" else "none", error=error)
+    if mode != "enforce" or SEVERITY[earlier.effect] >= SEVERITY["ask"]:
+        return replace(earlier, error=error)
+    return replace(earlier, effect="ask", error=error)
 
 
 def _record(
@@ -95,6 +129,8 @@ def _record(
     }
     if facts is not None:
         record["call"] = summarise(facts)
+    if decision.excepted:
+        record["excepted"] = _excepted(decision)
     if decision.error:
         record["error"] = decision.error[:500]
     return record
@@ -110,6 +146,7 @@ def check(
     now: datetime | None = None,
     problem: str | None = None,
     project: bool = True,
+    repo_root: RepoFinder | None = None,
 ) -> GateResult:
     """Evaluate one proposed tool call against the ledger.
 
@@ -134,6 +171,10 @@ def check(
         unreadable hook input).  It is handled like any other gate failure.
     project:
         Look for a project ledger above the call's working directory.
+    repo_root:
+        Lookup of the nearest enclosing git repository of a directory, for
+        ``repo_root`` scopes.  Defaults to the filesystem (see
+        :func:`ember_armor.ledger.engine.evaluate`).
 
     Returns
     -------
@@ -166,8 +207,12 @@ def check(
             facts,
             log if history is None else history,
             now=moment.timestamp(),
+            exceptions=configured_exceptions(env, moment.date()),
+            repo_root=repo_root,
         )
-        problems = list(dict.fromkeys(problems + unloaded))
+        # A repository lookup that failed is a gate failure like the others.
+        failed = [decision.error] if decision.error else []
+        problems = list(dict.fromkeys(problems + unloaded + failed))
         if problems:
             # What did load was evaluated; the failure can only add an ask.
             decision = _failure(mode, "; ".join(problems), decision)

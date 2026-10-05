@@ -172,6 +172,25 @@ def example(tool: str, summary: Mapping[str, Any]) -> str:
     return line.encode("ascii", "backslashreplace").decode("ascii")
 
 
+def _remembered(windows: bool | None) -> RepoFinder:
+    """A lookup on the filesystem that asks about each directory once per replay.
+
+    The gate asks once per call; a replay judges thousands of calls made in
+    the same few directories.
+    """
+    known: dict[str, str | None] = {}
+
+    def lookup(directory: str) -> str | None:
+        if directory not in known:
+            from ember_armor.ledger.repo import finder
+
+            find = finder(os.name == "nt" if windows is None else windows)
+            known[directory] = find(directory)
+        return known[directory]
+
+    return lookup
+
+
 def replay(
     paths: Iterable[str],
     *,
@@ -196,7 +215,8 @@ def replay(
     repo_root:
         Lookup of the nearest enclosing git repository of a directory, for
         ``repo_root`` scopes.  Defaults to the filesystem as it is today,
-        which may differ from what it was when the call was recorded.
+        which may differ from what it was when the call was recorded; each
+        directory is then asked about once for the whole replay.
 
     Raises
     ------
@@ -212,6 +232,7 @@ def replay(
         exceptions = rule_exceptions(env, date.today())
     except ConfigError as exc:
         raise LedgerError(str(exc)) from exc
+    lookup = _remembered(windows) if repo_root is None else repo_root
     rules_by_cwd: dict[str, list[Rule]] = {}
     histories: dict[str, MemoryHistory] = {}
     seen: set[str] = set()
@@ -236,7 +257,7 @@ def replay(
                     history,
                     now=when,
                     exceptions=exceptions,
-                    repo_root=repo_root,
+                    repo_root=lookup,
                 )
                 summary = summarise(facts)
             except Exception:  # one bad call must not end the replay

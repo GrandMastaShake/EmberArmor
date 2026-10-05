@@ -586,3 +586,46 @@ def test_the_hook_reads_the_real_filesystem(gate_env, repositories) -> None:
     asked = json.loads(hook(top / "src"))
     assert asked["hookSpecificOutput"]["permissionDecision"] == "deny"
     assert hook(nested) == ""
+
+
+def test_a_replay_asks_about_each_directory_once(
+    gate_env, tmp_path: Path, monkeypatch
+) -> None:
+    from ember_armor.ledger.replay import replay
+
+    asked: list[str] = []
+
+    def finder(windows: bool):
+        def lookup(directory: str) -> str | None:
+            asked.append(directory)
+            return table(directory)
+
+        return lookup
+
+    monkeypatch.setattr(repo, "finder", finder)
+    item = rule("rooted", when=COMMIT, applies={"repo_root": ["/srv/repo"]})
+    write_ledger(Path(gate_env["EMBER_LEDGER"]), item)
+
+    def line(number: int, cwd: str) -> str:
+        block = {
+            "type": "tool_use",
+            "id": f"call-{number}",
+            "name": "Bash",
+            "input": {"command": "git commit"},
+        }
+        entry = {
+            "type": "assistant",
+            "sessionId": "s",
+            "cwd": cwd,
+            "message": {"role": "assistant", "content": [block]},
+        }
+        return json.dumps(entry)
+
+    transcript = tmp_path / "session.jsonl"
+    places = ["/srv/repo", "/srv/repo/vendor/lib", "/srv/repo", "/srv/repo", "/tmp"]
+    lines = [line(number, cwd) for number, cwd in enumerate(places)]
+    transcript.write_text("\n".join(lines), encoding="utf-8")
+    report = replay([str(transcript)], env=gate_env, windows=False)
+    assert report.calls == 5
+    assert report.rules["rooted"] == 3
+    assert sorted(asked) == ["/srv/repo", "/srv/repo/vendor/lib", "/tmp"]

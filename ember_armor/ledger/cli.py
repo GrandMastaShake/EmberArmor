@@ -551,6 +551,31 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+#: The subcommands other than ``hook``.
+_OTHER_COMMANDS = ("check", "rules", "lint", "log", "replay", "install")
+
+
+def _hook_arguments(arguments: Sequence[str]) -> list[str] | None:
+    """The arguments for the hook, when the command line is a hook's.
+
+    The hook reads its own arguments.  One it does not know must end as a
+    gate failure with exit status 0, never as a usage error: exit status 2
+    would block the call on the host.  That holds for a line with ``hook``
+    in it that the parser would refuse as well (an option in front of
+    ``hook``, say): everything but the word itself goes to the hook, which
+    takes what it does not know for a failure of the gate.  ``None`` for a
+    line that asks for help or for another subcommand.
+    """
+    if "hook" not in arguments or {"-h", "--help"}.intersection(arguments):
+        return None
+    words = [argument for argument in arguments if not argument.startswith("-")]
+    if words[0] in _OTHER_COMMANDS:
+        return None
+    if arguments[0] == "hook":
+        return list(arguments[1:])
+    return [argument for argument in arguments if argument != "hook"]
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Run ``ember-gate`` and return its exit code."""
     for stream in (sys.stdout, sys.stderr):
@@ -558,11 +583,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         if isinstance(stream, io.TextIOWrapper):
             stream.reconfigure(errors="backslashreplace")
     arguments = sys.argv[1:] if argv is None else list(argv)
-    if arguments[:1] == ["hook"] and not {"-h", "--help"}.intersection(arguments):
-        # The hook reads its own arguments.  One it does not know must end
-        # as a gate failure with exit status 0, never as a usage error:
-        # exit status 2 would block the call on the host.
-        return hook.main(arguments[1:])
+    for_hook = _hook_arguments(arguments)
+    if for_hook is not None:
+        return hook.main(for_hook)
     args = build_parser().parse_args(arguments)
     try:
         return int(args.func(args))

@@ -517,6 +517,30 @@ _EXCEPTION_REQUIRED = ("rule", "reason")
 _EXCEPTION_OPTIONAL = ("cwd_under", "repo_root", "tools", "when", "expires")
 #: An absolute directory, or one that starts with ``~`` or a variable.
 _ROOTED_RE = re.compile(r"[/\\~$%]|[A-Za-z]:[/\\]")
+#: The variable that names the drive of the home directory, on its own.
+_DRIVE_VARIABLE_RE = re.compile(r"(?:\$\{?(?:env:)?|%)HOMEDRIVE[}%]?", re.IGNORECASE)
+_WILDCARD_RE = re.compile(r"\[[^\]]*\]|[*?]")
+
+
+def _no_place(directory: str) -> str | None:
+    """Why *directory* is no place for an exception (``None``: it is one).
+
+    An exception holds in a place.  A whole filesystem, a whole drive or a
+    pattern that is only wildcards below one is everywhere, and where a
+    directory with ``..`` in it ends depends on what stands in front.
+    """
+    segments = [part for part in directory.replace("\\", "/").split("/") if part]
+    if ".." in segments:
+        return "holds '..' (write the directory it leads to)"
+    if directory.replace("\\", "/").startswith("//"):
+        segments = segments[2:]  # //host/share
+    elif segments and not directory.startswith(("/", "\\")):
+        if segments[0][0] in "~$%" and not _DRIVE_VARIABLE_RE.fullmatch(segments[0]):
+            return None  # a home directory, or what a variable names
+        segments = segments[1:]  # a drive
+    if any(_WILDCARD_RE.sub("", part) for part in segments):
+        return None
+    return "is a whole filesystem, not a place in one"
 
 
 def _parse_applies(obj: Any, where: str) -> Applies:
@@ -626,6 +650,12 @@ def parse_exception(obj: Any, where: str = "exception") -> RuleException:
                 raise LedgerError(
                     f"{where}.{key}: {directory!r} is not an absolute directory "
                     "(it may start with ~ or a variable)"
+                )
+            problem = _no_place(directory)
+            if problem is not None:
+                raise LedgerError(
+                    f"{where}.{key}: {directory!r} {problem}; an exception "
+                    "that holds everywhere is the rule switched off"
                 )
     when = parse_predicate(obj["when"], f"{where}.when") if "when" in obj else None
     if when is None and not (lists.get("cwd_under") or lists.get("repo_root")):

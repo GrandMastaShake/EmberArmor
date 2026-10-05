@@ -131,6 +131,23 @@ INVALID = [
     ({"rule": RESET, "reason": REASON, "cwd_under": ["work"]}, "absolute directory"),
     ({"rule": RESET, "reason": REASON, "cwd_under": ["**/tmp"]}, "absolute directory"),
     ({"rule": RESET, "reason": REASON, "repo_root": ["../x"]}, "absolute directory"),
+    # A whole filesystem is everywhere, whichever way it is written.
+    ({"rule": RESET, "reason": REASON, "cwd_under": ["/"]}, "whole filesystem"),
+    ({"rule": RESET, "reason": REASON, "cwd_under": ["C:/"]}, "whole filesystem"),
+    ({"rule": RESET, "reason": REASON, "cwd_under": ["c:\\"]}, "whole filesystem"),
+    ({"rule": RESET, "reason": REASON, "cwd_under": ["/**"]}, "whole filesystem"),
+    ({"rule": RESET, "reason": REASON, "cwd_under": ["/*/*"]}, "whole filesystem"),
+    ({"rule": RESET, "reason": REASON, "cwd_under": ["C:/**"]}, "whole filesystem"),
+    ({"rule": RESET, "reason": REASON, "cwd_under": ["//host/share"]}, "whole file"),
+    ({"rule": RESET, "reason": REASON, "cwd_under": ["%HOMEDRIVE%\\"]}, "whole file"),
+    ({"rule": RESET, "reason": REASON, "cwd_under": ["$env:HOMEDRIVE/"]}, "whole"),
+    ({"rule": RESET, "reason": REASON, "repo_root": ["/"]}, "whole filesystem"),
+    ({"rule": RESET, "reason": REASON, "repo_root": ["/**"]}, "whole filesystem"),
+    ({"rule": RESET, "reason": REASON, "cwd_under": ["/w", "/"]}, "whole filesystem"),
+    # Where a directory with ``..`` ends depends on what stands in front.
+    ({"rule": RESET, "reason": REASON, "cwd_under": ["~/../.."]}, "holds '..'"),
+    ({"rule": RESET, "reason": REASON, "cwd_under": ["/srv/../.."]}, "holds '..'"),
+    ({"rule": RESET, "reason": REASON, "repo_root": ["$HOME\\.."]}, "holds '..'"),
     ({"rule": RESET, "reason": REASON, "cwd_under": [3]}, "list of strings"),
     ({"rule": RESET, "reason": REASON, "cwd_under": ["/w"], "tools": 3}, "strings"),
     (
@@ -196,6 +213,40 @@ def test_the_rules_that_take_no_exception_are_the_ones_of_the_pack() -> None:
 def test_other_globs_are_fine() -> None:
     for glob in ("builtin.git.*", "builtin.delete.recursive", "no-*", "builtin.s*"):
         assert parse_exception({"rule": glob, "repo_root": ["/w"], "reason": "r"})
+
+
+PLACES = [
+    "/srv",
+    "/home/*",
+    "/*/workspace",
+    "C:/srv",
+    r"C:\Users\dev\workspace",
+    "~",
+    "~/work/*",
+    "$HOME/workspace",
+    r"%USERPROFILE%\workspace",
+    r"%HOMEDRIVE%\Users\dev",
+    "%HOMEDRIVE%%HOMEPATH%",
+    "//host/share/project",
+    "/srv/app/[id]",
+]
+
+
+@pytest.mark.parametrize("directory", PLACES)
+def test_a_place_in_a_filesystem_is_accepted(directory: str) -> None:
+    for key in ("cwd_under", "repo_root"):
+        assert parse_exception({"rule": RESET, key: [directory], "reason": "r"})
+
+
+def test_a_place_that_turns_out_to_be_a_whole_filesystem_never_holds() -> None:
+    # ``$HOME`` is a place as written; for a user whose home is ``/`` it is not.
+    here = exception(cwd_under=["$HOME"])
+    call = make_call("Bash", "git reset --hard", cwd="/srv/repo")
+    rootless = extract(call, windows=False, env={"HOME": "/"})
+    decision = evaluate(builtin_rules(), rootless, exceptions=[here])
+    assert (decision.effect, decision.excepted) == ("ask", ())
+    housed = extract(call, windows=False, env={"HOME": "/srv"})
+    assert evaluate(builtin_rules(), housed, exceptions=[here]).effect == "none"
 
 
 # ---------------------------------------------------------------------------
@@ -440,6 +491,235 @@ def test_an_obligation_is_dropped_when_everything_it_sees_is_covered() -> None:
 
 
 # ---------------------------------------------------------------------------
+# A rule that looks at paths: the exception reaches the paths in its place
+# ---------------------------------------------------------------------------
+DELETE = "builtin.delete.recursive"
+SECRETS = "builtin.secrets.read"
+INSIDE = "/home/dev/workspace"
+
+PATH_CASES = [
+    # (rule excepted under the workspace, working directory, command, effect)
+    (DELETE, INSIDE, "rm -rf data", "none"),
+    (DELETE, INSIDE, "rm -rf ./a ./b/c", "none"),
+    (DELETE, INSIDE, "rm -rf /home/dev/workspace/old", "none"),
+    (DELETE, "/srv/other", "cd /home/dev/workspace && rm -rf data", "none"),
+    (DELETE, "/srv/other", "env -C /home/dev/workspace rm -rf data", "none"),
+    # Run in the workspace, aimed outside it.
+    (DELETE, INSIDE, "rm -rf ~/Documents", "ask"),
+    (DELETE, INSIDE, "rm -rf /srv/other/data", "ask"),
+    (DELETE, INSIDE, "rm -rf ../elsewhere", "ask"),
+    (DELETE, INSIDE, "rm -rf data /srv/other/data", "ask"),
+    (DELETE, INSIDE, 'rm -rf "$TARGET/data"', "ask"),
+    (DELETE, "/srv/other", "cd /home/dev/workspace && rm -rf /srv/other/data", "ask"),
+    (DELETE, "/srv/other", "env -C /home/dev/workspace rm -rf /srv/other/data", "ask"),
+    (DELETE, INSIDE, "find /srv/other -name cache -exec rm -rf {} +", "ask"),
+    # Aimed at the workspace from outside it: the command does not run there.
+    (DELETE, "/srv/other", "rm -rf /home/dev/workspace/data", "ask"),
+    (SECRETS, INSIDE, "cat .env", "none"),
+    (SECRETS, INSIDE, "cat ~/.ssh/id_rsa", "ask"),
+    (SECRETS, INSIDE, "cat .env /srv/other/.env", "ask"),
+    (SECRETS, INSIDE, "tar czf out.tgz /home/dev/.aws/credentials", "ask"),
+]
+
+
+@pytest.mark.parametrize(("name", "cwd", "command", "effect"), PATH_CASES)
+def test_an_exception_reaches_the_paths_in_its_own_place(
+    name: str, cwd: str, command: str, effect: str
+) -> None:
+    here = exception(rule=name)
+    decision = decide(command, cwd, here)
+    assert decision.effect == effect
+    assert dropped(decision) == ([name] if effect == "none" else [])
+    assert [f.id for f in decision.fired] == ([] if effect == "none" else [name])
+
+
+FILE_CASES = [
+    # (working directory of the call, file, effect)
+    (INSIDE, ".env", "none"),
+    (INSIDE, "/home/dev/workspace/app/.env", "none"),
+    (INSIDE, "/home/dev/.ssh/id_rsa", "ask"),
+    (INSIDE, "../.env", "ask"),
+    (INSIDE, "$SOMEWHERE/.env", "ask"),
+    ("/srv/other", "/home/dev/workspace/app/.env", "ask"),
+]
+
+
+@pytest.mark.parametrize(("cwd", "path", "effect"), FILE_CASES)
+def test_a_file_tool_needs_the_call_and_the_file_in_the_place(
+    cwd: str, path: str, effect: str
+) -> None:
+    here = exception(rule=SECRETS)
+    assert decide({"file_path": path}, cwd, here, tool="Read").effect == effect
+
+
+def test_a_rule_that_looks_at_no_path_is_dropped_by_the_directory_alone() -> None:
+    # The job's log lies outside the workspace; the reset is still excepted.
+    here = exception()
+    command = (
+        "git -C /home/dev/workspace/repo reset --hard origin/main "
+        ">> /home/dev/logs/sync.log 2>&1"
+    )
+    decision = decide(command, "/var/scheduler", here)
+    assert (decision.effect, dropped(decision)) == ("none", [RESET])
+
+
+def test_a_redirection_the_shell_opens_elsewhere_is_not_excepted() -> None:
+    writes = parse_rule(
+        rule(
+            "no-write-data",
+            effect="ask",
+            when={"type": "path", "op": "write", "under": ["/data", INSIDE]},
+        )
+    )
+    here = exception(rule="no-write-data")
+
+    def effect(command: str, cwd: str) -> str:
+        return decide(command, cwd, here, rules=[writes]).effect
+
+    # The command runs in the workspace; the file is opened by a shell that
+    # does not, or lies outside it.
+    assert effect(f"git -C {INSIDE}/repo log > /data/out.txt", "/srv/other") == "ask"
+    assert effect(f"git -C {INSIDE}/repo log > {INSIDE}/out.txt", "/srv/other") == "ask"
+    assert effect("git log > /data/out.txt", INSIDE) == "ask"
+    assert effect("git log > out.txt", INSIDE) == "none"
+    assert effect(f"cd {INSIDE} && git log > out.txt", "/srv/other") == "none"
+
+
+def test_a_covered_command_stays_in_view_with_the_path_that_is_not() -> None:
+    # The rule needs the command and the path together.
+    both = {
+        "type": "all",
+        "of": [
+            {"type": "command", "program": "rm"},
+            {"type": "path", "op": "delete", "under": ["/srv"]},
+        ],
+    }
+    item = parse_rule(rule("no-rm-srv", effect="ask", when=both))
+    here = exception(rule="no-rm-srv", cwd_under=["/srv/scratch"])
+
+    def effect(command: str) -> str:
+        return decide(command, "/srv/scratch", here, rules=[item]).effect
+
+    assert effect("rm -rf run-1") == "none"
+    assert effect("rm -rf /srv/data") == "ask"
+    assert effect("rm -rf run-1 /srv/data") == "ask"
+
+
+def test_a_rule_on_a_command_alone_is_excepted_by_where_the_command_runs() -> None:
+    # A limit the specification names: the sync is aimed outside the
+    # workspace, and the rule looks at the command only.
+    mirror = "builtin.delete.mirror"
+    here = exception(rule=mirror)
+    command = "rsync -a --delete src/ /srv/other/"
+    decision = decide(command, INSIDE, here)
+    assert (decision.effect, dropped(decision)) == ("none", [mirror])
+    assert decide(command, "/srv/x", here).effect == "ask"
+    # A condition on the exception narrows it.
+    inside = {"type": "command", "program": "rsync", "args_none_glob": ["/*"]}
+    narrow = exception(rule=mirror, when=inside)
+    assert decide(command, INSIDE, narrow).effect == "ask"
+    assert decide("rsync -a --delete src/ mirror/", INSIDE, narrow).effect == "none"
+
+
+def test_the_examples_of_the_specification() -> None:
+    here = exception(rule=DELETE)
+    assert decide("rm -rf data", INSIDE, here).effect == "none"
+    assert decide("rm -rf ~/Documents", INSIDE, here).effect == "ask"
+    assert decide("rm -rf data ~/Documents", INSIDE, here).effect == "ask"
+    command = f"cd {INSIDE} && rm -rf /srv/data"
+    assert decide(command, "/srv/other", here).effect == "ask"
+    reset = exception()
+    command = f"[ -d x ] && cd {INSIDE}; git reset --hard"
+    assert decide(command, "/srv/other", reset).effect == "ask"
+
+
+def test_a_condition_alone_still_takes_every_path_of_its_command() -> None:
+    logs = {"type": "command", "program": "rm", "args_any_glob": ["*.log"]}
+    only = exception(rule=DELETE, cwd_under=None, when=logs)
+    assert decide("rm -rf /srv/data/app.log", "/work", only).effect == "none"
+
+
+def test_repo_root_reaches_the_paths_in_the_repository() -> None:
+    here = exception(rule=DELETE, cwd_under=None, repo_root=[f"{INSIDE}/repo"])
+    top = f"{INSIDE}/repo"
+
+    def effect(command: str) -> str:
+        return decide(command, top, here, repo_root=table).effect
+
+    assert effect("rm -rf build-output") == "none"
+    assert effect("rm -rf vendor/lib/src") == "ask"  # a repository of its own
+    assert effect("rm -rf /srv/elsewhere") == "ask"
+
+
+LEAKS = [
+    # (working directory, command): none of them resets in the workspace for
+    # certain, so none is excepted.
+    (
+        "/srv/other",
+        "cd /srv/other/sub || cd /home/dev/workspace/repo; git reset --hard",
+    ),
+    (
+        "/srv/other",
+        "if [ -d /nope ]; then cd /home/dev/workspace; fi; git reset --hard",
+    ),
+    ("/srv/other", "[ -d /nope ] && cd /home/dev/workspace; git reset --hard"),
+    ("/srv/other", "for d in /home/dev/workspace; do cd $d; done; git reset --hard"),
+    ("/srv/other", "f() { cd /home/dev/workspace/repo; }; git reset --hard"),
+    (f"{INSIDE}/repo", "f() { cd /srv/other; }; f; git reset --hard"),
+    (f"{INSIDE}/repo", 'cd "$ELSEWHERE/.." && git reset --hard'),
+    (f"{INSIDE}/repo", 'git -C "$ELSEWHERE/.." reset --hard'),
+    (f"{INSIDE}/repo", 'for d in */; do git -C "$d" reset --hard; done'),
+    (f"{INSIDE}/repo", "find /srv -type d -exec git -C {} reset --hard \\;"),
+    (f"{INSIDE}/repo", "make -sC /srv/other clean; git -C /srv/other reset --hard"),
+]
+
+
+@pytest.mark.parametrize(("cwd", "command"), LEAKS)
+def test_a_directory_that_is_not_certain_gains_no_exception(
+    cwd: str, command: str
+) -> None:
+    decision = decide(command, cwd, exception())
+    assert decision.effect == "ask"
+    assert decision.excepted == ()
+
+
+WINDOWS_LEAKS = [
+    "cd..; git reset --hard",
+    "cd\\; git reset --hard",
+    'cmd /c "cd/d C:\\srv\\other && git reset --hard"',
+    'cmd /c "cd..\\..\\.. && git reset --hard"',
+    "Start-Process git -ArgumentList 'reset','--hard' -WorkingDirectory:C:\\srv\\other",
+    "if ($x) { cd C:\\srv\\other }; git reset --hard",
+    "function Leave { Set-Location C:\\srv\\other }; Leave; git reset --hard",
+    "Set-Location D:; git reset --hard",
+]
+
+
+@pytest.mark.parametrize("command", WINDOWS_LEAKS)
+def test_leaving_the_workspace_the_windows_ways_gains_no_exception(
+    command: str,
+) -> None:
+    here = exception(cwd_under=[WORKSPACE["windows"]])
+    decision = decide(
+        command, WORKSPACE["windows"], here, tool="PowerShell", platform="windows"
+    )
+    assert decision.effect == "ask"
+    assert decision.excepted == ()
+
+
+def test_a_call_without_a_working_directory_gains_no_exception() -> None:
+    here = exception()
+    call = {"tool_name": "Bash", "tool_input": {"command": "git reset --hard"}}
+    found = extract(call, windows=False, env=POSIX_ENV)
+    decision = evaluate(builtin_rules(), found, exceptions=[here])
+    assert (decision.effect, decision.excepted) == ("ask", ())
+    read = {"tool_name": "Read", "tool_input": {"file_path": f"{INSIDE}/.env"}}
+    found = extract(read, windows=False, env=POSIX_ENV)
+    secrets = exception(rule=SECRETS)
+    assert evaluate(builtin_rules(), found, exceptions=[secrets]).effect == "ask"
+
+
+# ---------------------------------------------------------------------------
 # File tools and repositories
 # ---------------------------------------------------------------------------
 REPOSITORIES = {"/home/dev/workspace/repo", "/home/dev/workspace/repo/vendor/lib"}
@@ -506,13 +786,17 @@ def test_a_failed_lookup_gains_no_exception_and_is_reported() -> None:
 
 
 def test_no_lookup_for_an_exception_that_does_not_apply() -> None:
+    asked: list[str] = []
+
     def lookup(directory: str) -> str | None:
+        asked.append(directory)
         raise AssertionError(f"looked up {directory}")
 
     here = exception(cwd_under=None, repo_root=["/home/dev/workspace/repo"])
     # No rule fires, or the rule that fires is not the one excepted.
     decide("git status", "/home/dev/workspace/repo", here, repo_root=lookup)
     decide("git push --force", "/home/dev/workspace/repo", here, repo_root=lookup)
+    assert asked == []
 
 
 # ---------------------------------------------------------------------------

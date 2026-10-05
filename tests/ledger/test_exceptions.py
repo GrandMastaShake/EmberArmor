@@ -23,14 +23,13 @@ from ember_armor.ledger import cli, config, store
 from ember_armor.ledger.audit import AuditLog
 from ember_armor.ledger.builtin import builtin_rules
 from ember_armor.ledger.engine import evaluate
+from ember_armor.ledger.exceptions import ExceptedRule, RuleException
 from ember_armor.ledger.facts import Facts, extract
 from ember_armor.ledger.gate import check
 from ember_armor.ledger.model import (
     UNEXCEPTABLE,
     Decision,
-    ExceptedRule,
     LedgerError,
-    RuleException,
     exceptable,
     parse_exception,
     parse_ledger,
@@ -882,3 +881,44 @@ def test_exceptions_do_not_reach_back_into_history() -> None:
         exceptions=[here],
     )
     assert (inside.effect, dropped(inside)) == ("none", ["few-pushes"])
+
+
+LOADED_PROBE = """
+import json, os, sys
+import ember_armor.ledger.hook as hook
+call = {"session_id": "s", "cwd": "/home/dev/workspace/repo", "tool_name": "Bash",
+        "tool_input": {"command": sys.argv[1]}}
+result = hook.handle(json.dumps(call).encode())
+names = ("ember_armor.ledger.exceptions", "ember_armor.ledger.repo")
+print(json.dumps({"decision": result.decision.effect,
+                  "loaded": [name for name in names if name in sys.modules]}))
+"""
+
+
+def test_a_call_pays_for_exceptions_only_when_one_is_configured(tmp_path: Path) -> None:
+    import os
+    import subprocess
+    import sys
+
+    env = home_env(tmp_path)
+
+    def probe(command: str) -> dict[str, Any]:
+        full = {k: v for k, v in os.environ.items() if not k.startswith("EMBER_")}
+        done = subprocess.run(
+            [sys.executable, "-c", LOADED_PROBE, command],
+            capture_output=True,
+            text=True,
+            env={**full, **env},
+            timeout=60,
+            check=False,
+        )
+        assert done.returncode == 0, done.stderr
+        return json.loads(done.stdout)
+
+    # No configuration: neither the exception classes nor the lookup load.
+    assert probe("git reset --hard") == {"decision": "ask", "loaded": []}
+    write_config(env, {"exceptions": [WORKSPACE_EXCEPTION]})
+    assert probe("git reset --hard") == {
+        "decision": "none",
+        "loaded": ["ember_armor.ledger.exceptions"],
+    }

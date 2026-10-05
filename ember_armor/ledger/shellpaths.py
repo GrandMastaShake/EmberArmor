@@ -10,7 +10,7 @@ paths resolve correctly; a move inside a subshell ends with the subshell.
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 
 from ember_armor.ledger.paths import UNKNOWN_DIR, PathFact
@@ -226,7 +226,6 @@ _WHATIF_ON = frozenset({"", "$true", "true", "1"})
 Resolve = Callable[[str, str, str], list[str]]
 
 
-@dataclass(frozen=True, eq=False, repr=False)
 class _Chdir:
     """Options of a program that make it run in another directory.
 
@@ -237,34 +236,45 @@ class _Chdir:
     depends on the subcommand (``unknown``).  ``attached`` accepts ``-Cdir``.
     ``unknown`` options name the place in a way the gate does not follow,
     and ``plus`` allows a ``+toolchain`` word in front of the options.
+
+    Like ``_Where`` and ``_Places`` below this is a plain class: every
+    shell call loads this module, and defining a dataclass takes the hook
+    about as long as parsing a short command.
     """
 
-    flags: frozenset[str]
-    value_flags: frozenset[str] = frozenset()
-    late: str = "unknown"
-    attached: bool = False
-    unknown: frozenset[str] = frozenset()
-    plus: bool = False
+    __slots__ = ("attached", "flags", "late", "plus", "unknown", "value_flags")
+
+    def __init__(
+        self,
+        flags: Iterable[str],
+        value_flags: Iterable[str] = (),
+        *,
+        late: str = "unknown",
+        attached: bool = False,
+        unknown: Iterable[str] = (),
+        plus: bool = False,
+    ) -> None:
+        self.flags = frozenset(flags)
+        self.value_flags = frozenset(value_flags)
+        self.late = late
+        self.attached = attached
+        self.unknown = frozenset(unknown)
+        self.plus = plus
 
 
-_MAKE = _Chdir(frozenset({"-C", "--directory"}), late="read", attached=True)
+_MAKE = _Chdir(("-C", "--directory"), late="read", attached=True)
 #: Programs whose own options say where they run.
 _CHDIR: dict[str, _Chdir] = {
     # After the subcommand ``-C`` is another option (``git commit -C HEAD``).
     "git": _Chdir(
-        frozenset({"-C"}),
-        _GIT_VALUES,
-        late="ignore",
-        unknown=frozenset({"--git-dir", "--work-tree"}),
+        ("-C",), _GIT_VALUES, late="ignore", unknown=("--git-dir", "--work-tree")
     ),
     "make": _MAKE,
     "gmake": _MAKE,
-    "npm": _Chdir(frozenset({"--prefix", "-C"}), late="read"),
-    "pnpm": _Chdir(frozenset({"-C", "--dir"}), frozenset({"-F", "--filter"})),
-    "yarn": _Chdir(frozenset({"--cwd"})),
-    "cargo": _Chdir(
-        frozenset({"-C"}), frozenset({"-Z", "--config", "--color"}), plus=True
-    ),
+    "npm": _Chdir(("--prefix", "-C"), late="read"),
+    "pnpm": _Chdir(("-C", "--dir"), ("-F", "--filter")),
+    "yarn": _Chdir(("--cwd",)),
+    "cargo": _Chdir(("-C",), ("-Z", "--config", "--color"), plus=True),
 }
 #: A directory nobody can name from the command string: a wildcard, a
 #: command substitution, what a pipe delivers, another user's home.
@@ -301,16 +311,27 @@ class _Location:
     stack: list[str] = field(default_factory=list)
 
 
-@dataclass(eq=False, repr=False)
 class _Where:
     """The directory commands run in while walking one call.
 
     ``None`` stands for a directory the command string does not name.
     """
 
-    current: str | None
-    previous: str | None = None
-    stack: list[str | None] = field(default_factory=list)
+    __slots__ = ("current", "previous", "stack")
+
+    def __init__(
+        self,
+        current: str | None,
+        previous: str | None = None,
+        stack: Sequence[str | None] = (),
+    ) -> None:
+        self.current = current
+        self.previous = previous
+        self.stack = list(stack)
+
+    def copy(self) -> _Where:
+        """The same place, with a directory stack of its own."""
+        return _Where(self.current, self.previous, self.stack)
 
 
 def _is_null(target: str) -> bool:
@@ -613,12 +634,14 @@ def _change_directory(
     place.previous, place.current = place.current, destination
 
 
-@dataclass(frozen=True, eq=False, repr=False)
 class _Places:
     """Works out the directories that commands name (``None``: unknown)."""
 
-    resolve: Resolve
-    windows: bool
+    __slots__ = ("resolve", "windows")
+
+    def __init__(self, resolve: Resolve, windows: bool) -> None:
+        self.resolve = resolve
+        self.windows = windows
 
     def directory(self, target: str, base: str | None, shell: str) -> str | None:
         """The directory *target* names seen from *base*.
@@ -875,9 +898,8 @@ def shell_facts(
             where = where if outside is None else outside
         for high, number in sorted(opening.get(index, ()), reverse=True):
             # A ``cd`` inside ``eval`` stays in force after it.
-            outside = None if number in parsed.kept else replace(where)
+            outside = None if number in parsed.kept else where.copy()
             left.append((high, replace(place, stack=list(place.stack)), outside))
-            where.stack = list(where.stack)
             if number in parsed.entered:
                 starter, chain = parsed.entered[number]
                 where.current = places.follow(chain, where.current, starter)

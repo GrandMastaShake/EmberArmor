@@ -21,13 +21,9 @@ from typing import Any
 
 from ember_armor.ledger import hook, store
 from ember_armor.ledger.config import ConfigError, rule_exceptions
+from ember_armor.ledger.exceptions import RuleException
 from ember_armor.ledger.gate import audit_log, check, configured_shell_tools
-from ember_armor.ledger.model import (
-    LedgerError,
-    RuleException,
-    exceptable,
-    parse_predicate,
-)
+from ember_armor.ledger.model import LedgerError, exceptable, parse_predicate
 
 EXIT_OK = 0
 EXIT_ERROR = 1

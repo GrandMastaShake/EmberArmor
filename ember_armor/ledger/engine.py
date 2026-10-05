@@ -11,7 +11,7 @@ import json
 import math
 import time
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
 from fnmatch import fnmatchcase
 
 from ember_armor.ledger.facts import Facts
@@ -25,7 +25,6 @@ from ember_armor.ledger.model import (
     CountExceedsPred,
     Decision,
     DynamicShellPred,
-    ExceptedRule,
     ExprPred,
     FiredRule,
     NotPrecededByPred,
@@ -33,7 +32,6 @@ from ember_armor.ledger.model import (
     PathPred,
     Predicate,
     Rule,
-    RuleException,
     TextRegexPred,
     exceptable,
 )
@@ -52,6 +50,8 @@ TYPE_CHECKING = False
 if TYPE_CHECKING:
     from fractions import Fraction
     from typing import Any, Protocol
+
+    from ember_armor.ledger.exceptions import ExceptedRule, RuleException
 
 TEXT_LIMIT = 20_000
 _MISSING = object()
@@ -148,19 +148,23 @@ class _Session:
         return self.calls
 
 
-@dataclass(eq=False, repr=False)
 class _Roots:
     """Nearest enclosing repositories, looked up at most once per directory.
 
     Nothing is looked up, and the lookup module is not even loaded, until a
     rule or an exception with ``repo_root`` has to be judged.  A lookup that
-    fails is recorded and answered as unknown.
+    fails is recorded and answered as unknown.  (A plain class, like
+    ``_Area``: every call loads this module, and a dataclass is slow to
+    define.)
     """
 
-    find: RepoFinder | None
-    windows: bool
-    found: dict[str, str | None] = field(default_factory=dict)
-    errors: list[str] = field(default_factory=list)
+    __slots__ = ("errors", "find", "found", "windows")
+
+    def __init__(self, find: RepoFinder | None, windows: bool) -> None:
+        self.find = find
+        self.windows = windows
+        self.found: dict[str, str | None] = {}
+        self.errors: list[str] = []
 
     def root(self, directory: str) -> str | None:
         """Repository root of *directory*; ``UNKNOWN_DIR`` when not known."""
@@ -180,7 +184,6 @@ class _Roots:
         return self.found[directory]
 
 
-@dataclass(frozen=True, eq=False, repr=False)
 class _Area:
     """Resolved directory scope of a rule or of an exception.
 
@@ -189,10 +192,19 @@ class _Area:
     of it), outside for an exception (and must not lead into one).
     """
 
-    under: tuple[str, ...]
-    not_under: tuple[str, ...]
-    roots: tuple[str, ...]
-    lenient: bool
+    __slots__ = ("lenient", "not_under", "roots", "under")
+
+    def __init__(
+        self,
+        under: tuple[str, ...],
+        not_under: tuple[str, ...],
+        roots: tuple[str, ...],
+        lenient: bool,
+    ) -> None:
+        self.under = under
+        self.not_under = not_under
+        self.roots = roots
+        self.lenient = lenient
 
 
 @dataclass(frozen=True, eq=False, repr=False)
@@ -774,6 +786,8 @@ def evaluate(
             continue
         reasons = _excepted(rule, facts, view, exceptions, ctx) if exceptions else ()
         if reasons:
+            from ember_armor.ledger.exceptions import ExceptedRule
+
             excepted += [ExceptedRule(rule.id, reason) for reason in reasons]
             continue
         fired.append(

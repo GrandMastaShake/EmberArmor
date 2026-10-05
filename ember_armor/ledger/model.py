@@ -22,6 +22,8 @@ TYPE_CHECKING = False
 if TYPE_CHECKING:
     from typing import Any
 
+    from ember_armor.ledger.exceptions import ExceptedRule, RuleException
+
 LEDGER_VERSION = 1
 EFFECTS = ("warn", "ask", "deny")
 SEVERITY = {"none": 0, "warn": 1, "ask": 2, "deny": 3}
@@ -264,35 +266,6 @@ class FiredRule:
     source: str
     effect: str
     origin: str = "user"
-
-
-@dataclass(frozen=True)
-class RuleException:
-    """An exception the owner made to rules (``exceptions`` in ``config.json``).
-
-    ``rule`` is a rule id or a glob over ids.  The exception covers a
-    command when the tool is one of ``tools`` (any tool when empty), the
-    directory the command runs in is under one of ``cwd_under``, its nearest
-    enclosing repository is one of ``repo_root`` and ``when`` holds for that
-    command alone.  At least one of the last three is present.
-    """
-
-    rule: str
-    reason: str
-    cwd_under: tuple[str, ...] = ()
-    repo_root: tuple[str, ...] = ()
-    tools: tuple[str, ...] = ()
-    when: Predicate | None = None
-    expires: date | None = None
-    raw: Mapping[str, Any] = field(default_factory=dict, compare=False, repr=False)
-
-
-@dataclass(frozen=True)
-class ExceptedRule:
-    """A rule that would have fired and was dropped by an owner's exception."""
-
-    rule: str
-    reason: str
 
 
 @dataclass(frozen=True)
@@ -630,6 +603,8 @@ def parse_exception(obj: Any, where: str = "exception") -> RuleException:
     LedgerError
         If the object is malformed.
     """
+    from ember_armor.ledger.exceptions import RuleException
+
     if not isinstance(obj, dict):
         raise LedgerError(f"{where}: expected an exception object")
     _check_keys(obj, where, _EXCEPTION_REQUIRED, _EXCEPTION_OPTIONAL)

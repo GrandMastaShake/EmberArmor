@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     from datetime import date
     from typing import Any
 
-    from ember_armor.ledger.model import RuleException
+    from ember_armor.ledger.exceptions import RuleException
 
 MODES = ("observe", "enforce")
 SHELLS = ("bash", "powershell", "cmd", "native")

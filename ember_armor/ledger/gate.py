@@ -26,13 +26,15 @@ from ember_armor.ledger.config import (
 )
 from ember_armor.ledger.engine import History, RepoFinder, evaluate
 from ember_armor.ledger.facts import Facts, ShellTool, extract, shell_tools_from
-from ember_armor.ledger.model import SEVERITY, Decision, RuleException
+from ember_armor.ledger.model import SEVERITY, Decision
 from ember_armor.ledger.redact import MAX_TEXT
 from ember_armor.ledger.store import active_rules, load_sources
 
 TYPE_CHECKING = False
 if TYPE_CHECKING:
     from typing import Any
+
+    from ember_armor.ledger.exceptions import RuleException
 
 
 @dataclass(frozen=True)

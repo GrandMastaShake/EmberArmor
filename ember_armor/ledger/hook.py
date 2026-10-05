@@ -1,7 +1,8 @@
-"""Claude Code PreToolUse hook adapter.
+"""Claude Code hook adapter: PreToolUse, and the summary at SessionStart.
 
-Reads the hook JSON (``session_id``, ``cwd``, ``tool_name``, ``tool_input``)
-on standard input and prints at most one object:
+PreToolUse (the default event) reads the hook JSON (``session_id``, ``cwd``,
+``tool_name``, ``tool_input``) on standard input and prints at most one
+object:
 
 - On ``deny`` or ``ask`` in ``enforce`` mode, ``hookSpecificOutput`` with
   ``permissionDecision`` and a reason that quotes the rule's text and source.
@@ -16,6 +17,12 @@ reminder.  The hook never prints ``allow`` and always exits 0.  A failure
 of the gate itself is also reported on standard error, which the host does
 not treat as a decision.
 
+``--event session-start`` reads the SessionStart hook JSON (``session_id``,
+``cwd``, ``source``) and prints, in ``remind`` and ``enforce`` mode, a
+summary of the confirmed rules that can apply in that directory (see
+:mod:`ember_armor.ledger.announce`).  It never fails the session: an error
+goes to standard error and nothing is printed.
+
 Run as ``ember-gate hook`` or ``python -m ember_armor.ledger.hook``.
 """
 
@@ -24,7 +31,7 @@ from __future__ import annotations
 import json
 import os
 import sys
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
 
 from ember_armor.ledger.config import gate_mode
@@ -37,6 +44,9 @@ if TYPE_CHECKING:
     from ember_armor.ledger.model import Decision
 
 BLOCKING_DECISIONS = ("deny", "ask")
+PRE_TOOL_USE = "pre-tool-use"
+SESSION_START = "session-start"
+EVENTS = (PRE_TOOL_USE, SESSION_START)
 #: Modes in which a failure of the gate lets the call proceed.
 _PASSIVE = ("observe", "remind")
 
@@ -85,7 +95,9 @@ def hook_output(result: GateResult) -> str:
     return _context_object("PreToolUse", reminder.text)
 
 
-def handle(raw: bytes, env: Mapping[str, str] | None = None) -> GateResult:
+def handle(
+    raw: bytes, env: Mapping[str, str] | None = None, problem: str | None = None
+) -> GateResult:
     """Evaluate one hook invocation.
 
     Parameters
@@ -94,14 +106,34 @@ def handle(raw: bytes, env: Mapping[str, str] | None = None) -> GateResult:
         Bytes read from standard input.
     env:
         Environment mapping; defaults to the process environment.
+    problem:
+        A failure that happened before the input was read.
     """
     call: Any = None
-    problem: str | None = None
-    try:
-        call = json.loads(raw.decode("utf-8", errors="replace"))
-    except (ValueError, RecursionError) as exc:
-        problem = f"malformed hook input: {type(exc).__name__}: {exc}"
+    if problem is None:
+        try:
+            call = json.loads(raw.decode("utf-8", errors="replace"))
+        except (ValueError, RecursionError) as exc:
+            problem = f"malformed hook input: {type(exc).__name__}: {exc}"
     return check(call, env=env, problem=problem)
+
+
+def session_start(
+    raw: bytes, env: Mapping[str, str] | None = None
+) -> tuple[str, str | None]:
+    """Standard output and the error, if any, for one SessionStart invocation.
+
+    The output is a ``hookSpecificOutput`` object with ``additionalContext``,
+    or nothing.  With an error it is always nothing.
+    """
+    try:
+        from ember_armor.ledger.announce import announce
+
+        start = json.loads(raw.decode("utf-8", errors="replace"))
+        text = announce(start, env=env).text
+    except Exception as exc:
+        return "", f"{type(exc).__name__}: {exc}"
+    return (_context_object("SessionStart", text) if text else ""), None
 
 
 def _passive() -> bool:
@@ -112,10 +144,45 @@ def _passive() -> bool:
         return False
 
 
-def main() -> int:
-    """Entry point: read standard input, print the output, exit 0."""
+def _event(argv: Sequence[str]) -> tuple[str, str | None]:
+    """The event named on the command line, and what is wrong with the line.
+
+    ``--event NAME`` or ``--event=NAME``; no argument means PreToolUse.
+    Anything else is handled as a PreToolUse call the gate failed on, so a
+    mistyped hook command asks in ``enforce`` mode instead of passing.
+    """
+    if not argv:
+        return PRE_TOOL_USE, None
+    name = None
+    if len(argv) == 2 and argv[0] == "--event":
+        name = argv[1]
+    elif len(argv) == 1 and argv[0].startswith("--event="):
+        name = argv[0].partition("=")[2]
+    if name in EVENTS:
+        return str(name), None
+    expected = f"expected --event {' or --event '.join(EVENTS)}"
+    return PRE_TOOL_USE, f"unknown hook arguments ({expected})"
+
+
+def main(argv: Sequence[str] = ()) -> int:
+    """Entry point: read standard input, print the output, exit 0.
+
+    *argv* holds the arguments after the program name: none, or ``--event``
+    with ``pre-tool-use`` or ``session-start``.
+    """
+    event, problem = _event(argv)
+    if event == SESSION_START:
+        try:
+            output, error = session_start(sys.stdin.buffer.read())
+        except Exception as exc:  # reading standard input failed
+            output, error = "", f"{type(exc).__name__}: {exc}"
+        if error:
+            sys.stderr.write(f"ember-gate: session start: {error}\n")
+        if output:
+            sys.stdout.write(output + "\n")
+        return 0
     try:
-        result = handle(sys.stdin.buffer.read())
+        result = handle(sys.stdin.buffer.read(), problem=problem)
         output, error = hook_output(result), result.decision.error
     except Exception as exc:
         # Last resort.  Unless the gate is known to be observing or
@@ -132,4 +199,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(sys.argv[1:]))

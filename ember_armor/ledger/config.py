@@ -9,9 +9,10 @@ or ``enforce``), ``builtin`` (``false`` switches the built-in pack off),
 ``disposable`` (directory patterns the built-in delete rules leave alone, in
 addition to the pack's own list), ``shell_tools`` (tools whose input
 carries a shell command, see :func:`shell_tools`), ``exceptions`` (the
-owner's exceptions to rules, see :func:`rule_exceptions`) and
-``remind_interval_minutes`` (see :func:`remind_interval`).  Anything else is
-an error: a misspelt setting must not be read as "not set".
+owner's exceptions to rules, see :func:`rule_exceptions`),
+``remind_interval_minutes`` (see :func:`remind_interval`) and ``announce_on``
+(see :func:`announce_on`).  Anything else is an error: a misspelt setting
+must not be read as "not set".
 """
 
 from __future__ import annotations
@@ -29,8 +30,12 @@ if TYPE_CHECKING:
 
 MODES = ("observe", "remind", "enforce")
 SHELLS = ("bash", "powershell", "cmd", "native")
+#: What a SessionStart hook can name as the reason a session starts.
+SESSION_SOURCES = ("startup", "resume", "clear", "compact")
 #: Minutes before the same rule is reminded again in one session.
 REMIND_INTERVAL_MINUTES = 15.0
+#: The session starts a summary of the rules is printed on.
+ANNOUNCE_ON = ("compact",)
 _SETTINGS = (
     "mode",
     "builtin",
@@ -38,6 +43,7 @@ _SETTINGS = (
     "shell_tools",
     "exceptions",
     "remind_interval_minutes",
+    "announce_on",
 )
 _EXPECTED_MODES = "expected observe, remind or enforce"
 _SHELL_TOOL_KEYS = ("shell", "field", "cwd")
@@ -79,6 +85,12 @@ def _validate(config: Any, path: Path) -> dict[str, Any]:
     if "remind_interval_minutes" in config:
         _minutes(
             config["remind_interval_minutes"], f"{path}: 'remind_interval_minutes'"
+        )
+    sources = config.get("announce_on", [])
+    if not isinstance(sources, list) or not all(s in SESSION_SOURCES for s in sources):
+        raise ConfigError(
+            f"{path}: 'announce_on' must be a list of session sources "
+            f"({', '.join(SESSION_SOURCES)})"
         )
     return config
 
@@ -196,6 +208,16 @@ def remind_interval(env: Mapping[str, str]) -> float:
         return 60 * _minutes(given, "EMBER_GATE_REMIND_INTERVAL")
     configured = read_config(env).get("remind_interval_minutes")
     return 60 * (REMIND_INTERVAL_MINUTES if configured is None else float(configured))
+
+
+def announce_on(env: Mapping[str, str]) -> tuple[str, ...]:
+    """The session starts a summary of the rules is printed on.
+
+    ``announce_on`` in ``config.json``: a list of ``startup``, ``resume``,
+    ``clear`` and ``compact``.  Without the setting: ``compact`` alone, the
+    start after which an instruction is most likely to have been lost.
+    """
+    return tuple(read_config(env).get("announce_on", ANNOUNCE_ON))
 
 
 def builtin_enabled(env: Mapping[str, str]) -> bool:

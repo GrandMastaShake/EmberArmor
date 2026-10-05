@@ -639,6 +639,66 @@ def _view(facts: Facts, area: _Area | None, roots: _Roots) -> Facts | None:
     return replace(facts, paths=paths) if paths else None
 
 
+def _below(pattern: str, directory: str, windows: bool) -> bool:
+    """True when the resolved *pattern* may name *directory* or a place below it.
+
+    Segment by segment; a ``**`` may stand for any number of segments, so
+    from there on the answer is yes.
+    """
+    wanted = pattern.rstrip("/").split("/")
+    have = directory.rstrip("/").split("/")
+    if windows:
+        wanted, have = [w.lower() for w in wanted], [h.lower() for h in have]
+    for index, segment in enumerate(have):
+        if index == len(wanted):
+            return False
+        if "**" in wanted[index]:
+            return True
+        if not fnmatchcase(segment, wanted[index]):
+            return False
+    return True
+
+
+def scope_reaches(
+    rule: Rule, facts: Facts, repo_root: RepoFinder | None = None
+) -> bool:
+    """True when the scope of *rule* can hold in the directory of *facts* or below.
+
+    This is asked when a session starts in that directory, before any call
+    is made: could a command run there, or in a directory below it, be in
+    the rule's scope?  ``tools`` is not looked at.  ``cwd_under`` can hold
+    when the directory lies in one of its directories, or one of them lies
+    below the directory.  ``cwd_not_under`` rules the rule out only when
+    the directory itself lies in one of its directories.  ``repo_root`` can
+    hold when one of the repositories may lie at or below the directory, or
+    is the nearest one around it (looked up as in :func:`evaluate`).  A
+    directory that is not known counts as in scope.
+    """
+    applies = rule.applies
+    area = _area(
+        applies.cwd_under,
+        applies.cwd_not_under,
+        applies.repo_root,
+        rule.base,
+        facts,
+        lenient=True,
+    )
+    here = _made_in(facts)
+    if area is None or here == UNKNOWN_DIR:
+        return True
+    windows = facts.windows
+    if _under_any(here, area.not_under, windows):
+        return False
+    if area.under and not any(
+        is_under(here, directory, windows=windows) or _below(directory, here, windows)
+        for directory in area.under
+    ):
+        return False
+    if not area.roots or any(_below(root, here, windows) for root in area.roots):
+        return True
+    return _rooted(here, area, facts, _Roots(repo_root, windows))
+
+
 # ---------------------------------------------------------------------------
 # Owner exceptions
 # ---------------------------------------------------------------------------

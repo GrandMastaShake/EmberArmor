@@ -18,15 +18,16 @@ import os
 from collections import Counter
 from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
 from ember_armor.ledger.audit import restore, summarise
+from ember_armor.ledger.config import ConfigError, rule_exceptions
 from ember_armor.ledger.engine import MemoryHistory, RepoFinder, evaluate
 from ember_armor.ledger.facts import extract
 from ember_armor.ledger.gate import configured_shell_tools
-from ember_armor.ledger.model import Rule
+from ember_armor.ledger.model import LedgerError, Rule
 from ember_armor.ledger.store import load_rules
 
 EXAMPLE_COMMANDS = 3
@@ -202,11 +203,15 @@ def replay(
     FileNotFoundError
         If a path does not exist.
     LedgerError
-        If a ledger cannot be loaded.
+        If a ledger or the configuration cannot be loaded.
     """
     env = os.environ if env is None else env
     report = ReplayReport()
     carriers = configured_shell_tools(env)
+    try:
+        exceptions = rule_exceptions(env, date.today())
+    except ConfigError as exc:
+        raise LedgerError(str(exc)) from exc
     rules_by_cwd: dict[str, list[Rule]] = {}
     histories: dict[str, MemoryHistory] = {}
     seen: set[str] = set()
@@ -226,7 +231,12 @@ def replay(
             try:
                 facts = extract(call, windows=windows, env=env, shell_tools=carriers)
                 decision = evaluate(
-                    rules_by_cwd[cwd], facts, history, now=when, repo_root=repo_root
+                    rules_by_cwd[cwd],
+                    facts,
+                    history,
+                    now=when,
+                    exceptions=exceptions,
+                    repo_root=repo_root,
                 )
                 summary = summarise(facts)
             except Exception:  # one bad call must not end the replay

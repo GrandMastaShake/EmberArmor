@@ -14,12 +14,19 @@ import os
 import sys
 from collections import Counter
 from collections.abc import Sequence
+from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import Any
 
 from ember_armor.ledger import hook, store
+from ember_armor.ledger.config import ConfigError, rule_exceptions
 from ember_armor.ledger.gate import audit_log, check, configured_shell_tools
-from ember_armor.ledger.model import LedgerError, parse_predicate
+from ember_armor.ledger.model import (
+    LedgerError,
+    RuleException,
+    exceptable,
+    parse_predicate,
+)
 
 EXIT_OK = 0
 EXIT_ERROR = 1
@@ -63,6 +70,8 @@ def _cmd_check(args: argparse.Namespace) -> int:
     print(f"decision: {decision.effect} (mode: {result.mode})")
     for rule in decision.fired:
         print(f"  {rule.id} [{rule.effect}] {rule.text} (source: {rule.source})")
+    for dropped in decision.excepted:
+        print(f"  excepted: {dropped.rule} (reason: {dropped.reason})")
     if decision.error:
         print(f"  gate failure: {decision.error}")
     if result.facts and result.facts.dynamic:
@@ -88,15 +97,43 @@ def _target_ledger(args: argparse.Namespace) -> Path:
     return Path(override) if override else user
 
 
+def _owner_exceptions() -> tuple[RuleException, ...]:
+    """Every exception of ``config.json``, expired ones included."""
+    try:
+        return rule_exceptions(os.environ)
+    except ConfigError as exc:
+        raise LedgerError(str(exc)) from exc
+
+
+def _describe_exception(exception: RuleException) -> str:
+    """One line saying where an exception holds, why, and until when."""
+    places = [f"under {directory}" for directory in exception.cwd_under]
+    places += [f"repository {directory}" for directory in exception.repo_root]
+    parts = [" or ".join(places)] if places else []
+    if exception.tools:
+        parts.append(f"tools {', '.join(exception.tools)}")
+    if exception.when is not None:
+        parts.append("with a condition")
+    until = f", expires {exception.expires}" if exception.expires else ""
+    return f"{'; '.join(parts)} (reason: {exception.reason}{until})"
+
+
 def _cmd_rules_list(args: argparse.Namespace) -> int:
     rules = store.load_all(args.cwd or os.getcwd(), os.environ)
+    exceptions = _owner_exceptions()
+
+    def excepting(rule_id: str) -> list[RuleException]:
+        if not exceptable(rule_id):
+            return []
+        return [e for e in exceptions if fnmatchcase(rule_id, e.rule)]
+
     if args.json:
-        _print_json(
-            [
-                {**rule.raw, "origin": rule.origin, "confirmed": rule.confirmed}
-                for rule in rules
-            ]
-        )
+        listed = []
+        for rule in rules:
+            entry = {**rule.raw, "origin": rule.origin, "confirmed": rule.confirmed}
+            found = [dict(exception.raw) for exception in excepting(rule.id)]
+            listed.append({**entry, "exceptions": found} if found else entry)
+        _print_json(listed)
         return EXIT_OK
     for rule in rules:
         state = "confirmed" if rule.confirmed else "unconfirmed (warn only)"
@@ -105,6 +142,14 @@ def _cmd_rules_list(args: argparse.Namespace) -> int:
         expires = f", expires {rule.expires}" if rule.expires else ""
         print(f"{rule.id}  [{rule.effect}, {state}{expires}]  ({rule.origin})")
         print(f"    {rule.text}")
+        for exception in excepting(rule.id):
+            print(f"    exception: {_describe_exception(exception)}")
+    unused = [
+        e for e in exceptions if not any(fnmatchcase(r.id, e.rule) for r in rules)
+    ]
+    for exception in unused:
+        print(f"exception for {exception.rule}, which names no rule in effect:")
+        print(f"    {_describe_exception(exception)}")
     return EXIT_OK
 
 

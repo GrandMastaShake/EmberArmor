@@ -26,6 +26,8 @@ EXIT_OK = 0
 EXIT_ERROR = 1
 EXIT_USAGE = 2
 EXIT_NO_SOLVER = 3
+#: Interpreter arguments of the hook: isolated mode, then the hook module.
+HOOK_ARGS = ("-I", "-m", "ember_armor.ledger.hook")
 
 
 def _print_json(value: Any) -> None:
@@ -261,16 +263,17 @@ def _cmd_hook(args: argparse.Namespace) -> int:
 def claude_code_settings() -> dict[str, Any]:
     """Settings snippet that registers the gate as a PreToolUse hook.
 
-    The interpreter path uses forward slashes and is quoted only when it
-    contains a space, so the command reads the same in Git Bash, cmd and
-    PowerShell whenever the path has none.
+    The hook is started without a shell (the ``args`` form), and the
+    interpreter runs isolated (``-I``): the working directory is not on the
+    import path, so a repository that ships its own ``ember_armor`` package
+    cannot stand in for the gate, and ``PYTHON*`` variables are ignored.
     """
-    python = Path(sys.executable).as_posix()
-    if " " in python:
-        python = f'"{python}"'
-    command = f"{python} -m ember_armor.ledger.hook"
-    entry = {"matcher": "*", "hooks": [{"type": "command", "command": command}]}
-    return {"hooks": {"PreToolUse": [entry]}}
+    command = {
+        "type": "command",
+        "command": Path(sys.executable).as_posix(),
+        "args": [*HOOK_ARGS],
+    }
+    return {"hooks": {"PreToolUse": [{"matcher": "*", "hooks": [command]}]}}
 
 
 def _cmd_install(args: argparse.Namespace) -> int:

@@ -7,6 +7,8 @@ temporary directory; a few start the real CLI to cover the entry point.
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 import tomllib
 from pathlib import Path
 from typing import Any
@@ -327,8 +329,9 @@ def test_install_prints_a_snippet_and_edits_nothing(
     assert entry["matcher"] == "*"
     (command,) = entry["hooks"]
     assert command["type"] == "command"
-    assert command["command"].endswith("-m ember_armor.ledger.hook")
+    assert command["args"] == ["-I", "-m", "ember_armor.ledger.hook"]
     assert "\\" not in command["command"]
+    assert " " not in command["command"] or Path(command["command"]).exists()
     assert sorted(p.name for p in tmp_path.iterdir()) == before
 
     code, out, err = run_cli(capsys, "install", "claude-code")
@@ -355,3 +358,35 @@ def test_rule_text_the_console_cannot_encode_is_escaped(cli_env) -> None:
     checked = run_gate(["check", "git push --force"], env)
     assert checked.returncode == 0, checked.stderr
     assert b"arrow [deny] never push to main \\u2192" in checked.stdout
+
+
+def test_the_printed_hook_cannot_be_replaced_by_the_working_directory(
+    cli_env, capsys, tmp_path: Path
+) -> None:
+    """A repository shipping its own ``ember_armor`` must not become the gate."""
+    fake = tmp_path / "repo" / "ember_armor" / "ledger"
+    fake.mkdir(parents=True)
+    (fake.parent / "__init__.py").write_text("", encoding="utf-8")
+    (fake / "__init__.py").write_text("", encoding="utf-8")
+    (fake / "hook.py").write_text("print('HIJACKED')\n", encoding="utf-8")
+    _, out, _ = run_cli(capsys, "install", "claude-code", "--print")
+    (command,) = json.loads(out)["hooks"]["PreToolUse"][0]["hooks"]
+    call = {
+        "session_id": "s",
+        "cwd": str(tmp_path / "repo"),
+        "tool_name": "Bash",
+        "tool_input": {"command": "git status"},
+    }
+    done = subprocess.run(
+        [command["command"], *command["args"]],
+        input=json.dumps(call),
+        capture_output=True,
+        text=True,
+        cwd=tmp_path / "repo",
+        env=dict(os.environ),
+        timeout=60,
+        check=False,
+    )
+    assert done.returncode == 0, done.stderr
+    assert "HIJACKED" not in done.stdout
+    assert done.stdout == ""

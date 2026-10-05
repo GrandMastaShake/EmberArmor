@@ -111,6 +111,32 @@ def test_a_configured_tool_is_parsed_with_its_field_and_directory() -> None:
     assert facts("Bash", {"command": "ls"}, shell_tools=custom).shell == "powershell"
 
 
+CMD_SCRIPTS = [
+    # A script for cmd.exe is several lines: each one is a command.
+    ("echo hi\nrmdir /s /q C:/Users", "deny", "builtin.delete.protected"),
+    ("@echo off\r\ncd C:/tmp\r\ngit reset --hard\r\n", "ask", "builtin.git.reset-hard"),
+    (
+        "echo one & echo two\ngit push --force origin main",
+        "ask",
+        "builtin.git.force-push",
+    ),
+    ("git reset ^\n  --hard", "ask", "builtin.git.reset-hard"),
+    ("(\n  echo cleaning\n  rmdir /s /q src\n)", "ask", "builtin.delete.recursive"),
+]
+
+
+@pytest.mark.parametrize(("script", "wanted", "name"), CMD_SCRIPTS)
+def test_every_line_of_a_cmd_script_is_judged(
+    script: str, wanted: str, name: str
+) -> None:
+    carrier = {"my_cmd": ShellTool("cmd", "script")}
+    call = make_call("my_cmd", {"script": script}, cwd=r"C:\srv\x")
+    found = extract(call, windows=True, env=WINDOWS_ENV, shell_tools=carrier)
+    decision = evaluate(builtin_rules(), found)
+    assert decision.effect == wanted
+    assert name in [fired.id for fired in decision.fired]
+
+
 def test_the_raw_command_of_a_configured_tool_is_not_logged() -> None:
     payload = {"script": "curl -H 'Authorization: Bearer abcdefgh12345678' x"}
     summary = summarise(facts("mcp__ssh__exec", payload, shell_tools=SSH))

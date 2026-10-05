@@ -195,6 +195,113 @@ def test_an_unknown_directory_is_in_scope_only_until_a_known_one() -> None:
     assert not fires(item, "Bash", "cd $WHERE; cd /tmp; git commit", "/work")
 
 
+NOT_CERTAIN = [
+    # (tool, working directory, command): in each of them the commit may run
+    # in the scoped directory, C:/srv/repo, and the gate cannot tell.
+    ("Bash", "C:/srv/other", 'cd "$REPO_SRC/.." && git commit -m x'),
+    ("Bash", "C:/srv/other", 'git -C "$REPO_SRC/.." commit -m x'),
+    ("Bash", "C:/srv/other", 'cd "$(dirname "$0")/.." && git commit'),
+    ("Bash", "C:/srv/other", "cd /a/$UNKNOWN/../b && git commit"),
+    ("PowerShell", r"C:\srv\other", r"Set-Location $PSScriptRoot\..; git commit"),
+    ("PowerShell", r"C:\srv\other", 'cmd /c "cd /d %REPO%\\.. && git commit"'),
+    ("Bash", "C:/srv", 'for d in */; do (cd "$d" && git commit -m x); done'),
+    ("Bash", "C:/srv", 'for d in */; do git -C "$d" commit -m x; done'),
+    ("Bash", "C:/srv", "for d in packages/*; do pushd $d; git commit; popd; done"),
+    ("Bash", "C:/srv/other", "cd C:/srv/repo || cd C:/tmp; git commit -m x"),
+    ("Bash", "C:/srv/repo", 'if [ -n "$CI" ]; then cd C:/tmp/ci; fi; git commit'),
+    ("Bash", "C:/srv/repo", "false && cd /tmp; git commit"),
+    ("Bash", "C:/srv/repo", "[ -d /tmp/ci ] && cd /tmp/ci; git commit"),
+    ("Bash", "C:/srv/repo", "while false; do cd /tmp; done; git commit"),
+    ("Bash", "C:/srv/repo", "case $1 in a) cd /tmp;; esac; git commit"),
+    ("PowerShell", r"C:\srv\repo", r"if ($false) { cd C:\tmp }; git commit"),
+    ("PowerShell", r"C:\srv\repo", r"$sb = { Set-Location C:\tmp }; git commit"),
+    ("PowerShell", r"C:\srv\repo", r"Start-Job { Set-Location C:\tmp }; git commit"),
+    ("Bash", "C:/srv/other", "find C:/srv -type d -exec git -C {} commit -m x \\;"),
+    ("PowerShell", r"C:\srv\repo", "cd D:; git commit"),
+]
+
+
+@pytest.mark.parametrize(("tool", "cwd", "command"), NOT_CERTAIN)
+def test_a_move_the_gate_cannot_be_sure_of_does_not_lead_out_of_a_rule(
+    tool: str, cwd: str, command: str
+) -> None:
+    assert fires(scoped(cwd_under=["C:/srv/repo"]), tool, command, cwd, "windows")
+
+
+STILL_THERE = [
+    # (tool, working directory, command): the commit runs in C:/srv/repo.
+    ("Bash", "C:/srv/repo", "cleanup() { cd C:/tmp; rm -f x.lock; }; git commit"),
+    ("Bash", "C:/srv/repo", "f() { cd /tmp; }; trap f EXIT; git commit"),
+    ("PowerShell", r"C:\srv\repo", r"function Go { Set-Location C:\tmp }; git commit"),
+    ("PowerShell", r"C:\srv\other", "cd..; cd repo; git commit -m x"),
+    ("PowerShell", r"C:\srv\other", 'cmd /c "cd.. && cd repo && git commit -m x"'),
+    ("PowerShell", r"C:\srv\repo", 'cmd /c "cd D:\\x && git commit -m x"'),
+    ("PowerShell", r"C:\srv\repo", "Set-Location C:; git commit"),
+    ("PowerShell", r"C:\srv", "cd C:repo; git commit"),
+    (
+        "PowerShell",
+        r"C:\srv\other",
+        r"Set-Location FileSystem::C:\srv\repo; git commit",
+    ),
+    (
+        "PowerShell",
+        r"C:\srv\other",
+        r"Start-Process git -ArgumentList 'commit','-m','x' "
+        r"-WorkingDirectory:C:\srv\repo",
+    ),
+    ("Bash", "C:/srv/other", "make -sC C:/srv/repo all"),
+    ("Bash", "C:/srv/other", "make --dir=C:/srv/repo"),
+    ("Bash", "C:/srv/other", "git --attr-source HEAD -C C:/srv/repo commit -m x"),
+]
+
+
+@pytest.mark.parametrize(("tool", "cwd", "command"), STILL_THERE)
+def test_more_ways_to_run_in_the_scoped_directory(
+    tool: str, cwd: str, command: str
+) -> None:
+    when = {"type": "command", "program": ["git", "make"]}
+    item = scoped(when, cwd_under=["C:/srv/repo"])
+    found = facts(tool, command, cwd, "windows")
+    assert evaluate([item], found).effect == "deny"
+    last = [c for c in found.commands if c.argv[0] in ("git", "make")][-1]
+    assert (last.cwd or found.cwd) == "C:/srv/repo"
+
+
+@pytest.mark.parametrize("cwd", [None, "", "some/where"])
+def test_a_call_that_names_no_directory_is_in_scope(cwd: str | None) -> None:
+    item = scoped(cwd_under=["/srv/repo"])
+    call = {"tool_name": "Bash", "tool_input": {"command": "git commit -m x"}}
+    if cwd is not None:
+        call["cwd"] = cwd
+    found = extract(call, windows=False, env=POSIX_ENV)
+    assert evaluate([item], found).effect == "deny"
+    # It is not in a directory the rule leaves out, either.
+    spared = scoped(cwd_not_under=["/"])
+    assert evaluate([spared], found).effect == "deny"
+    # A known directory places it again.
+    moved = {**call, "tool_input": {"command": "cd /tmp && git commit"}}
+    found = extract(moved, windows=False, env=POSIX_ENV)
+    assert evaluate([item], found).effect == "none"
+
+
+def test_another_tool_without_a_directory_is_in_scope() -> None:
+    writes = scoped({"type": "path", "op": "write"}, cwd_under=["/srv/repo"])
+    call = {"tool_name": "Write", "tool_input": {"file_path": "/etc/hosts"}}
+    found = extract(call, windows=False, env=POSIX_ENV)
+    assert evaluate([writes], found).effect == "deny"
+    placed = extract({**call, "cwd": "/work"}, windows=False, env=POSIX_ENV)
+    assert evaluate([writes], placed).effect == "none"
+
+
+def test_the_tool_cwd_field_with_a_variable_is_in_scope() -> None:
+    payload = {"command": "git commit -m x", "cwd": "$env:NOPE"}
+    tool = "mcp__terminal__run_in_terminal"
+    item = scoped(cwd_under=["C:/srv/repo"])
+    assert fires(item, tool, payload, "C:/srv/other", "windows")
+    payload = {"command": "git commit -m x", "cwd": r"C:\srv\elsewhere"}
+    assert not fires(item, tool, payload, "C:/srv/other", "windows")
+
+
 def test_a_scoped_rule_sees_only_the_paths_of_commands_in_scope() -> None:
     delete = {"type": "path", "op": "delete", "recursive": True}
     item = scoped(delete, cwd_under=["/srv/repo"])

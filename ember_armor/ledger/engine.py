@@ -64,7 +64,8 @@ _ERROR_CHARS = 300
 
 #: Options that take a value and may stand before a program's subcommand.
 _GLOBAL_VALUE_FLAGS: dict[str, frozenset[str]] = {
-    "git": frozenset({"-C", "-c", "--git-dir", "--work-tree", "--namespace"}),
+    "git": frozenset({"-C", "-c", "--git-dir", "--work-tree", "--namespace",
+                      "--super-prefix", "--config-env", "--attr-source"}),
     "docker": frozenset({"--context", "-c", "--config", "-H", "--host", "-l",
                          "--log-level", "-f", "--file", "-p", "--project-name",
                          "--profile", "--env-file", "--project-directory"}),
@@ -177,8 +178,10 @@ class _Roots:
                 self.find = finder(self.windows)
             try:
                 self.found[directory] = self.find(directory)
-            except OSError as exc:
-                problem = f"repository lookup failed for {directory}: {exc}"
+            except Exception as exc:
+                # Whatever a lookup raises, the other rules are still judged.
+                reason = str(exc) or type(exc).__name__
+                problem = f"repository lookup failed for {directory}: {reason}"
                 self.errors.append(problem[:_ERROR_CHARS])
                 self.found[directory] = UNKNOWN_DIR
         return self.found[directory]
@@ -557,6 +560,11 @@ def _area(
     return _Area(resolved(under), resolved(not_under), resolved(roots), lenient)
 
 
+def _made_in(facts: Facts) -> str:
+    """The working directory of the call, unknown when the host named none."""
+    return facts.cwd if facts.located else UNKNOWN_DIR
+
+
 def _placed(directory: str, area: _Area, facts: Facts) -> bool:
     """True when *directory* is under the area's directories and no exception."""
     if area.under and not _under_any(directory, area.under, facts.windows):
@@ -604,7 +612,7 @@ def _view(facts: Facts, area: _Area | None, roots: _Roots) -> Facts | None:
 
         def inside(cwd: str) -> bool:
             if cwd not in verdicts:
-                here = cwd or facts.cwd
+                here = cwd or _made_in(facts)
                 verdicts[cwd] = _inside(here, here, area, facts, roots)
             return verdicts[cwd]
 
@@ -615,12 +623,16 @@ def _view(facts: Facts, area: _Area | None, roots: _Roots) -> Facts | None:
         if len(commands) == len(facts.commands) and len(paths) == len(facts.paths):
             return facts
         return replace(facts, commands=commands, paths=paths)
-    if not _placed(facts.cwd, area, facts):
+    here = _made_in(facts)
+    if here == UNKNOWN_DIR:
+        if not area.lenient:
+            return None
+    elif not _placed(here, area, facts):
         return None
     if not area.roots:
         return facts
     if not facts.paths:
-        return facts if _rooted(facts.cwd, area, facts, roots) else None
+        return facts if _rooted(here, area, facts, roots) else None
     paths = tuple(p for p in facts.paths if _rooted(p.path, area, facts, roots))
     if len(paths) == len(facts.paths):
         return facts
@@ -630,6 +642,33 @@ def _view(facts: Facts, area: _Area | None, roots: _Roots) -> Facts | None:
 # ---------------------------------------------------------------------------
 # Owner exceptions
 # ---------------------------------------------------------------------------
+def _reads_paths(pred: Predicate) -> bool:
+    """True when *pred* looks at the paths this call touches."""
+    if isinstance(pred, PathPred):
+        return True
+    if isinstance(pred, AllPred | AnyPred):
+        return any(_reads_paths(inner) for inner in pred.of)
+    return isinstance(pred, NotPred) and _reads_paths(pred.of)
+
+
+def _root_directory(directory: str) -> bool:
+    """True for a resolved directory that is a whole filesystem or drive."""
+    rest = directory[2:] if directory[1:2] == ":" else directory
+    return not rest.strip("/*?")
+
+
+def _beside(path: PathFact, zone: _Area, facts: Facts, roots: _Roots) -> bool:
+    """True when *path* does not lie in the place an exception names.
+
+    A path with an unresolved variable lies nowhere the gate knows.
+    """
+    if "$" in path.path:
+        return True
+    if zone.under and not _under_any(path.path, zone.under, facts.windows):
+        return True
+    return bool(zone.roots) and not _rooted(path.path, zone, facts, roots)
+
+
 def _excepted(
     rule: Rule,
     facts: Facts,
@@ -644,7 +683,13 @@ def _excepted(
     fire on what is left, and always when nothing is left.  So a rule that
     fired on something no single command owns (``dynamic_shell``, a variable
     that is set, a structured argument) is dropped only when every command
-    the rule sees is covered.  Empty when the rule stands.
+    the rule sees is covered.
+
+    For a rule that looks at paths, an exception with a place (``cwd_under``,
+    ``repo_root``) reaches only the paths that lie in that place: ``rm -rf
+    ~/Documents`` run in the excepted directory keeps its path, and so does
+    a redirection the shell opens somewhere else.  A covered command with
+    such a path stays in view with it.  Empty when the rule stands.
     """
     if not exceptable(rule.id):
         return ()
@@ -657,12 +702,22 @@ def _excepted(
         if fnmatchcase(rule.id, e.rule)
         and (not e.tools or any(fnmatchcase(facts.tool, tool) for tool in e.tools))
     ]
+    # A place that resolves to a whole filesystem is no place.
+    zones = [
+        (zone, e)
+        for zone, e in zones
+        if zone is None or not any(_root_directory(d) for d in zone.under)
+    ]
     if not zones:
         return ()
     inner = replace(ctx, base=None, area=None)
+    reads = _reads_paths(rule.predicate)
     used: dict[str, None] = {}
 
-    def covered(directory: str, where: str, alone: Callable[[], Facts]) -> bool:
+    def covering(
+        directory: str, where: str, alone: Callable[[], Facts]
+    ) -> tuple[_Area | None] | None:
+        """The place of the exception that covers what is done in *directory*."""
         for zone, exception in zones:
             if zone is not None and not _inside(
                 directory, where, zone, facts, ctx.roots
@@ -671,42 +726,63 @@ def _excepted(
             when = exception.when
             if when is None or _holds(when, alone(), inner):
                 used[exception.reason] = None
-                return True
-        return False
+                return (zone,)
+        return None
 
+    made_in = _made_in(facts)
     commands: tuple[SimpleCommand, ...] = ()
     paths: tuple[PathFact, ...] = ()
     if facts.commands:
         visible = {id(command) for command in view.commands}
-        gone = set()
+        gone: dict[int, _Area | None] = {}
         for index, command in enumerate(facts.commands):
-            here = command.cwd or facts.cwd
+            here = command.cwd or made_in
 
             def alone(index: int = index, command: SimpleCommand = command) -> Facts:
                 own = tuple(path for path in facts.paths if path.source == index)
                 return replace(facts, commands=(command,), paths=own)
 
-            if id(command) in visible and covered(here, here, alone):
-                gone.add(index)
+            if id(command) in visible:
+                found = covering(here, here, alone)
+                if found is not None:
+                    gone[index] = found[0]
         if not gone:
             return ()
+
+        def stays(path: PathFact) -> bool:
+            if path.source not in gone:
+                return True
+            zone = gone[path.source]
+            if zone is None or not reads:
+                return False
+            # A redirection belongs to the directory the shell is in.
+            there = path.cwd or made_in
+            outside = not _inside(there, there, zone, facts, ctx.roots)
+            return outside or _beside(path, zone, facts, ctx.roots)
+
+        paths = tuple(path for path in view.paths if stays(path))
+        kept = {path.source for path in paths}
         commands = tuple(
             command
             for index, command in enumerate(facts.commands)
-            if id(command) in visible and index not in gone
+            if id(command) in visible and (index not in gone or index in kept)
         )
-        paths = tuple(path for path in view.paths if path.source not in gone)
     elif view.paths:
 
         def only(path: PathFact) -> Callable[[], Facts]:
             return lambda: replace(facts, paths=(path,))
 
-        paths = tuple(
-            path for path in view.paths if not covered(facts.cwd, path.path, only(path))
-        )
+        def remains(path: PathFact) -> bool:
+            found = covering(made_in, path.path, only(path))
+            if found is None:
+                return True
+            zone = found[0]
+            return reads and zone is not None and _beside(path, zone, facts, ctx.roots)
+
+        paths = tuple(path for path in view.paths if remains(path))
         if len(paths) == len(view.paths):
             return ()
-    elif not covered(facts.cwd, facts.cwd, lambda: facts):
+    elif covering(made_in, made_in, lambda: facts) is None:
         return ()
     if commands or paths:
         rest = replace(facts, commands=commands, paths=paths)

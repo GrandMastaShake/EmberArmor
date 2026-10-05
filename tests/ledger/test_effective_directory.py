@@ -98,6 +98,17 @@ BASH_UNKNOWN = [
     "HOME_DIR=$(pwd); cd $HOME_DIR && git commit",
     "read target; cd $target && git commit",
     'eval "cd $WHERE"; git commit',
+    # What lies above a directory that is not known is not known either.
+    'cd "$REPO_SRC/.." && git commit',
+    'cd "$(dirname "$0")/.." && git commit',
+    'cd "$(git rev-parse --show-toplevel)/.." && git commit',
+    "cd /a/$UNKNOWN/../b && git commit",
+    "cd $WHERE/../.. && git commit",
+    # A variable may bring a wildcard in.
+    'for d in */; do cd "$d" && git commit; done',
+    "for d in /srv/*/; do pushd $d; git commit; popd; done",
+    "D='*/'; cd $D && git commit",
+    "D=~other; cd $D && git commit",
 ]
 
 
@@ -172,6 +183,19 @@ OPTION_CASES = [
     ("cargo -C crate build", "/work/app/crate"),
     ("cargo +nightly -C crate build", "/work/app/crate"),
     ("cargo build --release", HERE),
+    # Options without a value in one word with ``-C``, and the start of the
+    # long option, as make reads them.
+    ("make -sC build", "/work/app/build"),
+    ("make -kC build all", "/work/app/build"),
+    ("make -sCbuild", "/work/app/build"),
+    ("make --dir=build", "/work/app/build"),
+    ("make --dir build", "/work/app/build"),
+    ("make --directo build", "/work/app/build"),
+    ("make -fC all", HERE),  # ``C`` is the makefile
+    ("make --debug all", HERE),
+    ("git --attr-source HEAD -C /srv/repo commit", "/srv/repo"),
+    ("git --super-prefix x/ -C /srv/repo status", "/srv/repo"),
+    ("git --config-env a=B -C /srv/repo status", "/srv/repo"),
 ]
 
 
@@ -187,6 +211,9 @@ def test_a_directory_option_moves_only_its_own_command() -> None:
 
 OPTION_UNKNOWN = [
     "git -C $REPO commit",
+    'git -C "$REPO/.." commit',
+    'git -C "$REPO/../sibling" commit',
+    'for d in */; do git -C "$d" commit; done',
     'git -C "$(pwd)/x" commit',
     "git -C",
     "git --git-dir=/srv/repo/.git commit",
@@ -260,7 +287,34 @@ NESTED_CASES = [
     ("find /srv -name .git -execdir git commit \\;", UNKNOWN_DIR),
     ("find /srv -name x -execdir sh -c 'git commit' \\;", UNKNOWN_DIR),
     ("find . -name x -exec sh -c 'cd /srv/repo && git commit' \\;", "/srv/repo"),
+    # ``{}`` is a different directory for each file found.
+    ("find /srv -type d -exec env -C {} git commit \\;", UNKNOWN_DIR),
+    ("find /srv -name x -exec sh -c 'cd {} && git commit' \\;", UNKNOWN_DIR),
+    ("cd /srv/repo && find . -name x -exec git commit {} \\;", "/srv/repo"),
 ]
+FIND_PLACED = [
+    ("find /srv -maxdepth 1 -type d -exec git -C {} commit \\;", UNKNOWN_DIR),
+    ("find . -name .git -exec git -C {}/.. commit \\;", UNKNOWN_DIR),
+    ("find /srv -type d -exec make -C {} all \\;", UNKNOWN_DIR),
+    ("find . -name '*.c' -exec git -C /srv/repo add {} \\;", UNKNOWN_DIR),
+    # Without a directory option the command runs where ``find`` does.
+    ("cd /srv/repo && find . -name '*.c' -exec git add {} +", "/srv/repo"),
+    ("find . -name Makefile -exec make -f {} all \\;", HERE),
+]
+
+
+@pytest.mark.parametrize(("command", "expected"), FIND_PLACED)
+def test_a_directory_option_filled_in_by_find_is_unknown(
+    command: str, expected: str
+) -> None:
+    assert last("Bash", command) == expected
+
+
+def test_find_marks_the_commands_it_fills_a_file_name_into() -> None:
+    parsed = parse_shell("find . -exec git -C {} status \\; -exec ls \\;", "bash")
+    assert [c.argv[0] for c in parsed.commands] == ["find", "git", "ls"]
+    assert parsed.commands[1].argv == ("git", "-C", ".", "status")
+    assert parsed.placed == {1}
 
 
 @pytest.mark.parametrize(("command", "expected"), NESTED_CASES)
@@ -306,7 +360,7 @@ POWERSHELL_MOVES = [
     (r"Push-Location C:\srv\repo; Pop-Location; git commit", HERE),
     # Without a path Push-Location stays and remembers where it is.
     (r"Push-Location; cd C:\srv\repo; Pop-Location; git commit", HERE),
-    (r"if ($true) { cd C:\srv\repo }; git commit", "C:/srv/repo"),
+    (r"if ($true) { cd C:\srv\repo; git commit }", "C:/srv/repo"),
     (r"& { cd C:\srv\repo }; git commit", "C:/srv/repo"),
     (r"powershell -Command 'cd C:\srv\repo; make'; git commit", HERE),
     (r"powershell -Command 'cd C:\srv\repo; git commit'", "C:/srv/repo"),
@@ -326,6 +380,26 @@ POWERSHELL_MOVES = [
     (r'cmd /c "cd C:\srv\repo && make"; git commit', HERE),
     (r'cmd /c "cd && git commit"', HERE),
     (r"wsl --cd /srv/repo git commit", "/srv/repo"),
+    # ``cd..``, ``cd\`` and ``cd~`` are functions of PowerShell, and cmd.exe
+    # needs no blank between ``cd`` and a dot or a slash.
+    ("cd..; git commit", "C:/work"),
+    ("cd..; cd app; git commit", HERE),
+    ("cd\\; git commit", "C:/"),
+    ("cd~; git commit", "C:/Users/dev"),
+    ('cmd /c "cd.. && git commit"', "C:/work"),
+    ('cmd /c "cd\\ && git commit"', "C:/"),
+    (r'cmd /c "cd..\.. && git commit"', "C:/"),
+    (r'cmd /c "cd/d C:\srv\repo && git commit"', "C:/srv/repo"),
+    (r'cmd /c "cd\srv\repo && git commit"', "C:/srv/repo"),
+    ('cmd /c "chdir.. && git commit"', "C:/work"),
+    (
+        r"Start-Process git -ArgumentList commit -WorkingDirectory:C:\srv\repo",
+        "C:/srv/repo",
+    ),
+    (r"Set-Location FileSystem::C:\srv\repo; git commit", "C:/srv/repo"),
+    # A block that is called where it stands, and ``try``, run once.
+    (r"try { cd C:\srv\repo } catch { }; git commit", "C:/srv/repo"),
+    (r". { cd C:\srv\repo }; git commit", "C:/srv/repo"),
 ]
 
 
@@ -350,6 +424,12 @@ POWERSHELL_UNKNOWN = [
     'cmd /c "cd /d %TARGET% && git commit"',
     'cmd /c "cd /x C:\\srv && git commit"',
     "git -C $repo commit",
+    r"Set-Location $PSScriptRoot\..; git commit",
+    'cmd /c "cd /d %REPO%\\.. && git commit"',
+    "Start-Process git -ArgumentList commit -WorkingDirectory:$dir",
+    # Another provider: programs then run where the shell last was on disk.
+    r"Set-Location HKLM:\Software; git commit",
+    "cd Env:; git commit",
 ]
 
 
@@ -496,6 +576,9 @@ DRIVELESS = [
     # In Bash on Windows such a path is one of the POSIX layer's own.
     ("Bash", "cd /srv/repo && git commit", "/srv/repo"),
     ("Bash", "git -C /srv/repo commit", "/srv/repo"),
+    # What ``C:`` without a slash means there is not followed.
+    ("Bash", "cd C: && git commit", UNKNOWN_DIR),
+    ("Bash", "cd C:sub && git commit", UNKNOWN_DIR),
 ]
 
 
@@ -525,6 +608,12 @@ LIMITS = [
     # The body of a function is judged where it is defined, not where it
     # is called.
     ("f() { git commit; }; cd /srv/repo; f", HERE),
+    # A script the shell sources and an alias are not read.
+    ("source ./env.sh; git commit", HERE),
+    ("alias gs='cd /tmp'; gs; git commit", HERE),
+    # Moves that may not have run are read coarsely, towards "unknown".
+    ("if a; then cd /srv/x; else cd /srv/x; fi; git commit", UNKNOWN_DIR),
+    ("pushd x && make && popd; git commit", UNKNOWN_DIR),
 ]
 
 
@@ -555,6 +644,248 @@ def test_a_cd_inside_a_bash_pipeline_leaves_the_directory_unknown(
     assert last("Bash", command) == expected
 
 
+# ---------------------------------------------------------------------------
+# Moves that may not have run
+# ---------------------------------------------------------------------------
+BASH_DOUBT = [
+    # The right side of ``||`` and what ``&&`` hangs behind a command that
+    # can fail.
+    "cd /srv/repo || cd /tmp; git commit",
+    "cd a || { cd b; }; git commit",
+    "false && cd /tmp; git commit",
+    "[ -d /tmp/ci ] && cd /tmp/ci; git commit",
+    "[[ -d /tmp/ci ]] && cd /tmp/ci; git commit",
+    "(( RETRIES > 1 )) && cd /tmp/ci; git commit",
+    "mkdir -p out && cd out; git commit",
+    "true && { echo ready; cd /tmp; }; git commit",
+    "git fetch && git pull || cd /tmp; git commit",
+    # ``popd`` hangs behind ``make``: when that fails the shell stays in x.
+    "pushd x && make && popd; git commit",
+    # A branch, and a loop that does not end where it began.
+    'if [ -n "$CI" ]; then cd /tmp/ci; fi; git commit',
+    "if a; then cd /tmp/a; else cd /tmp/b; fi; git commit",
+    "if a; then b; elif c; then cd /tmp; fi; git commit",
+    "case $1 in a) cd /tmp;; esac; git commit",
+    "case $1 in a) echo;; *) cd /tmp;; esac; git commit",
+    "while false; do cd /tmp; done; git commit",
+    "until cd /srv/repo; do sleep 1; done; git commit",
+    "for d in /srv/one; do cd $d; done; git commit",
+    "for i in 1 2; do cd sub; done; git commit",
+    "select d in a b; do cd $d; break; done; git commit",
+    # A function that moves, once it is called.
+    "f() { cd /tmp; }; f; git commit",
+    "function f { cd /tmp; }; f; git commit",
+    "function f() { cd /tmp; }; cd /srv/repo; f; git commit",
+    "f() { g; }; g() { cd /tmp; }; f; git commit",
+    "f() { if a; then cd /tmp; fi; }; f; git commit",
+    "f() { pushd /tmp; make; popd; }; f; git commit",
+]
+
+
+@pytest.mark.parametrize("command", BASH_DOUBT)
+def test_a_move_that_may_not_have_run_leaves_the_directory_unknown(
+    command: str,
+) -> None:
+    assert last("Bash", command) == UNKNOWN_DIR
+
+
+BASH_SURE = [
+    # Inside the list, the branch or the loop the move is followed.
+    ("mkdir -p out && cd out && git commit", "/work/app/out"),
+    ("[ -d /srv/repo ] && cd /srv/repo && git commit", "/srv/repo"),
+    ("if [ -d /srv/repo ]; then cd /srv/repo; git commit; fi", "/srv/repo"),
+    ("if a; then b; elif cd /srv/repo; then git commit; fi", "/srv/repo"),
+    ("case $1 in a) cd /srv/repo; git commit;; esac", "/srv/repo"),
+    ("cd /srv/repo || { echo gone; exit 1; }; git commit", "/srv/repo"),
+    # A ``cd`` is taken to succeed, so moves alone make no doubt.
+    ("cd /srv && cd repo; git commit", "/srv/repo"),
+    ("cd /srv/repo && git status; git commit", "/srv/repo"),
+    ("cd /srv/repo && git status || echo failed; git commit", "/srv/repo"),
+    # What ends where it began leaves no doubt.
+    ("if [ -d x ]; then (cd x && make); fi; git commit", HERE),
+    ("if [ -d x ]; then pushd x; make; popd; fi; git commit", HERE),
+    ("for d in a b; do pushd $d; make; popd; done; git commit", HERE),
+    ("for i in 1 2 3; do cd sub; make; cd ..; done; git commit", HERE),
+    ("for d in a b; do (cd $d && make); done; git commit", HERE),
+    ("for d in a b; do if [ -d $d ]; then pushd $d; popd; fi; done; git commit", HERE),
+    ('while read f; do git add "$f"; done < list; git commit', HERE),
+    ("[ -f x ] && echo yes || echo no; git commit", HERE),
+    # A function is defined, not run; one that does not move changes nothing.
+    ("f() { cd /tmp; }; git commit", HERE),
+    ("function f { cd /tmp; }; git commit", HERE),
+    ("f()\n{\n  cd /tmp\n}\ngit commit", HERE),
+    ("cleanup() { cd /tmp; rm -f x.lock; }; trap cleanup EXIT; git commit", HERE),
+    ("f() { echo hi; }; f; git commit", HERE),
+    ("f() (cd /tmp; make); f; git commit", HERE),
+    ("f() { cd /tmp; }; f; cd /srv/repo; git commit", "/srv/repo"),
+]
+
+
+@pytest.mark.parametrize(("command", "expected"), BASH_SURE)
+def test_a_move_is_followed_where_it_is_certain(command: str, expected: str) -> None:
+    assert last("Bash", command) == expected
+
+
+def test_a_loop_that_moves_is_unknown_from_its_first_command() -> None:
+    # On the second pass ``git commit`` runs where the first one ended.
+    found = directories("Bash", "for i in 1 2; do git commit; cd /tmp; done")
+    assert found == ["git@?", "cd@?"]
+
+
+def test_the_second_branch_does_not_start_where_the_first_ended() -> None:
+    command = "if a; then cd one; git status; else cd two; git commit; fi"
+    assert directories("Bash", command) == [
+        "a@",
+        "cd@",
+        "git@/work/app/one",
+        "cd@?",
+        "git@?",
+    ]
+
+
+def test_an_absolute_move_ends_the_doubt() -> None:
+    command = "[ -d x ] && cd x; git status; cd /srv/repo; git commit"
+    assert directories("Bash", command)[2:] == ["git@?", "cd@?", "git@/srv/repo"]
+
+
+def test_a_function_body_is_judged_where_it_is_defined() -> None:
+    found = directories("Bash", "f() { cd /tmp; make; }; cd /srv/repo; f")
+    assert found == ["cd@", "make@/tmp", "cd@", "f@/srv/repo"]
+
+
+def test_many_nested_loops_give_up_on_the_directory() -> None:
+    # Each loop is tried once before it is walked: past a fixed number of
+    # steps the directory inside is simply unknown.
+    depth = 40
+    body = "pushd x; " * 30 + "make; " + "popd; " * 30
+    command = "for a in 1 2; do " * depth + body + "done; " * depth + "git commit"
+    facts = facts_for("Bash", command)
+    assert facts.commands[-1].cwd == UNKNOWN_DIR
+    assert not facts.dynamic
+
+
+POWERSHELL_DOUBT = [
+    r"if ($true) { cd C:\srv\repo }; git commit",
+    r"if ($x) { cd C:\tmp } else { cd C:\srv\repo }; git commit",
+    r"switch ($x) { 1 { cd C:\tmp } }; git commit",
+    r"try { build } catch { cd C:\tmp }; git commit",
+    r"foreach ($d in 'a') { cd $d }; git commit",
+    r"while ($x) { cd sub }; git commit",
+    r"do { cd sub } while ($false); git commit",
+    r"cd C:\srv\repo || cd C:\tmp; git commit",
+    r"Test-Path x && cd x; git commit",
+    # A block that is stored, or handed to a command, runs when and where
+    # that says.
+    r"$sb = { Set-Location C:\tmp }; git commit",
+    r"Start-Job { Set-Location C:\tmp }; git commit",
+    r"Invoke-Command -ComputerName h -ScriptBlock { cd C:\tmp }; git commit",
+    r"pwsh -Command { cd C:\tmp }; git commit",
+    r"$items.ForEach{ cd C:\tmp }; git commit",
+    r"@{ go = { cd C:\tmp } }; git commit",
+    r"function Go { Set-Location C:\tmp }; Go; git commit",
+    r"function global:Go($a) { Set-Location C:\tmp }; go 1; git commit",
+    r"filter Go { Set-Location C:\tmp }; 1 | Go; git commit",
+    'cmd /c "(if exist x cd x) & git commit"',
+    'cmd /c "if exist x (cd x) else (cd y) & git commit"',
+    'cmd /c "cd a || cd b & git commit"',
+    'cmd /c "for %i in (a b) do cd %i & git commit"',
+    'cmd /c "dir x && cd x & git commit"',
+]
+
+
+@pytest.mark.parametrize("command", POWERSHELL_DOUBT)
+def test_powershell_moves_that_may_not_have_run_are_unknown(command: str) -> None:
+    assert last("PowerShell", command, "windows") == UNKNOWN_DIR
+
+
+POWERSHELL_SURE = [
+    (r"if ($x) { Push-Location C:\tmp; make; Pop-Location }; git commit", HERE),
+    (
+        r"1..3 | ForEach-Object { Push-Location sub; make; Pop-Location }; git commit",
+        HERE,
+    ),
+    (r"function Go { Set-Location C:\tmp }; git commit", HERE),
+    (r"function Show { Get-Location }; Show; git commit", HERE),
+    (r"git status && git commit", HERE),
+    # In cmd.exe the rest of the line belongs to the ``if``.
+    ('cmd /c "if exist x cd x & git commit"', "C:/work/app/x"),
+    ('cmd /c "if exist x (cd x & git commit)"', "C:/work/app/x"),
+]
+
+
+@pytest.mark.parametrize(("command", "expected"), POWERSHELL_SURE)
+def test_powershell_moves_are_followed_where_they_are_certain(
+    command: str, expected: str
+) -> None:
+    assert last("PowerShell", command, "windows") == expected
+
+
+# ---------------------------------------------------------------------------
+# A call that does not say where it is made
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("cwd", [None, "", "relative/dir", 7])
+def test_a_call_without_a_working_directory_runs_nowhere_known(cwd: object) -> None:
+    call = {"tool_name": "Bash", "tool_input": {"command": "git commit"}}
+    if cwd is not None:
+        call["cwd"] = cwd
+    facts = extract(call, windows=False, env=POSIX_ENV)
+    assert not facts.located
+    assert [c.cwd for c in facts.commands] == [UNKNOWN_DIR]
+
+
+def test_an_absolute_move_places_a_call_without_a_working_directory() -> None:
+    call = {
+        "tool_name": "Bash",
+        "tool_input": {"command": "git status; cd /srv/repo && git commit"},
+    }
+    facts = extract(call, windows=False, env=POSIX_ENV)
+    assert [c.cwd for c in facts.commands] == [UNKNOWN_DIR, UNKNOWN_DIR, "/srv/repo"]
+
+
+TOOL_STARTS = [
+    # (working directory of the call, the tool's own field, where it starts)
+    ("/work/app", "/srv/x", "/srv/x"),
+    ("/work/app", "sub", "/work/app/sub"),
+    ("/work/app", "~/proj", "/home/dev/proj"),
+    ("/work/app", "$HOME/proj", "/home/dev/proj"),
+    (None, "/srv/x", "/srv/x"),
+    (None, "sub", UNKNOWN_DIR),
+    ("/work/app", "$NOPE", UNKNOWN_DIR),
+    ("/work/app", "$NOPE/..", UNKNOWN_DIR),
+    ("/work/app", "/srv/*/x", UNKNOWN_DIR),
+    ("/work/app", "~other", UNKNOWN_DIR),
+]
+
+
+@pytest.mark.parametrize(("cwd", "field", "expected"), TOOL_STARTS)
+def test_where_a_tool_with_its_own_start_directory_starts(
+    cwd: str | None, field: str, expected: str
+) -> None:
+    carrier = {"run": ShellTool("bash", cwd="cwd")}
+    call = make_call("run", {"command": "git commit", "cwd": field})
+    if cwd is None:
+        del call["cwd"]
+    facts = extract(call, windows=False, env=POSIX_ENV, shell_tools=carrier)
+    assert [c.cwd for c in facts.commands] == [expected]
+
+
+def test_the_terminal_tool_with_a_variable_for_its_directory() -> None:
+    payload = {"command": "git commit -m x", "cwd": "$env:NOPE"}
+    facts = facts_for("mcp__terminal__run_in_terminal", payload, "windows")
+    assert [c.cwd for c in facts.commands] == [UNKNOWN_DIR]
+
+
+def test_the_audit_summary_says_when_the_call_named_no_directory() -> None:
+    call = {"tool_name": "Read", "tool_input": {"file_path": "/srv/x/a"}}
+    facts = extract(call, windows=False, env=POSIX_ENV)
+    summary = summarise(facts)
+    assert summary["located"] is False
+    restored = restore({"tool": "Read", "cwd": facts.cwd, "call": summary})
+    assert not restored.located
+    assert "located" not in summarise(facts_for("Read", {"file_path": "/srv/x/a"}))
+    assert restore({"tool": "Read", "cwd": "/work/app", "call": {}}).located
+
+
 DRIVES = [
     # ``D:`` on its own goes to wherever the shell last was on that drive.
     ("D:; git commit", UNKNOWN_DIR),
@@ -562,6 +893,19 @@ DRIVES = [
     (r"D:; cd D:\srv\repo; git commit", "D:/srv/repo"),
     (r'cmd /c "D: && cd \srv\repo && git commit"', UNKNOWN_DIR),
     (r'cmd /c "D: && cd /d D:\srv\repo && git commit"', "D:/srv/repo"),
+    # ``D:`` and ``D:dir`` as a directory are that as well; on the drive the
+    # shell is on they are relative paths.
+    ("Set-Location C:; git commit", HERE),
+    ("cd C:sub; git commit", "C:/work/app/sub"),
+    ("cd D:; git commit", UNKNOWN_DIR),
+    ("cd D:x; git commit", UNKNOWN_DIR),
+    ("git -C D:x commit", UNKNOWN_DIR),
+    # Without ``/d`` cmd.exe does not leave the drive it is on.
+    (r'cmd /c "cd D:\x && git commit"', HERE),
+    (r'cmd /c "cd /d D:\x && git commit"', "D:/x"),
+    (r'cmd /c "cd C:\srv\repo && git commit"', "C:/srv/repo"),
+    (r'cmd /c "pushd D:\x && git commit"', "D:/x"),
+    (r'cmd /c "D: && cd C:\srv && git commit"', UNKNOWN_DIR),
 ]
 
 
@@ -585,6 +929,24 @@ def test_a_directory_with_a_wildcard_character_is_unknown() -> None:
 def test_a_slash_word_in_cmd_is_a_switch() -> None:
     command = 'cmd /c "cd /d /srv/x && git commit"'
     assert last("PowerShell", command, "windows") == UNKNOWN_DIR
+
+
+def test_a_stored_block_that_is_run_later_is_not_followed() -> None:
+    # A limit: the block leaves the directory unknown where it is stored,
+    # the absolute ``cd`` makes it known again, and the call is not read.
+    command = r"$b = { cd C:\tmp }; git status; cd C:\srv\repo; & $b; git commit"
+    found = directories("PowerShell", command, "windows")
+    assert found == [
+        "Set-Location@?",
+        "git@?",
+        "Set-Location@?",
+        "git@C:/srv/repo",
+    ]
+
+
+def test_try_and_finally_run_once_in_powershell() -> None:
+    command = "Push-Location x; try { make } finally { Pop-Location }; git commit"
+    assert last("PowerShell", command, "windows") == HERE
 
 
 def test_the_current_directory_of_dotnet_is_not_followed() -> None:

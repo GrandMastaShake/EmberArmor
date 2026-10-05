@@ -59,6 +59,28 @@ def test_a_directory_scope_is_judged_for_each_command(
         assert data["decision"] == expected, (cwd, command)
 
 
+def test_a_request_that_names_no_directory_is_in_scope(
+    client, auth_headers, ledger
+) -> None:
+    write_ledger(
+        ledger, rule("here", when=COMMIT, applies={"cwd_under": ["/srv/repo"]})
+    )
+    call = {"tool_name": "Bash", "tool_input": {"command": "git commit"}}
+    response = client.post("/v1/ledger/check", json=call, headers=auth_headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["decision"] == "deny"
+    assert data["call"]["located"] is False
+    assert data["call"]["commands"][0]["cwd"] == "?"
+    assert decide(client, auth_headers, "git commit", "")["decision"] == "deny"
+    assert (
+        decide(client, auth_headers, "git commit", "some/where")["decision"] == "deny"
+    )
+    # A command that names its directory is placed again.
+    data = decide(client, auth_headers, "cd /work && git commit", "")
+    assert data["decision"] == "none"
+
+
 def test_no_repository_is_looked_up_for_a_request(
     client, auth_headers, ledger, tmp_path: Path, monkeypatch
 ) -> None:

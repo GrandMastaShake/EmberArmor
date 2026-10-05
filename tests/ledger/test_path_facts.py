@@ -124,6 +124,117 @@ def test_working_directory_is_followed(command: str, expected: list[str]) -> Non
     assert deleted(command) == expected
 
 
+STARTED_ELSEWHERE = [
+    # The paths of a nested shell are relative to where it is started.
+    ("env -C /srv/app sh -c 'rm -rf data'", ["/srv/app/data"]),
+    ("env -C sub sh -c 'rm -rf data'", ["/work/app/sub/data"]),
+    ("sudo -D /srv/app bash -c 'cd sub && rm -rf data'", ["/srv/app/sub/data"]),
+    ("env -C /srv/app bash <<'EOF'\nrm -rf data\nEOF", ["/srv/app/data"]),
+    ("cd /srv && env -C app sh -c 'rm -rf data'", ["/srv/app/data"]),
+    ("find . -name x -exec env -C /srv/app sh -c 'rm -rf data' \\;", ["/srv/app/data"]),
+    # It ends with its moves, and an unclear start leaves paths where they were.
+    ("env -C /srv/app sh -c 'ls'; rm -rf data", ["/work/app/data"]),
+    ("env -C $WHERE sh -c 'rm -rf data'", ["/work/app/data"]),
+]
+
+
+@pytest.mark.parametrize(("command", "expected"), STARTED_ELSEWHERE)
+def test_a_nested_shell_resolves_paths_where_it_starts(
+    command: str, expected: list[str]
+) -> None:
+    assert deleted(command) == expected
+
+
+def test_a_nested_powershell_resolves_paths_where_it_starts() -> None:
+    command = r'pwsh -WorkingDirectory C:\srv\app -Command "Remove-Item -Recurse data"'
+    assert deleted(command, "PowerShell", "windows") == ["C:/srv/app/data"]
+    command = (
+        r"Start-Process cmd -ArgumentList '/c','rmdir /s /q data' "
+        r"-WorkingDirectory C:\srv\app"
+    )
+    assert deleted(command, "PowerShell", "windows") == ["C:/srv/app/data"]
+
+
+DOUBT = [
+    # After a move that may not have run, a relative path is resolved both
+    # ways: where the move leads and where the shell was.
+    ("[ -d /tmp/x ] && cd /tmp/x; rm -rf src", ["/tmp/x/src", "/work/app/src"]),
+    (
+        "if [ -d /tmp/x ]; then cd /tmp/x; fi; rm -rf src",
+        ["/tmp/x/src", "/work/app/src"],
+    ),
+    ("cd /tmp/x || cd /var/tmp; rm -rf src", ["/var/tmp/src", "/tmp/x/src"]),
+    ("for d in a; do cd $d; done; rm -rf src", ["/work/app/a/src", "/work/app/src"]),
+    ("case $1 in a) cd /tmp;; esac; rm -rf src", ["/tmp/src", "/work/app/src"]),
+    # Defining a function does not run it.
+    ("f() { cd /tmp; }; rm -rf src", ["/tmp/src", "/work/app/src"]),
+    # A later move that is certain moves both; an absolute one ends the doubt.
+    (
+        "[ -d x ] && cd x; cd sub; rm -rf data",
+        ["/work/app/x/sub/data", "/work/app/sub/data"],
+    ),
+    ("[ -d x ] && cd x; cd /srv; rm -rf data", ["/srv/data"]),
+    ("[ -d x ] && cd x; rm -rf /srv/data", ["/srv/data"]),
+    # Inside the branch the move is certain, and what ends where it began
+    # leaves no doubt.
+    ("if [ -d x ]; then cd x; rm -rf data; fi", ["/work/app/x/data"]),
+    ("if [ -d x ]; then pushd x; make; popd; fi; rm -rf src", ["/work/app/src"]),
+    ("[ -d x ] && (cd x && make); rm -rf src", ["/work/app/src"]),
+]
+
+
+@pytest.mark.parametrize(("command", "expected"), DOUBT)
+def test_a_path_after_a_move_that_may_not_have_run(
+    command: str, expected: list[str]
+) -> None:
+    assert deleted(command) == expected
+
+
+def test_a_redirection_after_a_move_that_may_not_have_run() -> None:
+    found = paths("Bash", "[ -d /srv/x ] && cd /srv/x; echo hi > out.txt")
+    assert found == [
+        ("/srv/x/out.txt", "write", False),
+        ("/work/app/out.txt", "write", False),
+    ]
+
+
+def test_powershell_paths_after_a_branch() -> None:
+    command = r"if (Test-Path C:\tmp\x) { cd C:\tmp\x }; Remove-Item -Recurse src"
+    assert deleted(command, "PowerShell", "windows") == [
+        "C:/tmp/x/src",
+        "C:/work/app/src",
+    ]
+
+
+def test_too_many_possible_directories_mark_the_call() -> None:
+    moves = "; ".join(f"[ -d /d{n} ] && cd /d{n}" for n in range(8))
+    facts = facts_for("Bash", f"{moves}; rm -rf src")
+    assert not facts.dynamic
+    assert len([p for p in facts.paths if p.op == "delete"]) == 9
+    moves = "; ".join(f"[ -d /d{n} ] && cd /d{n}" for n in range(12))
+    facts = facts_for("Bash", f"{moves}; rm -rf src")
+    assert [(d.kind, d.detail) for d in facts.dynamic] == [
+        ("parse_error", "too many directories")
+    ]
+
+
+UNRESOLVED_ABOVE = [
+    # What lies above a directory that is not known stays as written.
+    ('rm -rf "$BUILD/.."', ["/work/app/$BUILD/.."]),
+    ('rm -rf "$BUILD/../x"', ["/work/app/$BUILD/../x"]),
+    ('rm -rf "$(pwd)/../x"', ["/work/app/$(pwd)/../x"]),
+    ('rm -rf "$TMPDIR/../x"', ["/x"]),
+    ('d=/srv/data; rm -rf "$d/../old"', ["/srv/old"]),
+]
+
+
+@pytest.mark.parametrize(("command", "expected"), UNRESOLVED_ABOVE)
+def test_dot_dot_does_not_cancel_what_is_not_resolved(
+    command: str, expected: list[str]
+) -> None:
+    assert deleted(command) == expected
+
+
 # ---------------------------------------------------------------------------
 # Deletes and reads fed by a pipe
 # ---------------------------------------------------------------------------

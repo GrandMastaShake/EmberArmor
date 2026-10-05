@@ -116,6 +116,14 @@ BASH_CONSTRUCTS = [
     "cd . && {}",
     'echo "$(echo "$({})")"',
     "X=$(mktemp -d); {}",
+    # A move into a temporary directory that may not have run does not take
+    # the command with it.
+    "[ -d /tmp/w ] && cd /tmp/w; {}",
+    "if [ -d /tmp/w ]; then cd /tmp/w; fi; {}",
+    "f() {{ cd /tmp; }}; {}",
+    "case $1 in t) cd /tmp;; esac; {}",
+    "for d in a; do {}; done",
+    "f() {{ {}; }}; f",
 ]
 #: Constructs that run one simple command: only another of them fits inside.
 BASH_PREFIXES = [
@@ -243,6 +251,8 @@ PS_CONSTRUCTS = [
     "powershell –Command '{}'",
     "Start-Process powershell -ArgumentList '-Command', '{}'",
     "Start-Process -FilePath pwsh -ArgumentList '-NoProfile -Command {}' -Wait",
+    "if (Test-Path $env:TEMP) {{ cd $env:TEMP }}; {}",
+    "function Go {{ Set-Location $env:TEMP }}; {}",
 ]
 PS_PREFIXES = ["sudo {}", "gsudo {}"]
 #: Constructs that only take a native program (not a cmdlet).

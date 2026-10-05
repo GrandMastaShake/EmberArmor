@@ -43,6 +43,10 @@ SELECTORS = frozenset(
     {"grep", "egrep", "fgrep", "sort", "uniq", "head", "tail", "where-object",
      "where", "?", "select-object", "sort-object"}
 )  # fmt: skip
+#: Commands that move the shell itself to another directory.
+MOVERS = frozenset(
+    {"cd", "chdir", "pushd", "popd", "set-location", "push-location", "pop-location"}
+)
 _EXE_SUFFIXES = (".exe", ".cmd", ".bat", ".com")
 _FIND_EXEC = frozenset({"-exec", "-execdir", "-ok", "-okdir"})
 
@@ -116,6 +120,19 @@ class ParseResult:
     ``kept`` holds the indexes of scopes that run in the shell itself
     (``eval``, ``Invoke-Expression``): a ``cd`` inside one stays in force
     after it.
+
+    ``guards`` maps the index of a scope to how its commands run, when that
+    is not "once, in a process of their own": ``maybe`` (they may not run:
+    the right side of ``&&`` or ``||``, a branch of ``if`` or ``case``),
+    ``loop`` (any number of times: a loop body, a script block handed to a
+    command or stored) or ``defined`` (not now: the body of a function,
+    whose name is in ``named``).  A ``cd`` in such a scope moves the
+    commands in it; where the shell is after it is worked out when facts
+    are extracted (see :func:`ember_armor.ledger.shellpaths.shell_facts`).
+    Of two scopes with the same range the later one in ``scopes`` is the
+    outer one.  ``placed`` holds the indexes of the commands that ``find
+    -exec`` runs with the name of each file found filled in: a directory
+    option of such a command names a different place every time.
     """
 
     commands: list[SimpleCommand] = field(default_factory=list)
@@ -127,6 +144,23 @@ class ParseResult:
     assigned: list[str] = field(default_factory=list)
     entered: dict[int, tuple[str, tuple[str, ...]]] = field(default_factory=dict)
     kept: set[int] = field(default_factory=set)
+    guards: dict[int, str] = field(default_factory=dict)
+    named: dict[int, str] = field(default_factory=dict)
+    placed: set[int] = field(default_factory=set)
+
+    def guard(self, low: int, high: int, kind: str, name: str = "") -> None:
+        """Record that the commands from *low* up to *high* run as *kind* says.
+
+        *kind* is ``maybe``, ``loop`` or ``defined`` (see ``guards``); *name*
+        is the function a ``defined`` range is the body of.
+        """
+        if high <= low:
+            return
+        number = len(self.scopes)
+        self.scopes.append((low, high))
+        self.guards[number] = kind
+        if name:
+            self.named[number] = name
 
     def assign(self, name: str, value: str | tuple[str, ...] | None) -> None:
         """Record an assignment to *name*.
@@ -166,16 +200,24 @@ class ParseResult:
         afterwards.
         """
         offset = len(self.commands)
+        first = len(self.scopes)
+        # The scopes of the script come first: of two scopes with the same
+        # range the later one is the outer one.
+        self.scopes += [(low + offset, high + offset) for low, high in other.scopes]
+        for inner, chain in other.entered.items():
+            self.entered[first + inner] = chain
+        self.kept.update(first + inner for inner in other.kept)
+        for inner, kind in other.guards.items():
+            self.guards[first + inner] = kind
+        for inner, name in other.named.items():
+            self.named[first + inner] = name
+        self.placed.update(index + offset for index in other.placed)
         number = len(self.scopes)
         self.scopes.append((offset, offset + len(other.commands)))
         if chdir:
             self.entered[number] = (starter, chdir)
         if keep:
             self.kept.add(number)
-        for inner, chain in other.entered.items():
-            self.entered[number + 1 + inner] = chain
-        self.kept.update(number + 1 + inner for inner in other.kept)
-        self.scopes += [(low + offset, high + offset) for low, high in other.scopes]
         self.commands.extend(other.commands)
         self.dynamic.extend(other.dynamic)
         self.assigned.extend(other.assigned)
@@ -189,6 +231,153 @@ class ParseResult:
 
 #: ``recurse(text, shell, depth)`` parses a nested literal shell string.
 Recurse = Callable[[str, str, int], ParseResult]
+
+
+class _Frame:
+    """One compound command that is open while a list is parsed.
+
+    ``tag`` names the construct and ``kind`` says how its commands run
+    (empty: once, where they stand).  ``seen`` is how far the current and-or
+    list was looked at and ``plain`` whether it holds, since the last range
+    was opened, a command that is not a move.  ``open`` are the starts of
+    the ranges an operator opened and ``ends_on`` the operator that ends
+    them (they all end on the same one), ``tails`` the ranges that last as
+    long as the frame, and ``branch`` the start of the branch being read.
+    (A plain class: every shell call defines it.)
+    """
+
+    __slots__ = ("branch", "ends_on", "kind", "low", "name", "open", "plain", "seen",
+                 "tag", "tails")  # fmt: skip
+
+    def __init__(self, tag: str, kind: str, name: str, low: int) -> None:
+        self.tag = tag
+        self.kind = kind
+        self.name = name
+        self.low = self.seen = low
+        self.plain = False
+        self.open: list[int] = []
+        self.ends_on = ""
+        self.tails: list[tuple[int, str]] = []
+        self.branch: int | None = None
+
+
+class Guards:
+    """Tells a parse result which commands of a list may not run.
+
+    A parser reports the operators and the compound commands of one list
+    as it reads them, and the ranges of commands that depend on them are
+    recorded with :meth:`ParseResult.guard`:
+
+    - what follows ``&&`` may not run when a command before it is not a
+      move (a ``cd`` is taken to succeed), up to the next ``||``;
+    - what follows ``||`` may not run, up to the next ``&&``;
+    - a branch (:meth:`branch`) may not run, and a frame entered with a
+      kind runs as that kind says.
+    """
+
+    __slots__ = ("frames", "out")
+
+    def __init__(self, out: ParseResult) -> None:
+        self.out = out
+        self.frames = [_Frame("", "", "", len(out.commands))]
+
+    def _close(self, frame: _Frame, operator: str = "") -> None:
+        """Record the ranges of *frame* that *operator* ends (all: a list end)."""
+        if operator and frame.ends_on != operator:
+            return
+        now = len(self.out.commands)
+        for low in reversed(frame.open):
+            self.out.guard(low, now, "maybe")
+        frame.open = []
+
+    def _reset(self, frame: _Frame) -> None:
+        frame.seen = len(self.out.commands)
+        frame.plain = False
+
+    def link(self, operator: str) -> None:
+        """An ``&&`` or ``||`` was read after the command before it."""
+        frame, now = self.frames[-1], len(self.out.commands)
+        self._close(frame, operator)
+        frame.plain = frame.plain or any(
+            not command.argv or program_name(command.argv[0]) not in MOVERS
+            for command in self.out.commands[frame.seen : now]
+        )
+        frame.seen = now
+        if operator == "||":
+            # What follows is skipped up to the next ``&&``.
+            frame.open.append(now)
+            frame.ends_on = "&&"
+        elif frame.plain:
+            # Later moves depend on this one only when something that can
+            # fail stands between them.
+            frame.open.append(now)
+            frame.ends_on = "||"
+            frame.plain = False
+
+    def note(self) -> None:
+        """Something that can fail was read and is no command (``[[ ... ]]``)."""
+        self.frames[-1].plain = True
+
+    def end(self) -> None:
+        """The and-or list being read is over (``;``, a newline, ``&``)."""
+        self._close(self.frames[-1])
+        self._reset(self.frames[-1])
+
+    def enter(self, tag: str, kind: str = "", name: str = "") -> None:
+        """A compound command opens; *kind* says how its commands run."""
+        self.frames.append(_Frame(tag, kind, name, len(self.out.commands)))
+
+    def tail(self, kind: str) -> None:
+        """What follows runs as *kind* says, to the end of the current frame."""
+        self.frames[-1].tails.append((len(self.out.commands), kind))
+
+    def branch(self, tag: str, *, more: bool = True, open_one: bool = False) -> None:
+        """A branch of the innermost *tag* frame ends; with *more*, one starts.
+
+        With *open_one* nothing happens when a branch is being read already
+        (the ``then`` behind an ``elif``, whose condition is part of it).
+        """
+        frame = next((f for f in reversed(self.frames[1:]) if f.tag == tag), None)
+        if frame is None or (open_one and frame.branch is not None):
+            return
+        while self.frames[-1] is not frame:
+            self._leave()
+        self._close(frame)
+        now = len(self.out.commands)
+        if frame.branch is not None:
+            self.out.guard(frame.branch, now, "maybe")
+        frame.branch = now if more else None
+        self._reset(frame)
+
+    def _leave(self) -> None:
+        frame = self.frames.pop()
+        self._close(frame)
+        now = len(self.out.commands)
+        if frame.branch is not None:
+            self.out.guard(frame.branch, now, "maybe")
+        for low, kind in reversed(frame.tails):
+            self.out.guard(low, now, kind)
+        if frame.kind:
+            self.out.guard(frame.low, now, frame.kind, frame.name)
+
+    def leave(self, tag: str) -> None:
+        """The innermost compound command called *tag* closes."""
+        if any(frame.tag == tag for frame in self.frames[1:]):
+            while self.frames[-1].tag != tag:
+                self._leave()
+            self._leave()
+
+    def finish(self) -> None:
+        """The list is over: close whatever is still open."""
+        while len(self.frames) > 1:
+            self._leave()
+        frame = self.frames[0]
+        self._close(frame)
+        now = len(self.out.commands)
+        for low, kind in reversed(frame.tails):
+            self.out.guard(low, now, kind)
+        frame.tails = []
+        self._reset(frame)
 
 
 def program_name(arg: str, *, fold: bool = True) -> str:
@@ -284,11 +473,14 @@ def find_exec(args: Sequence[str]) -> list[tuple[str, ...]]:
     return [command for command, _ in find_runs(args)]
 
 
-def find_runs(args: Sequence[str]) -> list[tuple[tuple[str, ...], bool]]:
+def find_runs(
+    args: Sequence[str], *, filled: bool = True
+) -> list[tuple[tuple[str, ...], bool]]:
     """Commands a ``find`` runs, and whether each runs where its file lies.
 
     ``-execdir`` and ``-okdir`` start the command in the directory of the
-    file found, which the command string does not name.
+    file found, which the command string does not name.  With *filled*
+    false the commands are given as written, ``{}`` left in place.
     """
     targets, _ = find_targets(args)
     commands: list[tuple[tuple[str, ...], bool]] = []
@@ -297,6 +489,6 @@ def find_runs(args: Sequence[str]) -> list[tuple[tuple[str, ...], bool]]:
             rest = args[i + 1 :]
             ends = [j for j, a in enumerate(rest) if a in (";", "+")]
             inner = rest[: ends[0]] if ends else rest
-            command = tuple(targets[0] if a == "{}" else a for a in inner)
+            command = tuple(targets[0] if filled and a == "{}" else a for a in inner)
             commands.append((command, arg.endswith("dir")))
     return [(command, moved) for command, moved in commands if command]

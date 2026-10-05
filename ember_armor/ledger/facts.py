@@ -60,6 +60,9 @@ _ENV_CMDLETS = frozenset(
      "add-content", "clear-content", "rename-item", "move-item"}
 )  # fmt: skip
 _ENV_ITEM_RE = re.compile(r"env:[\\/]?(\w+)", re.IGNORECASE)
+#: A start directory that names no one place: a variable nobody set, a
+#: wildcard, a home the gate does not know.
+_UNSETTLED_RE = re.compile(r"[$`*?\[]|%\w+%|(?:^|/)~")
 #: File tools: the input field holding the path, and what the tool does to it.
 FILE_TOOLS = {
     "Read": ("file_path", "read"),
@@ -81,7 +84,9 @@ class Facts:
     :func:`assigned_names`) and ``shell`` the shell whose command the tool
     carries (empty for any other tool).  Each command and each path of a
     shell call carries the directory in effect for it (``cwd``: empty when
-    that is the working directory of the call).
+    that is the working directory of the call).  ``located`` is false when
+    the host did not say where the call is made: ``cwd`` is then only what
+    paths are resolved against, and the directory is unknown.
     """
 
     tool: str
@@ -96,6 +101,7 @@ class Facts:
     shell: str = ""
     args: Mapping[str, Any] = field(default_factory=dict)
     variables: Mapping[str, str] = field(default_factory=dict)
+    located: bool = True
 
 
 def shell_tools_from(config: Mapping[str, Mapping[str, str]]) -> dict[str, ShellTool]:
@@ -220,6 +226,17 @@ def _alternatives(
     return texts
 
 
+def _anchored(
+    raw: str, windows: bool, home: str | None, variables: Mapping[str, str]
+) -> bool:
+    """True when *raw* names one directory wherever it is read from."""
+    one, two = (
+        normalize(raw, base, windows=windows, home=home, variables=variables)
+        for base in ("/\x00one", "/\x00two")
+    )
+    return one == two
+
+
 def extract(
     call: Mapping[str, Any],
     *,
@@ -259,7 +276,11 @@ def extract(
     variables = path_variables(os.environ if env is None else env)
     raw_home = variables.get("HOME")
     home = normalize(raw_home, "/", windows=windows) if raw_home else None
-    cwd = normalize(str(call.get("cwd") or "/"), "/", windows=windows)
+    given = call.get("cwd")
+    # A call that does not say where it is made, or says it with a relative
+    # path, is made in a directory the gate does not know.
+    located = isinstance(given, str) and _anchored(given, windows, None, {})
+    cwd = normalize(str(given or "/"), "/", windows=windows)
 
     commands: tuple[SimpleCommand, ...] = ()
     dynamic: tuple[Dynamic, ...] = ()
@@ -277,14 +298,23 @@ def extract(
         if shell == "native":
             shell = "powershell" if windows else "bash"
         start = tool_input.get(carrier.cwd) if carrier.cwd else None
+        known = located
         if not isinstance(start, str) or not start:
             start = cwd
         else:
-            start = normalize(start, cwd, windows=windows, home=home)
+            known = located or _anchored(start, windows, home, variables)
+            start = normalize(
+                start, cwd, windows=windows, home=home, variables=variables
+            )
+            known = known and _UNSETTLED_RE.search(start) is None
         from ember_armor.ledger.shellpaths import shell_facts
 
         parsed = parse_shell(command, shell)
-        overlong = False
+        overlong = crowded = False
+
+        def crowd() -> None:
+            nonlocal crowded
+            crowded = True
 
         def resolve(raw: str, current: str, command_shell: str) -> list[str]:
             nonlocal overlong
@@ -306,7 +336,14 @@ def extract(
             ]
 
         paths, directories = shell_facts(
-            parsed, start, resolve, home, origin=cwd, windows=windows
+            parsed,
+            start,
+            resolve,
+            home,
+            origin=cwd if located else "",
+            windows=windows,
+            known=known,
+            crowded=crowd,
         )
         commands = tuple(
             replace(command, cwd=directory) if directory else command
@@ -316,6 +353,8 @@ def extract(
         assigned = assigned_names(parsed)
         if overlong:
             dynamic += (Dynamic("parse_error", "path too long"),)
+        if crowded:
+            dynamic += (Dynamic("parse_error", "too many directories"),)
     elif tool in FILE_TOOLS:
         key, op = FILE_TOOLS[tool]
         target = tool_input.get(key)
@@ -345,4 +384,5 @@ def extract(
         shell=shell,
         args=tool_input,
         variables=variables,
+        located=located,
     )

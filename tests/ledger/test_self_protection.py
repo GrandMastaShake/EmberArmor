@@ -123,6 +123,60 @@ def test_the_ember_home_named_by_the_environment_is_covered(tmp_path: Path) -> N
     assert decide("Write", {"file_path": str(tmp_path / "other.json")}) == []
 
 
+STARTED_ELSEWHERE = [
+    # A nested shell that is started in the Ember home writes there.
+    ("Bash", "posix", "env -C ~/.ember sh -c 'echo x > config.json'"),
+    ("Bash", "posix", "env --chdir=/home/dev/.ember sh -c 'tee config.json < /tmp/c'"),
+    ("Bash", "posix", "sudo -D /home/dev/.ember sh -c 'cat /tmp/c > config.json'"),
+    ("Bash", "posix", "env -C /home/dev sh -c 'cd .ember && cp /tmp/c config.json'"),
+    ("Bash", "posix", "env -C ~/.ember bash <<'EOF'\necho x > config.json\nEOF"),
+    (
+        "PowerShell",
+        "windows",
+        r"pwsh -WorkingDirectory C:\Users\dev\.ember "
+        r"""-Command "Set-Content config.json '{}'" """,
+    ),
+    (
+        "PowerShell",
+        "windows",
+        r"Start-Process cmd -ArgumentList '/c','copy C:\tmp\c.json config.json' "
+        r"-WorkingDirectory C:\Users\dev\.ember",
+    ),
+    (
+        "PowerShell",
+        "windows",
+        r"Start-Process cmd -ArgumentList '/c','copy C:\tmp\c.json config.json' "
+        r"-WorkingDirectory:C:\Users\dev\.ember",
+    ),
+    (
+        "PowerShell",
+        "windows",
+        r"wsl --cd C:\Users\dev\.ember cp /tmp/c.json config.json",
+    ),
+    (
+        "PowerShell",
+        "windows",
+        r"cd C:\Users\dev; cd..; cd dev\.ember; Set-Content config.json x",
+    ),
+]
+
+
+@pytest.mark.parametrize(("tool", "platform", "command"), STARTED_ELSEWHERE)
+def test_a_write_from_a_shell_started_in_the_ember_home_is_asked_about(
+    tool: str, platform: str, command: str
+) -> None:
+    assert fired(tool, command, platform) == ["gate.files"]
+
+
+def test_a_protected_delete_from_a_shell_started_elsewhere_is_denied() -> None:
+    assert "delete.protected" in fired("Bash", "env -C / sh -c 'rm -rf home'")
+    assert "delete.protected" in fired("Bash", "env -C / rm -rf home")
+    command = r'pwsh -WorkingDirectory C:\ -Command "Remove-Item -Recurse -Force Users"'
+    assert "delete.protected" in fired("PowerShell", command, "windows")
+    # The shell that starts it stays where it is.
+    assert fired("Bash", "env -C / sh -c 'ls'; rm -rf home") == ["delete.recursive"]
+
+
 def test_reads_of_the_gates_files_are_not_restricted() -> None:
     assert fired("Bash", "cat ~/.ember/config.json; ls ~/.ember/audit") == []
     assert fired("Read", {"file_path": "~/.ember/ledger.json"}) == []

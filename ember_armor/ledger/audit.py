@@ -97,6 +97,10 @@ def summarise(facts: Facts) -> dict[str, Any]:
     rule with a directory scope can judge the call again later.
     """
     summary: dict[str, Any] = {"windows": facts.windows}
+    if not facts.located:
+        # The host named no working directory: the entry's "cwd" is only
+        # what the paths were resolved against.
+        summary["located"] = False
     if facts.commands:
         summary["commands"] = [
             {
@@ -167,6 +171,7 @@ def restore(entry: Mapping[str, Any]) -> Facts:
         ),
         assigned=tuple(str(name) for name in call.get("assigned", ())),
         args=call.get("args") or {},
+        located=call.get("located") is not False,
     )
 
 

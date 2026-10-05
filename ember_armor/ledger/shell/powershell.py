@@ -23,6 +23,7 @@ from ember_armor.ledger.shell.core import (
     SELECTORS,
     UNKNOWN_DIR,
     Dynamic,
+    Guards,
     ParseError,
     ParseResult,
     Recurse,
@@ -85,6 +86,18 @@ _KEYWORDS = frozenset(
      "end", "return", "throw", "break", "continue", "exit", "trap", "class", "enum",
      "using", "in", "data", "dynamicparam", "workflow"}
 )  # fmt: skip
+#: How the script blocks of a statement run, by the keyword in front of
+#: them: ``maybe`` (they may not run), ``defined`` (when the function is
+#: called) or, with an empty entry, once and where they stand.  After any
+#: other keyword, and handed to a command, a block may run any number of
+#: times (``loop``).
+_BLOCK_KINDS = {
+    "if": "maybe", "elseif": "maybe", "else": "maybe", "switch": "maybe",
+    "catch": "maybe", "trap": "maybe", "try": "", "finally": "", "begin": "",
+    "process": "", "end": "", "function": "defined", "filter": "defined",
+}  # fmt: skip
+#: Functions PowerShell defines for leaving a directory: the path they go to.
+_CD_FUNCTIONS = {"cd..": "..", "cd\\": "\\", "cd~": "~"}
 _BARE_END = frozenset(" \t\r\n;|)},>")
 _TAIL_END = frozenset(" \t\r\n;|)},")
 _REDIRECT_RE = re.compile(r"[1-6*]?>>?(&[1-6])?")
@@ -98,7 +111,6 @@ _DOWNLOAD_RE = re.compile(
     re.IGNORECASE,
 )
 _DECODE_RE = re.compile(r"frombase64string", re.IGNORECASE)
-_CLOSERS = {"(": ")", "[": "]", "{": "}"}
 _MAX_EXPANSIONS = 4
 _DASHES = "\u2013\u2014\u2015"
 _MODULE_RE = re.compile(r"[\w.]+\\([A-Za-z]+-[A-Za-z]+)")
@@ -283,9 +295,14 @@ class _PowerShell:
         elif s.startswith(("$(", "@("), self.i):
             self.i += 2
             self._nested(")")
-        elif char in "({":
+        elif char == "(":
             self.i += 1
-            self._nested(_CLOSERS[char])
+            self._nested(")")
+        elif char == "{":
+            # ``$items.ForEach{ ... }``: when and how often it runs is up to
+            # whatever is handed the block.
+            self.i += 1
+            self.out.guard(*self._nested("}"), "loop")
         elif char == "[":
             self._index()
         else:
@@ -492,37 +509,53 @@ class _PowerShell:
         words: list[_Word] = []
         redirects: list[Redirect] = []
         stages: list[_Stage] = []
+        guards = Guards(self.out)
+        # True behind ``&&`` or ``||``, where a new line carries the list on.
+        joined = False
 
         def finish() -> None:
             body = _entry_value(words) if table else words
             self._end_statement(body, redirects, stages)
 
-        while True:
-            self.at_key = table and not words
-            kind, value = self._token()
-            if kind == "eof" or value in (")", "}"):
-                if value != (closer or ""):
-                    raise ParseError("unbalanced bracket")
-                finish()
-                self._end_pipeline(stages)
-                return
-            if isinstance(value, _Word):
-                if value.kind == "call" and words:
-                    # ``a & b``: the first command ends, ``&`` starts the next.
+        try:
+            while True:
+                self.at_key = table and not words
+                kind, value = self._token()
+                joined = joined and value == "\n"
+                if kind == "eof" or value in (")", "}"):
+                    if value != (closer or ""):
+                        raise ParseError("unbalanced bracket")
                     finish()
                     self._end_pipeline(stages)
-                    words, redirects, stages = [], [], []
-                words.append(value)
-            elif kind == "redirect":
-                self._redirect(bool(value), redirects)
-            elif value == "\n" and not words and stages:
-                continue
-            else:
-                finish()
-                words, redirects = [], []
-                if value != "|":
+                    return
+                if isinstance(value, _Word):
+                    if value.kind == "call" and words:
+                        # ``a & b``: the first command ends, ``&`` starts the
+                        # next.
+                        finish()
+                        self._end_pipeline(stages)
+                        guards.end()
+                        words, redirects, stages = [], [], []
+                    words.append(value)
+                elif kind == "redirect":
+                    self._redirect(bool(value), redirects)
+                elif value == "\n" and not words and stages:
+                    continue
+                else:
+                    finish()
+                    words, redirects = [], []
+                    if value == "|":
+                        continue
                     self._end_pipeline(stages)
                     stages = []
+                    if value in ("&&", "||"):
+                        guards.link(str(value))
+                        joined = True
+                    elif not joined:
+                        guards.end()
+        finally:
+            # Also after a parse error: what was read keeps its ranges.
+            guards.finish()
 
     def _redirect(self, has_target: bool, redirects: list[Redirect]) -> None:
         if not has_target:
@@ -664,6 +697,7 @@ class _PowerShell:
         )
         if called:
             words = words[1:]
+        self._guard_blocks(words, called)
         if not words:
             if redirects:
                 self._add(SimpleCommand((), "powershell", tuple(redirects)))
@@ -716,6 +750,10 @@ class _PowerShell:
             # ``Microsoft.PowerShell.Management\Remove-Item`` is ``Remove-Item``.
             name = qualified.group(1)
         program = ALIASES.get(name.lower(), name)
+        if name.lower() in _CD_FUNCTIONS and first.kind == "bare":
+            # ``cd..`` and ``cd\`` are functions that call Set-Location.
+            program = "Set-Location"
+            words = [first, _Word(_CD_FUNCTIONS[name.lower()], "string"), *words[1:]]
         cmdlet = _CMDLET_RE.fullmatch(program) is not None
         for index, word in enumerate(words[1:], start=1):
             value = self._known(word)
@@ -731,6 +769,32 @@ class _PowerShell:
         piped = self._descend(words, argv, raw, found.chdir)
         stages.append(_Stage(program_name(program), piped, raw, index, blocks))
 
+    def _guard_blocks(self, words: list[_Word], called: bool) -> None:
+        """Say how the script blocks of one statement run.
+
+        A block that is called where it stands (``& { ... }``) and the
+        blocks of ``try`` and ``finally`` run once.  A branch may not run, a
+        function body runs when the function is called, and any other block
+        (a loop body, a block handed to a command or stored in a variable)
+        may run any number of times, here or somewhere else.
+        """
+        if not any(word.kind == "block" for word in words):
+            return
+        first = words[0]
+        keyword = first.kind == "bare" and first.text.lower() in _KEYWORDS
+        kind, name = "loop", ""
+        for position, word in enumerate(words):
+            lowered = word.text.lower() if word.kind == "bare" else ""
+            if keyword and not called and lowered in _KEYWORDS:
+                kind, name = _BLOCK_KINDS.get(lowered, "loop"), ""
+                if kind == "defined" and position + 1 < len(words):
+                    # ``function global:Name($x) { ... }`` defines ``name``.
+                    label = words[position + 1].text.partition("(")[0]
+                    name = label.rsplit(":", 1)[-1].lower()
+            elif word.kind == "block" and not (called and position == 0) and kind:
+                for low, high in word.spans:
+                    self.out.guard(low, high, kind, name)
+
     def _start_process(self, words: list[_Word]) -> None:
         """Parse the command line a ``Start-Process`` launches, when literal."""
         named: dict[str, list[_Word]] = {}
@@ -744,10 +808,16 @@ class _PowerShell:
                 i += 1
                 continue
             i += 1
+            # ``-Name:value`` is one argument.
+            label, _, value = word.text.lstrip("-").partition(":")
+            option = label.lower()
             param = next((p for p in _START_VALUES if p.startswith(option)), None)
             if param is None or any(p.startswith(option) for p in _START_SWITCHES):
                 continue
             values = named.setdefault(param, [])
+            if value:
+                values.append(_Word(value, "bare", word.literal))
+                continue
             while i < len(words) and not (
                 words[i].kind == "bare" and words[i].text.startswith("-")
             ):

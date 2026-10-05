@@ -1,8 +1,8 @@
 # EmberArmor Proxy
 
-**Experimental. Do not install.** Status as of 2026-10-02.
+**Experimental sketch. It does not work.** Status as of 2026-10-05.
 
-This folder is a sketch of a Windows workstation proxy: a mitmproxy addon (`addon.py`) and three batch files, meant to send prompts bound for AI API hosts through the EmberArmor check endpoint. It does not work as shipped, it has no tests, and its installer changes system trust settings.
+This folder holds a mitmproxy addon (`addon.py`) meant to send prompts bound for AI API hosts through the EmberArmor check endpoint. It has no tests. The three batch files that installed and launched it (`install_windows.bat`, `start.bat`, `stop.bat`) were removed on 2026-10-05 because the installer changed system trust settings; they remain in the git history.
 
 ## Why it does not work
 
@@ -11,12 +11,11 @@ This folder is a sketch of a Windows workstation proxy: a mitmproxy addon (`addo
 - It reads a `decision` field that the API response does not contain.
 - Blocking is hard-coded off (`BLOCK_ON_UNSAFE = False` in `addon.py`). The addon does not read `.env` or the environment, so setting `BLOCK_ON_UNSAFE=true` changes nothing.
 - When the API returns an error or cannot be reached, the addon forwards the request anyway.
-- The API key bundled in `addon.py`, `start.bat` and `install_windows.bat` is 24 characters long. The API requires at least 32, plus an `EMBER_TOKEN_SECRET` that the scripts never set, so the API exits at start-up.
-- `start.bat` launches `ember_armor.api.main:app`, which does not exist, and then waits for `/api/v1/health`, which the API does not serve.
+- The API key bundled in `addon.py` is 24 characters long. The API requires at least 32, so the addon could never authenticate.
 
-## What the scripts do to a machine
+## What the removed scripts did to a machine
 
-This is what the batch files do, from reading them.
+This is what the batch files do when run, from reading them. They are no longer in this repository, but a copy the installer left on a machine still behaves this way.
 
 `install_windows.bat`:
 
@@ -34,7 +33,7 @@ This is what the batch files do, from reading them.
 
 `stop.bat` kills `mitmdump.exe` and the API window and switches the Windows proxy setting off.
 
-Two of these matter even though the proxy never gets as far as running. The root certificate stays trusted after the installer exits, and mitmproxy keeps the private key that signs for it in `%USERPROFILE%\.mitmproxy`, where any program running as that user can read it. And because `start.bat` pulls the default branch on every launch, whatever is on that branch at that moment is what runs next.
+Two of these mattered even though the proxy never got as far as running. The root certificate stays trusted after the installer exits, and mitmproxy keeps the private key that signs for it in `%USERPROFILE%\.mitmproxy`, where any program running as that user can read it. And because `start.bat` pulled the default branch on every launch, whatever was on that branch at that moment is what ran next. A copy of `start.bat` left on a machine by the installer still does this, so delete the installed folder (step 6 below).
 
 ## If you already ran the installer
 
@@ -50,6 +49,3 @@ Two of these matter even though the proxy never gets as far as running. The root
 | File | What it is |
 |------|------------|
 | `addon.py` | mitmproxy addon and a status page that is not started |
-| `install_windows.bat` | installer described above |
-| `start.bat` | launcher described above |
-| `stop.bat` | stops the processes and switches the proxy setting off |

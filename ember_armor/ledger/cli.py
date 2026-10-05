@@ -1,8 +1,8 @@
 """``ember-gate`` command line.
 
 Subcommands: ``check``, ``rules list|add|confirm|remove``, ``lint``,
-``log tail|verify|stats``, ``replay``, ``hook`` and
-``install claude-code --print``.
+``log tail|verify|stats``, ``replay``, ``hook`` (``--event pre-tool-use`` or
+``session-start``) and ``install claude-code --print``.
 """
 
 from __future__ import annotations
@@ -20,9 +20,16 @@ from pathlib import Path
 from typing import Any
 
 from ember_armor.ledger import hook, store
-from ember_armor.ledger.config import ConfigError, rule_exceptions
+from ember_armor.ledger.config import MODES, ConfigError, rule_exceptions
 from ember_armor.ledger.exceptions import RuleException
-from ember_armor.ledger.gate import audit_log, check, configured_shell_tools
+from ember_armor.ledger.gate import (
+    IN_DECISION,
+    REMINDED,
+    GateResult,
+    audit_log,
+    check,
+    configured_shell_tools,
+)
 from ember_armor.ledger.model import LedgerError, exceptable, parse_predicate
 
 EXIT_OK = 0
@@ -31,6 +38,8 @@ EXIT_USAGE = 2
 EXIT_NO_SOLVER = 3
 #: Interpreter arguments of the hook: isolated mode, then the hook module.
 HOOK_ARGS = ("-I", "-m", "ember_armor.ledger.hook")
+#: The same for the summary at the start of a session.
+SESSION_ARGS = (*HOOK_ARGS, "--event", hook.SESSION_START)
 
 
 def _print_json(value: Any) -> None:
@@ -52,8 +61,53 @@ def _call_from_args(args: argparse.Namespace) -> Any:
     }
 
 
+def _in_each_mode(call: Any, result: GateResult) -> dict[str, GateResult]:
+    """The same dry run in every mode (*result* is the configured one)."""
+    results = {}
+    for mode in MODES:
+        env = {**os.environ, "EMBER_GATE_MODE": mode}
+        same = mode == result.mode
+        results[mode] = result if same else check(call, env=env, record=False)
+    return results
+
+
+def _prints(result: GateResult) -> str:
+    """What the hook prints for *result*: ``nothing``, a decision or a reminder."""
+    if result.blocking:
+        return "decision"
+    return "reminder" if result.reminder and result.reminder.text else "nothing"
+
+
+def _to_agent(result: GateResult) -> str:
+    """One line: what the hook prints, and which rules stay in the log."""
+    if result.mode == "observe":
+        return "nothing is printed"
+    told = result.delivery()
+
+    def having(status: str) -> str:
+        return ", ".join(rule for rule, state in told.items() if state == status)
+
+    printed = _prints(result)
+    if printed == "decision":
+        line = f"the host is told to {result.decision.effect}"
+        line += f", quoting {having(IN_DECISION)}" if having(IN_DECISION) else ""
+    elif printed == "reminder":
+        line = f"a reminder quoting {having(REMINDED)}"
+    else:
+        line = "nothing is printed"
+    logged = [
+        f"{rule} ({state.partition(': ')[2]})"
+        for rule, state in told.items()
+        if state not in (REMINDED, IN_DECISION)
+    ]
+    return f"{line}; logged only: {', '.join(logged)}" if logged else line
+
+
 def _cmd_check(args: argparse.Namespace) -> int:
-    """Dry run: evaluate a call and print the decision.  Nothing is logged."""
+    """Dry run: evaluate a call and print the decision.  Nothing is logged.
+
+    When a rule fired, what the hook would print in each mode is shown too.
+    """
     try:
         call = _call_from_args(args)
     except ValueError as exc:
@@ -61,8 +115,20 @@ def _cmd_check(args: argparse.Namespace) -> int:
         return EXIT_USAGE
     result = check(call, record=False)
     decision = result.decision
+    modes = _in_each_mode(call, result) if decision.fired else {}
     if args.json:
-        _print_json(result.report())
+        report = result.report()
+        if modes:
+            report["by_mode"] = {
+                mode: {
+                    "decision": other.decision.effect,
+                    "prints": _prints(other),
+                    "reminder": other.report()["reminder"],
+                    "delivery": other.delivery(),
+                }
+                for mode, other in modes.items()
+            }
+        _print_json(report)
         return EXIT_OK
     print(f"decision: {decision.effect} (mode: {result.mode})")
     for rule in decision.fired:
@@ -74,6 +140,15 @@ def _cmd_check(args: argparse.Namespace) -> int:
     if result.facts and result.facts.dynamic:
         reasons = ", ".join(sorted({d.kind for d in result.facts.dynamic}))
         print(f"  dynamic shell: {reasons}")
+    if modes:
+        print("  to the agent, by mode:")
+        for mode, other in modes.items():
+            print(f"    {mode}: {_to_agent(other)}")
+        texts = [o.reminder.text for o in modes.values() if o.reminder]
+        for text in [text for text in texts if text][:1]:
+            print("  reminder text:")
+            for line in text.splitlines():
+                print(f"    {line}")
     return EXIT_OK
 
 
@@ -249,10 +324,21 @@ def _cmd_log_tail(args: argparse.Namespace) -> int:
         if args.json:
             print(json.dumps(entry, ensure_ascii=True))
             continue
+        if "event" in entry:
+            # A summary printed at the start of a session, not an evaluation.
+            announced = ",".join(entry.get("announced", [])) or "-"
+            print(
+                f"{entry.get('ts', '?')}  {entry['event']}  "
+                f"{entry.get('mode', '?'):7}  {entry.get('source', '?')}  "
+                f"announced: {announced}"
+            )
+            continue
         rules = ",".join(entry.get("rules", [])) or "-"
+        reminded = entry.get("reminded")
+        told = "" if reminded is None else f"  reminded: {','.join(reminded) or '-'}"
         print(
             f"{entry.get('ts', '?')}  {entry.get('decision', '?'):5}  "
-            f"{entry.get('mode', '?'):7}  {entry.get('tool', '?')}  {rules}"
+            f"{entry.get('mode', '?'):7}  {entry.get('tool', '?')}  {rules}{told}"
         )
     return EXIT_OK
 
@@ -272,13 +358,19 @@ def _cmd_log_stats(args: argparse.Namespace) -> int:
         "mode": Counter(),
         "tool": Counter(),
         "rule": Counter(),
+        "reminded": Counter(),
+        "event": Counter(),
     }
     total = 0
     for entry in audit_log(os.environ).entries():
         total += 1
+        if "event" in entry:
+            counters["event"][str(entry["event"])] += 1
+            continue
         for key in ("decision", "mode", "tool"):
             counters[key][str(entry.get(key, "?"))] += 1
         counters["rule"].update(entry.get("rules", []))
+        counters["reminded"].update(entry.get("reminded", []))
     if args.json:
         _print_json({"entries": total, **{k: dict(v) for k, v in counters.items()}})
         return EXIT_OK
@@ -308,23 +400,31 @@ def _cmd_replay(args: argparse.Namespace) -> int:
 # hook / install
 # ---------------------------------------------------------------------------
 def _cmd_hook(args: argparse.Namespace) -> int:
-    return hook.main()
+    return hook.main(["--event", args.event])
 
 
 def claude_code_settings() -> dict[str, Any]:
-    """Settings snippet that registers the gate as a PreToolUse hook.
+    """Settings snippet that registers the gate's two hooks.
 
-    The hook is started without a shell (the ``args`` form), and the
+    PreToolUse checks every tool call.  SessionStart prints the summary of
+    the standing rules (in ``remind`` and ``enforce`` mode, for the session
+    sources named by ``announce_on``); it has no matcher, so the gate, not
+    the settings file, decides which starts are announced.
+
+    Both are started without a shell (the ``args`` form), and the
     interpreter runs isolated (``-I``): the working directory is not on the
     import path, so a repository that ships its own ``ember_armor`` package
     cannot stand in for the gate, and ``PYTHON*`` variables are ignored.
     """
-    command = {
-        "type": "command",
-        "command": Path(sys.executable).as_posix(),
-        "args": [*HOOK_ARGS],
+    python = Path(sys.executable).as_posix()
+    check_call = {"type": "command", "command": python, "args": [*HOOK_ARGS]}
+    summary = {"type": "command", "command": python, "args": [*SESSION_ARGS]}
+    return {
+        "hooks": {
+            "PreToolUse": [{"matcher": "*", "hooks": [check_call]}],
+            "SessionStart": [{"hooks": [summary]}],
+        }
     }
-    return {"hooks": {"PreToolUse": [{"matcher": "*", "hooks": [command]}]}}
 
 
 def _cmd_install(args: argparse.Namespace) -> int:
@@ -432,7 +532,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_replay.add_argument("--json", action="store_true", help="print JSON")
     p_replay.set_defaults(func=_cmd_replay)
 
-    p_hook = commands.add_parser("hook", help="Claude Code PreToolUse hook (stdin)")
+    # Parsed here for --help only: main() hands the arguments of "hook" to
+    # the hook as they are (see there).
+    p_hook = commands.add_parser("hook", help="Claude Code hook (stdin)")
+    p_hook.add_argument(
+        "--event",
+        default=hook.PRE_TOOL_USE,
+        metavar="EVENT",
+        help="pre-tool-use checks a call (default); session-start prints the "
+        "summary of the standing rules",
+    )
     p_hook.set_defaults(func=_cmd_hook)
 
     install = commands.add_parser("install", help="show how to wire the gate in")
@@ -442,13 +551,42 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+#: The subcommands other than ``hook``.
+_OTHER_COMMANDS = ("check", "rules", "lint", "log", "replay", "install")
+
+
+def _hook_arguments(arguments: Sequence[str]) -> list[str] | None:
+    """The arguments for the hook, when the command line is a hook's.
+
+    The hook reads its own arguments.  One it does not know must end as a
+    gate failure with exit status 0, never as a usage error: exit status 2
+    would block the call on the host.  That holds for a line with ``hook``
+    in it that the parser would refuse as well (an option in front of
+    ``hook``, say): everything but the word itself goes to the hook, which
+    takes what it does not know for a failure of the gate.  ``None`` for a
+    line that asks for help or for another subcommand.
+    """
+    if "hook" not in arguments or {"-h", "--help"}.intersection(arguments):
+        return None
+    words = [argument for argument in arguments if not argument.startswith("-")]
+    if words[0] in _OTHER_COMMANDS:
+        return None
+    if arguments[0] == "hook":
+        return list(arguments[1:])
+    return [argument for argument in arguments if argument != "hook"]
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Run ``ember-gate`` and return its exit code."""
     for stream in (sys.stdout, sys.stderr):
         # Rule text may hold characters the console encoding lacks (cp1252).
         if isinstance(stream, io.TextIOWrapper):
             stream.reconfigure(errors="backslashreplace")
-    args = build_parser().parse_args(argv)
+    arguments = sys.argv[1:] if argv is None else list(argv)
+    for_hook = _hook_arguments(arguments)
+    if for_hook is not None:
+        return hook.main(for_hook)
+    args = build_parser().parse_args(arguments)
     try:
         return int(args.func(args))
     except (LedgerError, OSError, json.JSONDecodeError) as exc:

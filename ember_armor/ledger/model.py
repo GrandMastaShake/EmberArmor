@@ -205,6 +205,18 @@ Predicate = (
 # ---------------------------------------------------------------------------
 # Rules and decisions
 # ---------------------------------------------------------------------------
+def rule_key(rule_id: str, origin: str) -> str:
+    """A rule's name among the rules of every ledger.
+
+    An id is unique in its ledger, and a project ledger may use an id the
+    user ledger uses too.  Where two such rules must be told apart (which
+    of them a session was reminded of, how each reaches the agent) a
+    project rule goes by ``project:<id>``.  An id holds no colon, so the
+    two forms never meet.
+    """
+    return f"project:{rule_id}" if origin == "project" else rule_id
+
+
 @dataclass(frozen=True)
 class Applies:
     """Scope of a rule.  Empty tuples mean everywhere.
@@ -253,12 +265,20 @@ class Rule:
     base: str | None = None
     raw: Mapping[str, Any] = field(default_factory=dict, compare=False, repr=False)
 
+    @property
+    def key(self) -> str:
+        """The rule's name among the rules of every ledger (see :func:`rule_key`)."""
+        return rule_key(self.id, self.origin)
+
 
 @dataclass(frozen=True)
 class FiredRule:
     """A rule that fired for a call, with the effect it contributed.
 
     ``origin`` names the ledger the rule came from (see :class:`Rule`).
+    ``confirmed`` is true when the owner vouches for the rule: a built-in
+    rule, a rule confirmed in the user ledger, or a project rule confirmed
+    on this machine.  Only such a rule's words are ever shown to the agent.
     """
 
     id: str
@@ -266,6 +286,12 @@ class FiredRule:
     source: str
     effect: str
     origin: str = "user"
+    confirmed: bool = False
+
+    @property
+    def key(self) -> str:
+        """The rule's name among the rules of every ledger (see :func:`rule_key`)."""
+        return rule_key(self.id, self.origin)
 
 
 @dataclass(frozen=True)
@@ -273,13 +299,17 @@ class Decision:
     """Outcome of evaluating one call: ``none``, ``warn``, ``ask`` or ``deny``.
 
     ``excepted`` lists the rules that an owner's exception dropped for this
-    call, with the reason the owner gave.
+    call, with the reason the owner gave.  ``said`` is the failure in the
+    words the gate may print where an agent reads them, when those differ
+    from ``error``: the reason a project ledger could not be loaded can
+    quote the file, and is replaced by fixed words there.
     """
 
     effect: str = "none"
     fired: tuple[FiredRule, ...] = ()
     error: str | None = None
     excepted: tuple[ExceptedRule, ...] = ()
+    said: str | None = None
 
     def reason(self) -> str:
         """Human-readable reason quoting each fired rule's text and source.
@@ -294,8 +324,9 @@ class Decision:
                 f"EmberArmor ledger rule {rule.id}{where} ({rule.effect}): "
                 f'"{rule.text[:REASON_CHARS]}" [source: {rule.source[:REASON_CHARS]}]'
             )
-        if self.error:
-            lines.append(f"EmberArmor gate failure: {self.error}")
+        failure = self.said or self.error
+        if failure:
+            lines.append(f"EmberArmor gate failure: {failure}")
         return "\n".join(lines)
 
 
@@ -496,6 +527,10 @@ def parse_predicate(obj: Any, where: str, *, history: bool = False) -> Predicate
     if not isinstance(obj, dict):
         raise LedgerError(f"{where}: expected a predicate object")
     kind = obj.get("type")
+    if not isinstance(kind, str):
+        raise LedgerError(
+            f"{where}: 'type' must be one of {', '.join(PREDICATE_TYPES)}"
+        )
     if kind in _LEAF_PARSERS:
         return _LEAF_PARSERS[kind](obj, where)
     if kind in ("all", "any", "not"):

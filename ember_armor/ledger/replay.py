@@ -7,7 +7,11 @@ A transcript is a JSON-lines file.  An assistant line carries
 Each recorded call is evaluated against the rules active today, as the gate
 would in ``observe`` mode, and only aggregates are kept: calls per tool,
 decisions, rules that fired, and a few redacted, truncated example calls per
-rule.  Nothing is written to the audit log and no command is ever run.
+rule.  Next to how often a rule fired stands how many reminders ``remind``
+mode would have sent for it: the limit of one reminder per rule, session
+and interval is applied with the session ids and timestamps of the
+transcripts.  Nothing is written to the audit log and no command is ever
+run.
 """
 
 from __future__ import annotations
@@ -23,11 +27,12 @@ from pathlib import Path
 from typing import Any
 
 from ember_armor.ledger.audit import restore, summarise
-from ember_armor.ledger.config import ConfigError, rule_exceptions
+from ember_armor.ledger.config import ConfigError, remind_interval, rule_exceptions
 from ember_armor.ledger.engine import MemoryHistory, RepoFinder, evaluate
 from ember_armor.ledger.facts import extract
 from ember_armor.ledger.gate import configured_shell_tools
 from ember_armor.ledger.model import LedgerError, Rule
+from ember_armor.ledger.remind import limited
 from ember_armor.ledger.store import load_rules
 
 EXAMPLE_COMMANDS = 3
@@ -38,7 +43,12 @@ EXAMPLE_CHARS = 160
 
 @dataclass
 class ReplayReport:
-    """Aggregates of one replay.  It never holds a full command."""
+    """Aggregates of one replay.  It never holds a full command.
+
+    ``reminders`` counts, per rule, the calls on which ``remind`` mode would
+    have quoted the rule, and ``interval`` is the limit that was applied
+    (seconds before the same rule is reminded again in one session).
+    """
 
     files: int = 0
     lines: int = 0
@@ -48,6 +58,8 @@ class ReplayReport:
     tools: Counter[str] = field(default_factory=Counter)
     decisions: Counter[str] = field(default_factory=Counter)
     rules: Counter[str] = field(default_factory=Counter)
+    reminders: Counter[str] = field(default_factory=Counter)
+    interval: float = 0.0
     effects: dict[str, str] = field(default_factory=dict)
     dynamic: Counter[str] = field(default_factory=Counter)
     examples: dict[str, list[str]] = field(default_factory=dict)
@@ -70,6 +82,11 @@ class ReplayReport:
                 }
                 for rule_id, count in self.rules.most_common()
             },
+            "reminders": {
+                rule_id: self.reminders[rule_id]
+                for rule_id, _ in self.rules.most_common()
+            },
+            "remind_interval_minutes": self.interval / 60,
             "dynamic": dict(self.dynamic.most_common()),
         }
 
@@ -96,7 +113,8 @@ def transcript_files(paths: Iterable[str]) -> list[Path]:
 
 def _epoch(value: Any) -> float | None:
     if isinstance(value, str):
-        with contextlib.suppress(ValueError):
+        # OSError and OverflowError: a time no clock of this platform holds.
+        with contextlib.suppress(ValueError, OSError, OverflowError):
             return datetime.fromisoformat(value).timestamp()
     return None
 
@@ -230,8 +248,10 @@ def replay(
     carriers = configured_shell_tools(env)
     try:
         exceptions = rule_exceptions(env, date.today())
+        report.interval = remind_interval(env)
     except ConfigError as exc:
         raise LedgerError(str(exc)) from exc
+    reminded: dict[str, dict[str, list[float]]] = {}
     lookup = _remembered(windows) if repo_root is None else repo_root
     rules_by_cwd: dict[str, list[Rule]] = {}
     histories: dict[str, MemoryHistory] = {}
@@ -268,6 +288,12 @@ def replay(
             history.add(restore({**entry, "call": summary}), when)
             report.decisions[decision.effect] += 1
             report.dynamic.update({reason.kind for reason in facts.dynamic})
+            if decision.fired:
+                sent = reminded.setdefault(call["session_id"], {})
+                keys = limited(decision.fired, sent, when, report.interval)
+                # Counted by id, as the rules are: a key is an id, or
+                # "project:" and an id.
+                report.reminders.update(key.rpartition(":")[2] for key in keys)
             for fired in decision.fired:
                 report.rules[fired.id] += 1
                 report.effects[fired.id] = fired.effect
@@ -292,8 +318,15 @@ def render(report: ReplayReport) -> str:
     ):
         lines.append(f"{title}:")
         lines += [f"  {count:7}  {name}" for name, count in counter.most_common()]
-    lines.append("rules that fired:")
+    minutes = f"{report.interval / 60:g}"
+    lines.append(
+        "rules that fired (reminders: what remind mode would have sent, one "
+        f"per rule and session every {minutes} minutes):"
+    )
     for rule_id, count in report.rules.most_common():
-        lines.append(f"  {count:7}  {rule_id} [{report.effects[rule_id]}]")
+        lines.append(
+            f"  {count:7}  {rule_id} [{report.effects[rule_id]}]"
+            f"  reminders: {report.reminders[rule_id]}"
+        )
         lines += [f"             e.g. {line}" for line in report.examples[rule_id]]
     return "\n".join(lines)

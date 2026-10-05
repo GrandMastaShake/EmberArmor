@@ -22,7 +22,7 @@ The service:
 - `GET /health` and `GET /v1/metrics` answer with the key. `GET /ready` is public. `/docs`, `/redoc` and `/openapi.json` are switched off.
 - `POST /v1/ledger/check`, `GET /v1/ledger/rules` and `POST /v1/ledger/lint`, behind the same authentication, evaluate a tool call, list the rules in effect and lint the ledger. They replaced the `/v1/anchor` stub routes.
 - A scan of the git history found no provider API keys, no private keys and no committed `.env` file.
-- A CI workflow (`.github/workflows/ci.yml`) runs ruff over the ledger and the whole test suite on Ubuntu and Windows with Python 3.11 and 3.12. It last ran on 2026-10-05 on commit `c82f86c` of this branch and passed on all four. The commits after that one had not been pushed when this was written, so they have not been through it; the numbers below are from this machine.
+- A CI workflow (`.github/workflows/ci.yml`) runs ruff over the ledger and the whole test suite on Ubuntu and Windows with Python 3.11 and 3.12. It last ran on 2026-10-05 on commit `b4ed2a9` (pull request #4, since merged, which this branch is built on) and passed on all four, for the push and for the pull request (checked with `gh pr view 4`). The commits that add reminders come after that one and had not been pushed when this was written, so they have not been through it; the numbers below are from this machine.
 
 The constraint ledger (`ember_armor/ledger`, standard library only on the hot path):
 
@@ -31,10 +31,12 @@ The constraint ledger (`ember_armor/ledger`, standard library only on the hot pa
 - A rule can be scoped to tools, to directories (`cwd_under`, with `cwd_not_under` for exceptions) and to a repository (`repo_root`: the nearest enclosing git repository is exactly the one named, which leaves out a repository nested inside it). For a shell call the directory scopes are judged for each command, on the directory in effect when it runs: the call's own, as moved by `cd`, `pushd`, `popd` and `Set-Location` in the same string, by `git -C`, `make -C`, `npm --prefix`, `pnpm -C`, `yarn --cwd` and `cargo -C`, and by a nested `cmd /c "cd /d X && ..."`. The rule then sees only the commands in scope and the paths they touch. A directory the gate cannot read from the command string (`cd $SOMEWHERE`, `cd "$DIR/.."`), or cannot be sure of (after a `cd` behind `||`, in a branch, in a loop or in a function that is called), counts as in scope, so a rule is not escaped that way. `repo_root` looks for `.git` on disk with `lstat` calls only, once per directory level and call, and not at all unless a rule or exception in force uses it.
 - The owner can make exceptions to rules in `~/.ember/config.json`, each tied to a directory, a repository or a condition and carrying a reason. A ledger cannot hold one, so a repository cannot ship one. The two built-in deny rules and the rules that guard the gate take none, a directory the gate cannot read or cannot be sure of gains none, an exception on a rule that looks at paths reaches only the paths in its own directories, and each use is recorded in the audit log.
 - A built-in pack of 37 rules covers recursive deletion, git history and working-tree destruction, SQL `DROP`/`TRUNCATE`/`DELETE` without `WHERE`, cloud and platform deletion, system trust and defences, secret files read or sent, login files, downloads piped into a shell, unreadable input, and the gate's own files, rules and settings.
-- `ember-gate hook` is a Claude Code `PreToolUse` hook. In `enforce` mode it prints `ask` or `deny` with the rule's text and source; in `observe` mode (the default) it prints nothing and only records. It never prints `allow`.
-- Every evaluation is appended to a hash-chained audit log (`~/.ember/audit/`), with secret-shaped values replaced. `ember-gate log verify` recomputes the chain.
+- `ember-gate hook` is a Claude Code `PreToolUse` hook with three modes. In `observe` mode (the default) it prints nothing and only records. In `remind` mode it never blocks and never asks: when a rule fires, it hands the agent the rule in its own words, as `additionalContext` with no permission decision. In `enforce` mode it prints `ask` or `deny` with the rule's text and source, and a reminder when only `warn`-level rules fired. It never prints `allow`.
+- A reminder quotes only rules the owner vouches for: the built-in pack, confirmed rules of the user ledger, and project rules confirmed on this machine. A rule nobody confirmed adds nothing to what the hook prints, in any mode, and neither does a project ledger that cannot be loaded or a project rule that cannot be evaluated: the hook reports those in fixed words, and the rules of the other ledgers are still judged. The same rule is reminded at most once per session every 15 minutes (`remind_interval_minutes` in `~/.ember/config.json`), and again after the session's context was compacted or cleared.
+- `ember-gate hook --event session-start` is a `SessionStart` hook: in `remind` and `enforce` mode, after the context was compacted (or on the starts named in `announce_on`), it prints the confirmed user and project rules that can apply in the directory the session starts in.
+- Every evaluation is appended to a hash-chained audit log (`~/.ember/audit/`), with secret-shaped values replaced and with the rules a reminder quoted. `ember-gate log verify` recomputes the chain.
 - `ember-gate lint` checks the ledger itself with Z3 for dead, blanket, shadowed and contradictory rules.
-- `ember-gate replay` runs the tool calls recorded in Claude Code transcripts through the gate and prints aggregates only.
+- `ember-gate replay` runs the tool calls recorded in Claude Code transcripts through the gate and prints aggregates only: per rule, how often it fired and how many reminders `remind` mode would have sent.
 
 ## What does not work or is not implemented
 
@@ -57,7 +59,7 @@ uv pip install -e ".[dev]"
 uv run --no-sync pytest tests/ -q
 ```
 
-5,046 tests are collected: 4,849 for the ledger under `tests/ledger/`, the rest for the service. All of them passed on 2026-10-05 on this machine, on Python 3.12 and again on Python 3.11, run as `python -m pytest tests -q -p no:cacheprovider -o addopts=""` (with `--basetemp` naming a scratch directory) in a virtualenv of each version with `EMBER_HOME` pointing at an empty directory, which was still empty afterwards; the two runs took 5 minutes 42 seconds and 5 minutes 12 seconds, and earlier runs took between three and a half and six minutes depending on what else the machine was doing (`tests/ledger/test_never_vanishes.py` alone evaluates about 20,600 generated shell statements). Three ledger tests create git repositories in the temporary directory and are skipped when its path is too long for git on Windows (from about 175 characters). One service test is timing-sensitive: `tests/test_rate_limit.py::test_limit_resets_after_window` needs three requests to land inside a 0.3 second window, so it can fail on a slow or busy machine. `ember_proxy/` has no tests.
+5,417 tests are collected: 5,220 for the ledger under `tests/ledger/`, the rest for the service. All of them passed on 2026-10-05 on this machine at commit `b9bccc7` (the last one that changes code or tests; what follows it is documentation), on Python 3.12 and again on Python 3.11, run as `python -m pytest tests -q -p no:cacheprovider -o addopts=""` (with `--basetemp` naming a scratch directory) in a virtualenv of each version with `EMBER_HOME` pointing at an empty directory, which was still empty afterwards; the two runs took 8 minutes 35 seconds and 8 minutes 32 seconds while about 2,900 hook processes of another check ran beside them, and earlier runs took between three and a half and seven minutes depending on what else the machine was doing (`tests/ledger/test_never_vanishes.py` alone evaluates about 20,600 generated shell statements). Three ledger tests create git repositories in the temporary directory and are skipped when its path is too long for git on Windows (from about 175 characters); in these two runs none was skipped. One service test is timing-sensitive: `tests/test_rate_limit.py::test_limit_resets_after_window` needs three requests to land inside a 0.3 second window, so it can fail on a slow or busy machine. `ember_proxy/` has no tests.
 
 Start the service on localhost with two generated secrets:
 
@@ -86,7 +88,7 @@ That input is a plain injection attempt and the placeholder passes it. Stop the 
 
 ## Try the ledger
 
-`ember-gate` is installed with the package. These commands were run as written on 2026-10-02 in Git Bash, and again on 2026-10-05 with the same output, with `EMBER_HOME` pointing at an empty directory so nothing under `~/.ember` was touched; the output is what they printed. Command strings given to `check` are parsed, never executed.
+`ember-gate` is installed with the package. These commands were run as written in Git Bash, first on 2026-10-02 and the last time on 2026-10-05 after reminders were added, with `EMBER_HOME` pointing at an empty directory so nothing under `~/.ember` was touched; the output is what they printed that last time. Command strings given to `check` are parsed, never executed. When a rule fires, `check` also says what the hook would print in each mode.
 
 ```bash
 ember-gate check "rm -rf src && git push --force"
@@ -96,7 +98,17 @@ ember-gate check "rm -rf src && git push --force"
 decision: ask (mode: observe)
   builtin.delete.recursive [ask] Ask before deleting a directory tree outside build, cache and temporary directories. (source: EmberArmor built-in pack)
   builtin.git.force-push [ask] Ask before force-pushing: it rewrites history on the remote. (source: EmberArmor built-in pack)
+  to the agent, by mode:
+    observe: nothing is printed
+    remind: a reminder quoting builtin.delete.recursive, builtin.git.force-push
+    enforce: the host is told to ask, quoting builtin.delete.recursive, builtin.git.force-push
+  reminder text:
+    EmberArmor reminder, rule builtin.delete.recursive: "Ask before deleting a directory tree outside build, cache and temporary directories." (source: EmberArmor built-in pack).
+    EmberArmor reminder, rule builtin.git.force-push: "Ask before force-pushing: it rewrites history on the remote." (source: EmberArmor built-in pack).
+    No tool call was blocked: this is a reminder of standing instructions, not a new request.
 ```
+
+The next two printed the same kind of table after the rule lines; it is left out here.
 
 ```bash
 ember-gate check 'Remove-Item -Recurse -Force C:\Users\sam' --tool PowerShell
@@ -121,7 +133,7 @@ decision: ask (mode: observe)
 
 `ember-gate rules list` prints the 37 built-in rules and whatever the user and project ledgers add. `ember-gate lint` printed `37 rules checked: no findings` and exited 0 (it needs the `smt` extra; without Z3 it says so and exits 3).
 
-The hook, with `enforce` set for one call only:
+The hook, with `enforce` set for one call only (the first line of `ember-gate log tail` further down is this call):
 
 ```bash
 echo '{"session_id":"demo","cwd":"'$PWD'","tool_name":"Bash","tool_input":{"command":"git reset --hard"}}' | EMBER_GATE_MODE=enforce ember-gate hook
@@ -131,9 +143,28 @@ echo '{"session_id":"demo","cwd":"'$PWD'","tool_name":"Bash","tool_input":{"comm
 {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "ask", "permissionDecisionReason": "EmberArmor ledger rule builtin.git.reset-hard (ask): \"Ask before git reset --hard: it discards uncommitted work.\" [source: EmberArmor built-in pack]"}}
 ```
 
-In the default `observe` mode the same call prints nothing and exits 0, so Claude Code's own permission flow is untouched; the evaluation is still logged, and `ember-gate log tail` shows it. `ember-gate install claude-code --print` prints the `settings.json` snippet that registers `python -I -m ember_armor.ledger.hook` as a `PreToolUse` hook, started without a shell; it does not edit any settings file. The `-I` matters: without it Python puts the working directory first on its import path, and a repository containing its own `ember_armor` folder would run in place of the gate. `{"mode": "enforce"}` in `~/.ember/config.json` turns enforcement on for every call. The gate asks before an agent changes that file, the ledgers, the audit log, the Claude Code settings files, or the `EMBER_*` variables that select them.
+In the default `observe` mode the same call prints nothing and exits 0, so Claude Code's own permission flow is untouched; the evaluation is still logged. In `remind` mode the same call is not blocked and nobody is asked; the hook prints the rule for the agent:
 
-`ember-gate replay ~/.claude/projects` runs recorded tool calls through the current rules in observe mode and prints counts per tool, decision and rule, with a few redacted, truncated example calls per rule. Nothing is written to the audit log and no command is run.
+```bash
+echo '{"session_id":"demo","cwd":"'$PWD'","tool_name":"Bash","tool_input":{"command":"git reset --hard"}}' | EMBER_GATE_MODE=remind ember-gate hook
+```
+
+```text
+{"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": "EmberArmor reminder, rule builtin.git.reset-hard: \"Ask before git reset --hard: it discards uncommitted work.\" (source: EmberArmor built-in pack).\nNo tool call was blocked: this is a reminder of standing instructions, not a new request."}}
+```
+
+Run a second time, the same command printed nothing: the session had been reminded of that rule less than 15 minutes before. `ember-gate log tail` then printed the four calls (enforce, observe, remind, remind):
+
+```text
+2026-10-05T11:20:19.936+00:00  ask    enforce  Bash  builtin.git.reset-hard
+2026-10-05T11:20:20.253+00:00  ask    observe  Bash  builtin.git.reset-hard
+2026-10-05T11:20:20.572+00:00  ask    remind   Bash  builtin.git.reset-hard  reminded: builtin.git.reset-hard
+2026-10-05T11:20:20.900+00:00  ask    remind   Bash  builtin.git.reset-hard  reminded: -
+```
+
+`ember-gate install claude-code --print` prints the `settings.json` snippet that registers `python -I -m ember_armor.ledger.hook` as a `PreToolUse` hook and the same command with `--event session-start` as a `SessionStart` hook, both started without a shell; it does not edit any settings file. The `-I` matters: without it Python puts the working directory first on its import path, and a repository containing its own `ember_armor` folder would run in place of the gate. `{"mode": "remind"}` or `{"mode": "enforce"}` in `~/.ember/config.json` sets the mode for every call. In `enforce` mode the gate asks before an agent changes that file, the ledgers, the audit log, the Claude Code settings files, or the `EMBER_*` variables that select them; in `remind` mode such a call gets a reminder and proceeds. A file with a wrong value or an unknown key makes the gate ask on every call whatever mode it names, and so does a copy of the gate installed before reminders that reads the new settings: update the installed gate first, and run `ember-gate check "git status"` after editing the file.
+
+`ember-gate replay ~/.claude/projects` runs recorded tool calls through the current rules in observe mode and prints counts per tool, decision and rule, with a few redacted, truncated example calls per rule. Next to how often a rule fired it prints how many reminders `remind` mode would have sent for it, one per rule and session in each interval, judged from the session ids and timestamps of the transcripts. Nothing is written to the audit log and no command is run. (After reminders were added this command was run on the small transcripts of the test suite only, not on the owner's history.)
 
 ### A rule for one directory, and an exception
 
@@ -157,9 +188,16 @@ ember-gate check --cwd C:/work "cd C:/work/site && git commit -m wip"
 ```text
 decision: deny (mode: observe)
   no-commit-on-site [deny] Never commit in the site repository; work in a clone and open a pull request. (source: the owner, 2026-10-05)
+  to the agent, by mode:
+    observe: nothing is printed
+    remind: a reminder quoting no-commit-on-site
+    enforce: the host is told to deny, quoting no-commit-on-site
+  reminder text:
+    EmberArmor reminder, rule no-commit-on-site: "Never commit in the site repository; work in a clone and open a pull request." (source: the owner, 2026-10-05).
+    No tool call was blocked: this is a reminder of standing instructions, not a new request.
 ```
 
-`ember-gate check --cwd C:/work "git -C C:/work/site commit -m wip"` printed the same two lines. Leaving the directory first, `ember-gate check --cwd C:/work/site "cd C:/work/other && git commit -m wip"`, printed `decision: none (mode: observe)`. A `cd` the gate cannot read, `ember-gate check --cwd C:/work 'cd "$REPO" && git commit -m wip'`, printed the deny again: the directory is unknown, and unknown counts as in scope. So did a `cd` that may not have run, `ember-gate check --cwd C:/work/site 'test -d C:/work/other && cd C:/work/other; git commit -m wip'`: when the test fails, the commit runs in the site repository. With `&&` in place of the `;` the commit runs only after the `cd` has, and that command printed `decision: none (mode: observe)`.
+`ember-gate check --cwd C:/work "git -C C:/work/site commit -m wip"` printed the same lines. Leaving the directory first, `ember-gate check --cwd C:/work/site "cd C:/work/other && git commit -m wip"`, printed `decision: none (mode: observe)`. A `cd` the gate cannot read, `ember-gate check --cwd C:/work 'cd "$REPO" && git commit -m wip'`, printed the deny again: the directory is unknown, and unknown counts as in scope. So did a `cd` that may not have run, `ember-gate check --cwd C:/work/site 'test -d C:/work/other && cd C:/work/other; git commit -m wip'`: when the test fails, the commit runs in the site repository. With `&&` in place of the `;` the commit runs only after the `cd` has, and that command printed `decision: none (mode: observe)`.
 
 An exception for a job that resets its own checkout:
 
@@ -179,13 +217,59 @@ decision: none (mode: observe)
   excepted: builtin.git.reset-hard (reason: the nightly job resets its own checkout)
 ```
 
-The same reset after leaving that directory, `ember-gate check --cwd C:/work/jobs/site "cd C:/work/other && git reset --hard"`, still printed `decision: ask (mode: observe)` with `builtin.git.reset-hard`. `ember-gate rules list` now shows the exception under the rule:
+The same reset after leaving that directory, `ember-gate check --cwd C:/work/jobs/site "cd C:/work/other && git reset --hard"`, still printed `decision: ask (mode: observe)` with `builtin.git.reset-hard` and the table for that rule. `ember-gate rules list` now shows the exception under the rule:
 
 ```text
 builtin.git.reset-hard  [ask, confirmed]  (builtin)
     Ask before git reset --hard: it discards uncommitted work.
     exception: under C:/work/jobs (reason: the nightly job resets its own checkout)
 ```
+
+### Reminders
+
+These commands were run as written on 2026-10-05 in Git Bash, with the ledger and the configuration of the section above still in `EMBER_HOME`, and again that day, from the first command of the section above, after the fixes that followed an independent test of the reminders; the output is from that last run. In `remind` mode the commit in the site repository is not blocked; the agent is told the rule:
+
+```bash
+echo '{"session_id":"demo","cwd":"C:/work","tool_name":"Bash","tool_input":{"command":"cd C:/work/site && git commit -m wip"}}' | EMBER_GATE_MODE=remind ember-gate hook
+```
+
+```text
+{"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": "EmberArmor reminder, rule no-commit-on-site: \"Never commit in the site repository; work in a clone and open a pull request.\" (source: the owner, 2026-10-05).\nNo tool call was blocked: this is a reminder of standing instructions, not a new request."}}
+```
+
+The same command a second time printed nothing and exited 0. `ember-gate check --cwd C:/work --session demo "cd C:/work/site && git commit -m wip"` then said why:
+
+```text
+decision: deny (mode: observe)
+  no-commit-on-site [deny] Never commit in the site repository; work in a clone and open a pull request. (source: the owner, 2026-10-05)
+  to the agent, by mode:
+    observe: nothing is printed
+    remind: nothing is printed; logged only: no-commit-on-site (reminded inside the interval)
+    enforce: the host is told to deny, quoting no-commit-on-site
+```
+
+The summary at the start of a session, for a session that starts in `C:/work` after its context was compacted:
+
+```bash
+echo '{"session_id":"demo","cwd":"C:/work","hook_event_name":"SessionStart","source":"compact"}' | EMBER_GATE_MODE=remind ember-gate hook --event session-start
+```
+
+```text
+{"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": "EmberArmor reminder, rule no-commit-on-site: \"Never commit in the site repository; work in a clone and open a pull request.\" (source: the owner, 2026-10-05).\nNo tool call was blocked: this is a reminder of standing instructions, not a new request."}}
+```
+
+After that start the commit command, run a third time, printed its reminder again, although the interval had not passed: what the agent was reminded of before a compaction went with its context, so the limit starts again there.
+
+With `"source":"startup"` the session-start command printed nothing (only `compact` is announced unless `announce_on` in `config.json` says otherwise), and so did `"cwd":"C:/elsewhere"` with `"source":"compact"`: the rule is scoped to `C:/work/site`, which does not lie there. That second start is in the log all the same, because it is a compaction. `ember-gate log tail -n 4` printed the second commit, the summary, the third commit and that start, and `ember-gate log verify` printed `5 entries checked: ok`:
+
+```text
+2026-10-05T12:33:12.911+00:00  deny   remind   Bash  no-commit-on-site  reminded: -
+2026-10-05T12:33:14.098+00:00  session-start  remind   compact  announced: no-commit-on-site
+2026-10-05T12:33:14.739+00:00  deny   remind   Bash  no-commit-on-site  reminded: no-commit-on-site
+2026-10-05T12:33:15.948+00:00  session-start  remind   compact  announced: -
+```
+
+A rule that was added and not confirmed (`ember-gate rules add` stores it unconfirmed), and a rule of a project ledger that this machine has not confirmed, are evaluated and logged, and nothing of them is printed by the hook in any mode. `ember-gate rules confirm ID` vouches for a rule of the user ledger, `ember-gate rules confirm ID --project` for a rule of the project ledger, by its content.
 
 ### Measured on this machine
 
@@ -196,6 +280,8 @@ Windows 11, Python 3.12, the virtualenv above, 2026-10-02.
 - The fixes that followed the test of those two features (2026-10-05: moves that may not have run, what an exception reaches, paths of nested shells), measured the same way. Started as printed, the median of 30 runs was 360 ms and 369 ms in two series on Python 3.12 and 388 ms on Python 3.11; a bare interpreter (`python -I -c pass`) took 121 to 136 ms in those series against 84 ms for the first figures above, so the machine was slower that day and these numbers do not compare with the earlier ones. The commit before the fixes and the last one were therefore run in turns, each exported to a directory of its own, 30 runs each, with a call made outside the home directory: 388 ms against 371 ms, and 381 ms against 387 ms with the order swapped, on Python 3.12; 413 ms against 400 ms, and 395 ms against 403 ms swapped, on Python 3.11. No difference could be measured. For a call made below the home directory the earlier commit was slower in every series (390 ms and 394 ms against 378 ms on Python 3.12, 428 ms against 395 ms and 397 ms on Python 3.11): with `EMBER_HOME` pointing elsewhere it loaded the ledger in `~/.ember` as a project ledger, which is one of the things fixed. Inside a warm interpreter a `git status` check, audit entry included, took at least 5.7 to 6.0 ms before and 5.8 to 6.0 ms after (minimum of 400 calls, three series each), and a command with a `cd` behind `&&` and a loop 8.9 to 9.4 ms before and 9.3 to 9.7 ms after. A command string built to be slow for the new bookkeeping (660 times `test -d x && cd x; b`, or 600 `if` blocks with a `cd`) took 0.5 to 0.7 seconds to turn into facts, against about 0.2 seconds before.
 - The same fixes against the owner's transcripts (2026-10-05, read-only, counts only; 50,675 tool calls, 27,878 of them shell calls), with the commit before the fixes and with the last one: the built-in pack gave the same decision and the same rules for every call (228 asks, 0 denies). In a second pass a little later (27,887 shell calls) the parsed commands were the same for every shell call, and 53 calls gained path facts while none lost one. Shell calls with a command in a directory the gate does not know went from 52 to 224 (0.19% to 0.80%); in 175 of the 224 a `cd` stands behind `&&` or `||` or in a branch, in 14 more in a loop. That is what the stricter reading costs: a rule scoped to a directory none of these calls is made in, which can only fire through an unknown directory, fired for `git commit` on 8 calls (2 before), for `git push` on 8 (2 before) and for any `git` command on 77 (45 before). `ember-gate replay` with an empty Ember home reported 235 asks, 0 denies and 0 warnings on these files (50,730 calls by then). Before the fix to project ledgers a call made below the home directory loaded the owner's own ledger as a project ledger, and an independent replay had reported 408 warnings from its rules.
 - Replay of the owner's Claude Code transcripts (1,604 files, 48,018 tool calls, read-only, aggregates only), before and after this round of work on the same files: before, 96 asks and 0 denies, from delete.recursive 23, secrets.read 21, git.reset-hard 20, shell.unreadable 16, git.branch-force-delete 8, git.force-push 8, git.discard-worktree 1, with 173 calls marked variable_command and 16 parse_error; after (48,032 calls, the 14 extra being this session's own commands recorded between the two runs), 127 asks and 0 denies, from gate.environment 44 (every one a command of a ledger development session that set EMBER_HOME, EMBER_GATE_MODE or EMBER_LEDGER, which is what the rule is for), delete.recursive 23, git.reset-hard 20, shell.unreadable 14, git.branch-force-delete 8, git.force-push 8, git.stash-drop 5, secrets.read 4, gate.rules 2, git.remote-delete 2, git.discard-worktree 1, with 17 calls marked variable_command and 14 parse_error. The 17 secrets.read asks that went away were wildcard operands such as `readme*` and `vite.config.*` matching `*key*.pem` and a negated Grep glob; the 4 that remain read `.env.local` files. The two parse errors that went away were a `case` after `do`; the 14 left are input no shell accepts. The 156 variable_command marks that went away were `PY=$S/...; $PY ...`, now resolved.
+- Reminders (2026-10-05). Hook wall time was measured as in the first three items: one hook process started as printed (`python -I -m ember_armor.ledger.hook`), a `git status` call made outside the home directory on standard input, 30 runs. Before the work the median was 339 ms and 342 ms in two series on Python 3.12 and 364 ms on Python 3.11; after it, 197 ms and 197 ms on Python 3.12 and 218 ms on Python 3.11. A bare interpreter (`python -I -c pass`) took 117 ms and 138 ms in the first series and 73 ms and 79 ms in the later ones (`tasklist` showed fourteen other Python processes both times), so the machine was slower during the first series and these numbers do not compare. The commit before the work (`b4ed2a9`) and the last one that changes code (`ada6d0a`) were therefore run in turns, each exported to a directory of its own, 30 runs each: 212 ms against 203 ms, and 202 ms against 202 ms with the order swapped, on Python 3.12; 212 ms against 215 ms, and 214 ms against 215 ms swapped, on Python 3.11. No difference could be measured. In `remind` mode the same call, which no rule fires on, took a median of 196 ms as printed on Python 3.12: the reminder code is a module of its own, loaded only when a rule fired and a reminder may be sent, and the session's audit entries are read only then. Inside a warm interpreter a `git status` check, audit entry included, took at least 4.09 to 4.24 ms before and 4.05 to 4.22 ms after in `observe` mode (minimum of 400 calls, two runs of three series each), and 4.21 to 4.35 ms in `remind` mode (one run of three series). A call a rule does fire on (a call whose command string is `git push --force`), one process each, 30 runs, each commit from its exported directory: median 203 ms before and 205 ms after in `observe` mode, and 213 ms in `remind` mode, where the reminder module is loaded and the session's entries are read.
+- The fixes that followed an independent test of the reminders (2026-10-05), measured the same way, 30 runs each, with `tasklist` showing sixteen other Python processes. Started as printed, a `git status` call took a median of 261 ms in `observe` mode and 256 ms in `remind` mode on Python 3.12 (264 ms and 257 ms on Python 3.11), with a bare interpreter at 91 ms (96 ms), so the machine was slower again than for the item above. The commit before the fixes (`7521ce5`) and the last one that changes code (`b9bccc7`) were run in turns, each exported to a directory of its own, and then again with the order swapped. On Python 3.12, before against after: `git status` in `observe` mode 267 ms against 268 ms and 290 ms against 294 ms; in `remind` mode 252 ms against 258 ms and 270 ms against 270 ms; a call a rule fires on (`git push --force` as the command string) in `observe` mode 296 ms against 294 ms and 250 ms against 251 ms, in `remind` mode 275 ms against 281 ms and 312 ms against 313 ms. On Python 3.11: 316 ms against 325 ms and 279 ms against 284 ms; 286 ms against 284 ms and 313 ms against 315 ms; 342 ms against 371 ms and 395 ms against 400 ms; 390 ms against 392 ms and 366 ms against 372 ms. The differences run from 2 ms faster to 9 ms slower, with one of 29 ms, while two series of the same commit differ by up to 53 ms; no difference could be told from the noise. A `git status` call loads nothing outside the standard library and the ledger, and neither the reminder module nor `unicodedata`, which the sanitiser now uses and which is loaded only when a rule is quoted (checked in a fresh interpreter on both Python versions, in each mode).
 
 ### Known limits
 
@@ -206,6 +292,7 @@ The full list is in [docs/constraint-ledger.md](docs/constraint-ledger.md). The 
 - A recursive search or an archive of a whole directory is not treated as reading the secret files in it.
 - The gate does not know whether an earlier call succeeded; ordering rules count a call that was proposed.
 - The directory a command runs in is read from the command string and not checked. A `cd` is taken to succeed, and directory options are read for the programs listed above only (`tar -C`, `go -C`, `GIT_DIR`, a `cd` in a sourced script and the like are not followed), so a rule scoped to a directory can miss a command that got there another way. In the other direction, a `cd` that may not have run leaves the directory unknown, and a scoped rule then fires on commands that in fact run elsewhere.
+- A reminder is told, not enforced: the agent can read it and make the call anyway, and in `remind` mode a `deny` rule blocks nothing. What Claude Code does with the text was checked by the owner with a probe hook on 2026-10-05; the tests here check what the hook prints. Two calls proposed at the same moment can both be reminded of the same rule. In `remind` mode nothing asks before an agent confirms a project rule (`ember-gate rules confirm ID --project`), after which the rule is quoted as the owner's; only `enforce` mode asks first.
 - Nothing here has been measured on a public benchmark.
 
 ## Known issues
@@ -220,7 +307,7 @@ The full list is in [docs/constraint-ledger.md](docs/constraint-ledger.md). The 
 
 ## Direction
 
-The constraint ledger is in this branch: structured rules kept outside the model's context, a gate that checks every tool call against them before it runs, a hash-chained audit log, a solver-backed lint, and a replay over recorded transcripts. Next is drafting rules from a conversation with a model, for a human to confirm (which is what the `confirmed` flag on a rule is for), and a public benchmark for the gate. The regex detector will be replaced; the auth, config and rate-limit shell stays.
+The constraint ledger is in this branch: structured rules kept outside the model's context, a gate that checks every tool call against them before it runs, reminders that tell the agent a rule again when it fires, a hash-chained audit log, a solver-backed lint, and a replay over recorded transcripts. Next is drafting rules from a conversation with a model, for a human to confirm (which is what the `confirmed` flag on a rule is for), and a public benchmark for the gate. The regex detector will be replaced; the auth, config and rate-limit shell stays.
 
 ## Related repositories
 

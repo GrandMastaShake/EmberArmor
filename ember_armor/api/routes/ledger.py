@@ -86,7 +86,10 @@ def check_call(
     dict
         ``decision`` (``none``, ``warn``, ``ask`` or ``deny``), the gate
         ``mode``, the ``rules`` that fired with their text and source, a
-        fixed ``error`` message if the gate failed, and the redacted ``call``.
+        fixed ``error`` message if the gate failed, the redacted ``call``,
+        the ``reminder`` text the hook would print for the call in that mode
+        (``null`` when it would print none) and, when a rule fired,
+        ``delivery``: for each rule how it would reach the agent.
     """
     result = check(
         body.model_dump(),

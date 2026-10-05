@@ -25,7 +25,7 @@ import os
 import re
 import sys
 import time
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -39,6 +39,8 @@ from ember_armor.ledger.redact import (
     redact_argv,
     redact_path,
     redact_value,
+    session_key,
+    writable,
 )
 from ember_armor.ledger.shell import Dynamic, SimpleCommand
 
@@ -68,6 +70,12 @@ _MARKER_PREFIX = ".last."
 _MONTH_RE = re.compile(r"[0-9]{4}-[0-9]{2}\.jsonl")
 _TAIL_BLOCK = 65_536
 _HISTORY_FILES = 2
+#: What decoding a damaged line can raise: not JSON, not UTF-8, a number of
+#: more digits than Python converts, brackets nested deeper than it follows.
+_UNREADABLE = (ValueError, RecursionError)
+#: What reading an entry that is JSON, but not an entry of this log, can
+#: raise (a missing field, a wrong type, a time no clock can hold).
+_MISSHAPEN = (KeyError, TypeError, ValueError, AttributeError, OSError, OverflowError)
 
 
 class AuditError(OSError):
@@ -191,10 +199,21 @@ def _line_hash(line: bytes) -> str | None:
     """Stored hash of a log line, or ``None`` if the line is damaged."""
     try:
         entry = json.loads(line)
-    except (json.JSONDecodeError, UnicodeDecodeError):
+    except _UNREADABLE:
         return None
     stored = entry.get("hash") if isinstance(entry, dict) else None
     return stored if isinstance(stored, str) else None
+
+
+def _writable(value: Any) -> Any:
+    """*value* with every string in it made writable (see ``redact.writable``)."""
+    if isinstance(value, str):
+        return writable(value)
+    if isinstance(value, dict):
+        return {_writable(key): _writable(item) for key, item in value.items()}
+    if isinstance(value, list | tuple):
+        return [_writable(item) for item in value]
+    return value
 
 
 def _link_after(line: bytes) -> str:
@@ -360,7 +379,13 @@ class AuditLog:
                     entry["prev"], unfinished = marker[2], False
                 else:
                     entry["prev"], unfinished = self._link(files)
-                entry["hash"] = entry_hash(entry)
+                try:
+                    entry["hash"] = entry_hash(entry)
+                except UnicodeEncodeError:
+                    # Half a surrogate pair in a field of the call: the
+                    # entry is kept, with the half written as its escape.
+                    entry = _writable(entry)
+                    entry["hash"] = entry_hash(entry)
                 line = json.dumps(entry, sort_keys=True, ensure_ascii=False)
                 with target.open("ab") as handle:
                     # After a line cut short by a crash, start a new one.
@@ -381,10 +406,11 @@ class AuditLog:
         for path in files if last_files is None else files[-last_files:]:
             with path.open("rb") as handle:
                 for line in handle:
-                    with contextlib.suppress(json.JSONDecodeError, UnicodeDecodeError):
+                    entry = None
+                    with contextlib.suppress(*_UNREADABLE):
                         entry = json.loads(line)
-                        if isinstance(entry, dict):
-                            yield entry
+                    if isinstance(entry, dict):
+                        yield entry
 
     def verify(self) -> Verification:
         """Recompute the chain over every file and report what does not fit."""
@@ -417,15 +443,15 @@ class AuditLog:
             )
         return Verification(count, tuple(problems))
 
-    def earlier(self, session: str) -> list[PastCall]:
-        """Earlier calls of *session* that were proposed and not denied.
+    def session_entries(self, session: str) -> list[dict[str, Any]]:
+        """Entries of *session* in the newest log files, oldest first.
 
-        A call counts as denied only when the gate blocked it (``deny`` in
-        ``enforce`` mode).  v0 does not know whether a call succeeded.
+        Only lines that mention the session are decoded: the cost of the
+        rest of the log is one substring test per line.
         """
-        calls: list[PastCall] = []
-        # Only lines that mention the session are decoded: the cost of the
-        # rest of the log is one substring test per line.
+        found: list[dict[str, Any]] = []
+        # The id as an entry holds it (capped, and writable).
+        session = session_key(session)
         marker = json.dumps(session, ensure_ascii=False).encode("utf-8")
         needle = b'"session": ' + marker
         for path in self.files()[-_HISTORY_FILES:]:
@@ -433,12 +459,30 @@ class AuditLog:
                 for line in handle:
                     if needle not in line:
                         continue
-                    with contextlib.suppress(KeyError, TypeError, ValueError):
+                    with contextlib.suppress(*_UNREADABLE):
                         entry = json.loads(line)
-                        if entry["session"] != session or "call" not in entry:
-                            continue
-                        if (entry["mode"], entry["decision"]) == ("enforce", "deny"):
-                            continue
-                        when = datetime.fromisoformat(entry["ts"]).timestamp()
-                        calls.append(PastCall(when, restore(entry)))
-        return calls
+                        if isinstance(entry, dict) and entry.get("session") == session:
+                            found.append(entry)
+        return found
+
+    def earlier(self, session: str) -> list[PastCall]:
+        """Earlier calls of *session* that were proposed and not denied.
+
+        A call counts as denied only when the gate blocked it (``deny`` in
+        ``enforce`` mode).  v0 does not know whether a call succeeded.
+        """
+        return past_calls(self.session_entries(session))
+
+
+def past_calls(entries: Iterable[Mapping[str, Any]]) -> list[PastCall]:
+    """The calls among audit *entries* that were proposed and not denied."""
+    calls: list[PastCall] = []
+    for entry in entries:
+        with contextlib.suppress(*_MISSHAPEN):
+            if "call" not in entry:
+                continue
+            if (entry["mode"], entry["decision"]) == ("enforce", "deny"):
+                continue
+            when = datetime.fromisoformat(entry["ts"]).timestamp()
+            calls.append(PastCall(when, restore(entry)))
+    return calls

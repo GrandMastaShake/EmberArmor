@@ -10,7 +10,9 @@ A project ledger travels with a repository, so nothing in it is trusted as
 written.  Whether one of its rules is confirmed is recorded on this machine
 (``project-confirmed.json`` in the Ember home, by rule id and content hash),
 never in the repository, and a rule nobody here confirmed is not allowed to
-run a regular expression.
+run a regular expression.  When the file cannot be loaded, the reason can
+quote it, so the failure also carries fixed words for the places where an
+agent reads what the gate prints (see :class:`LoadFailure`).
 """
 
 from __future__ import annotations
@@ -53,6 +55,40 @@ if TYPE_CHECKING:
 
 LEDGER_NAME = "ledger.json"
 CONFIRMED_NAME = "project-confirmed.json"
+#: What the hook prints when a project ledger could not be loaded.  Neither
+#: the reason nor the path is in it: both hold what a repository wrote (a
+#: rule id, a field name, the name of a directory).
+PROJECT_LEDGER_FAILED = (
+    "the project ledger of this directory could not be loaded "
+    "(ember-gate rules list, run in that directory, says why)"
+)
+
+
+class LoadFailure(str):
+    """Why one source of rules could not be loaded.
+
+    The string is the reason in full.  ``said`` is what the gate may print
+    where an agent reads it: the same words for the owner's own files, and
+    fixed words for a project ledger, whose reason can quote the file (a
+    rule id, a field name, an effect).
+    """
+
+    said: str
+
+    def __new__(cls, reason: str, said: str | None = None) -> LoadFailure:
+        """A failure with its full *reason* and, if it differs, what is said."""
+        failure = super().__new__(cls, reason)
+        failure.said = reason if said is None else said
+        return failure
+
+
+class _ProjectLedgerError(LedgerError):
+    """A project ledger could not be loaded; the message can quote the file."""
+
+
+def sayable(problems: Iterable[str]) -> list[str]:
+    """Each problem in the words the gate may print where an agent reads them."""
+    return [getattr(problem, "said", problem) for problem in problems]
 
 
 def user_ledger_path(env: Mapping[str, str]) -> Path:
@@ -74,6 +110,11 @@ def find_project_ledger(cwd: str) -> Path | None:
         if candidate.is_file():
             return candidate
     return None
+
+
+def _rooted(path: str) -> bool:
+    """True when *path* does not depend on the directory of the process."""
+    return Path(path).is_absolute() or path.startswith(("/", "\\"))
 
 
 def _user_ledgers(user: Path) -> tuple[Path, ...]:
@@ -175,7 +216,15 @@ def _read_confirmed(env: Mapping[str, str]) -> dict[str, dict[str, str]]:
 def _load_project(ledger: Path, env: Mapping[str, str]) -> list[Rule]:
     """Rules of a project ledger, confirmed only where this machine says so."""
     base = str(ledger.parent.parent)
-    rules = load_file(ledger, origin="project", base=base)
+    try:
+        rules = load_file(ledger, origin="project", base=base)
+    except LedgerError as exc:
+        raise _ProjectLedgerError(str(exc)) from exc
+    except Exception as exc:
+        # Whatever else a file from a repository can make the parser raise
+        # (a rule nested too deep to walk, say) is that file's failure too.
+        reason = f"ledger {ledger} cannot be loaded: {type(exc).__name__}: {exc}"
+        raise _ProjectLedgerError(reason) from exc
     confirmed = _read_confirmed(env).get(_project_key(ledger), {})
     return [
         replace(rule, confirmed=confirmed.get(rule.id) == rule_digest(rule.raw))
@@ -224,7 +273,9 @@ def load_sources(
     -------
     tuple[list[Rule], list[str]]
         The rules as written (expired ones included) and one message per
-        source that failed.
+        source that failed.  For a project ledger the message is a
+        :class:`LoadFailure` that also carries the fixed words the hook
+        prints in place of the reason.
     """
     rules: list[Rule] = []
     problems: list[str] = []
@@ -245,10 +296,22 @@ def load_sources(
         try:
             if origin == "project":
                 rules += _load_project(path, env)
+            elif origin == "override" and not _rooted(str(override)):
+                raise LedgerError(
+                    f"EMBER_LEDGER must name an absolute path, not {override!r}: a "
+                    "relative one would be looked for in whatever directory a "
+                    "call is made in"
+                )
             else:
                 rules += load_file(path, origin=origin, missing_ok=origin == "user")
+        except _ProjectLedgerError as exc:
+            problems.append(LoadFailure(str(exc), PROJECT_LEDGER_FAILED))
         except LedgerError as exc:
             problems.append(str(exc))
+        except Exception as exc:
+            # One source that fails in a way nobody foresaw is still one
+            # source: the rules of the others are loaded and judged.
+            problems.append(f"ledger {path}: {type(exc).__name__}: {exc}")
     return rules, problems
 
 

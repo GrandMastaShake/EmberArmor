@@ -2,11 +2,15 @@
 
 :func:`check` ties the pieces together and owns the failure behaviour.  If
 the gate itself fails, then in ``enforce`` mode the decision is ``ask`` with
-the error as the reason, and in ``observe`` mode the call proceeds and the
-error is recorded.  A failure is never silent approval in ``enforce`` mode
-and never a hard block.  A ledger that cannot be loaded is such a failure,
-and it only ever adds an ``ask``: the rules of the other ledgers are still
-evaluated and a ``deny`` among them stands.
+the error as the reason, and in ``observe`` and ``remind`` mode the call
+proceeds and the error is recorded.  A failure is never silent approval in
+``enforce`` mode and never a hard block.  A ledger that cannot be loaded is
+such a failure, and it only ever adds an ``ask``: the rules of the other
+ledgers are still evaluated and a ``deny`` among them stands.
+
+In ``remind`` mode, and in ``enforce`` mode when the decision does not
+block, the rules that fired are told to the agent as a reminder (see
+:mod:`ember_armor.ledger.remind`, which is loaded only then).
 """
 
 from __future__ import annotations
@@ -16,34 +20,52 @@ from collections.abc import Mapping
 from dataclasses import asdict, dataclass, replace
 from datetime import date, datetime
 
-from ember_armor.ledger.audit import AuditLog, summarise
+from ember_armor.ledger.audit import AuditLog, past_calls, summarise
 from ember_armor.ledger.config import (
     ConfigError,
     ember_home,
     gate_mode,
+    remind_interval,
     rule_exceptions,
     shell_tools,
 )
-from ember_armor.ledger.engine import History, RepoFinder, evaluate
+from ember_armor.ledger.engine import History, PastCall, RepoFinder, evaluate
 from ember_armor.ledger.facts import Facts, ShellTool, extract, shell_tools_from
-from ember_armor.ledger.model import SEVERITY, Decision
-from ember_armor.ledger.redact import MAX_TEXT
-from ember_armor.ledger.store import active_rules, load_sources
+from ember_armor.ledger.model import SEVERITY, Decision, FiredRule
+from ember_armor.ledger.redact import MAX_TEXT, session_key
+from ember_armor.ledger.store import LoadFailure, active_rules, load_sources, sayable
 
 TYPE_CHECKING = False
 if TYPE_CHECKING:
     from typing import Any
 
     from ember_armor.ledger.exceptions import RuleException
+    from ember_armor.ledger.remind import Reminder
+
+#: How a fired rule reaches the agent, or why only the log has it.
+REMINDED = "reminded"
+IN_DECISION = "quoted in the decision"
+LOGGED_OBSERVE = "logged only: observe mode"
+LOGGED_UNCONFIRMED = "logged only: not confirmed"
+LOGGED_RECENT = "logged only: reminded inside the interval"
+LOGGED_LEFT_OUT = "logged only: the reminder was full"
+LOGGED_FAILURE = "logged only: the gate failed"
 
 
 @dataclass(frozen=True)
 class GateResult:
-    """Decision for one call, the mode it was made in, and the facts used."""
+    """Decision for one call, the mode it was made in, and the facts used.
+
+    ``reminder`` is set when the rules that fired are told to the agent as
+    a reminder instead of a decision (``remind`` mode, or ``enforce`` mode
+    with a decision that does not block).  Its text is empty when nothing
+    is sent.
+    """
 
     decision: Decision
     mode: str
     facts: Facts | None = None
+    reminder: Reminder | None = None
 
     @property
     def blocking(self) -> bool:
@@ -51,21 +73,78 @@ class GateResult:
         severe = SEVERITY[self.decision.effect] >= SEVERITY["ask"]
         return self.mode == "enforce" and severe
 
+    def delivery(self) -> dict[str, str]:
+        """For each rule that fired: how it reaches the agent, or why not.
+
+        Only a rule the owner vouches for is ever quoted, in a reminder or
+        in the reason of a blocking decision.  The rules go by their key: a
+        project rule is ``project:<id>``, so it is not taken for a user
+        rule of the same id.
+        """
+        reminder = self.reminder
+        told: dict[str, str] = {}
+        for rule in self.decision.fired:
+            if self.mode == "observe":
+                told[rule.key] = LOGGED_OBSERVE
+            elif not rule.confirmed:
+                told[rule.key] = LOGGED_UNCONFIRMED
+            elif self.blocking:
+                told[rule.key] = IN_DECISION
+            elif reminder is None:
+                told[rule.key] = LOGGED_FAILURE
+            elif rule.key in reminder.quoted:
+                told[rule.key] = REMINDED
+            elif rule.key in reminder.recent:
+                told[rule.key] = LOGGED_RECENT
+            else:
+                told[rule.key] = LOGGED_LEFT_OUT
+        return told
+
     def report(self) -> dict[str, Any]:
         """The result as JSON data, with the call redacted as in the audit log.
 
-        ``excepted`` is present when an owner's exception dropped a rule.
+        ``reminder`` is the text the hook would print for this call (``None``
+        when it prints no reminder) and ``delivery`` says of each fired rule
+        how it reaches the agent.  ``excepted`` is present when an owner's
+        exception dropped a rule.
         """
         report = {
             "decision": self.decision.effect,
             "mode": self.mode,
-            "rules": [asdict(rule) for rule in self.decision.fired],
+            "rules": [_fired(rule) for rule in self.decision.fired],
             "error": self.decision.error,
             "call": summarise(self.facts) if self.facts else None,
+            "reminder": (self.reminder.text or None) if self.reminder else None,
         }
+        if self.decision.fired:
+            report["delivery"] = self.delivery()
         if self.decision.excepted:
             report["excepted"] = _excepted(self.decision)
         return report
+
+
+class _SessionLog:
+    """The audit entries of the call's session, read at most once per call.
+
+    The history predicates and the limit on reminders both look at them.
+    (A plain class: every call loads this module.)
+    """
+
+    __slots__ = ("entries", "log")
+
+    def __init__(self, log: AuditLog) -> None:
+        self.log = log
+        self.entries: list[dict[str, Any]] | None = None
+
+    def read(self, session: str) -> list[dict[str, Any]]:
+        """The entries of *session*, from the log the first time."""
+        if self.entries is None:
+            self.entries = self.log.session_entries(session)
+        return self.entries
+
+    def earlier(self, session: str) -> list[PastCall]:
+        """Earlier calls of *session* that were proposed and not denied."""
+        return past_calls(self.read(session))
 
 
 def audit_log(env: Mapping[str, str]) -> AuditLog:
@@ -107,20 +186,55 @@ def _excepted(decision: Decision) -> list[dict[str, str]]:
     ]
 
 
-def _failure(mode: str, error: str, earlier: Decision | None = None) -> Decision:
+def _fired(rule: FiredRule) -> dict[str, str]:
+    """A fired rule as it is reported: without the ``confirmed`` flag."""
+    return {key: value for key, value in asdict(rule).items() if key != "confirmed"}
+
+
+def _failure(
+    mode: str,
+    error: str,
+    earlier: Decision | None = None,
+    said: str | None = None,
+) -> Decision:
+    """The decision after a failure of the gate.
+
+    *said* is the failure as it may be printed where an agent reads it,
+    when that is not *error* itself.
+    """
+    said = None if said == error else said
     if earlier is None:
-        return Decision(effect="ask" if mode == "enforce" else "none", error=error)
+        effect = "ask" if mode == "enforce" else "none"
+        return Decision(effect=effect, error=error, said=said)
     if mode != "enforce" or SEVERITY[earlier.effect] >= SEVERITY["ask"]:
-        return replace(earlier, error=error)
-    return replace(earlier, effect="ask", error=error)
+        return replace(earlier, error=error, said=said)
+    return replace(earlier, effect="ask", error=error, said=said)
+
+
+def _and(mode: str, decision: Decision, error: str) -> Decision:
+    """*decision* with one more failure added to what it already carries."""
+    full = f"{decision.error}; {error}" if decision.error else error
+    said = f"{decision.said}; {error}" if decision.said else None
+    return _failure(mode, full, decision, said)
+
+
+def _reminds(mode: str, decision: Decision) -> bool:
+    """True when fired rules reach the agent as a reminder, not as a decision."""
+    if mode == "remind":
+        return True
+    return mode == "enforce" and SEVERITY[decision.effect] < SEVERITY["ask"]
 
 
 def _record(
-    call: Any, facts: Facts | None, decision: Decision, mode: str
+    call: Any,
+    facts: Facts | None,
+    decision: Decision,
+    mode: str,
+    reminder: Reminder | None = None,
 ) -> dict[str, Any]:
     source = call if isinstance(call, Mapping) else {}
     record: dict[str, Any] = {
-        "session": str(source.get("session_id") or "")[:MAX_TEXT],
+        "session": session_key(source.get("session_id")),
         "tool": str(source.get("tool_name") or "")[:MAX_TEXT],
         "cwd": (facts.cwd if facts else str(source.get("cwd") or ""))[: 4 * MAX_TEXT],
         "decision": decision.effect,
@@ -131,6 +245,10 @@ def _record(
         record["call"] = summarise(facts)
     if decision.excepted:
         record["excepted"] = _excepted(decision)
+    if reminder is not None:
+        # What the reminder quoted, by rule key: nothing when no confirmed
+        # rule was due.
+        record["reminded"] = list(reminder.quoted)
     if decision.error:
         record["error"] = decision.error[:500]
     return record
@@ -162,8 +280,10 @@ def check(
         Path flavour; defaults to the running platform.
     history:
         Earlier calls for the history predicates.  Defaults to the audit log.
+        The limit on reminders is always judged from the audit log.
     record:
-        Append the evaluation to the audit log.  ``False`` gives a dry run.
+        Append the evaluation to the audit log.  ``False`` gives a dry run:
+        the result then holds the reminder that would be sent.
     now:
         Time of the evaluation; defaults to the current time.
     problem:
@@ -193,6 +313,8 @@ def check(
         mode = "enforce"
         problems.append(str(exc))
     log = audit_log(env)
+    past = _SessionLog(log)
+    reminder: Reminder | None = None
     try:
         if problem:
             raise ValueError(problem)
@@ -205,22 +327,48 @@ def check(
         decision = evaluate(
             active_rules(rules, moment.date()),
             facts,
-            log if history is None else history,
+            past if history is None else history,
             now=moment.timestamp(),
             exceptions=configured_exceptions(env, moment.date()),
             repo_root=repo_root,
         )
-        # A repository lookup that failed is a gate failure like the others.
-        failed = [decision.error] if decision.error else []
+        # A repository lookup that failed, or a rule that could not be
+        # judged, is a gate failure like the others.
+        failed: list[str] = []
+        if decision.error:
+            failed.append(LoadFailure(decision.error, decision.said))
         problems = list(dict.fromkeys(problems + unloaded + failed))
         if problems:
             # What did load was evaluated; the failure can only add an ask.
-            decision = _failure(mode, "; ".join(problems), decision)
+            said = "; ".join(sayable(problems))
+            decision = _failure(mode, "; ".join(problems), decision, said)
     except Exception as exc:
-        decision = _failure(mode, f"{type(exc).__name__}: {exc}")
+        # What was already known to be wrong (the configuration) is kept.
+        problems.append(f"{type(exc).__name__}: {exc}")
+        decision = _failure(mode, "; ".join(dict.fromkeys(problems)))
+    if decision.fired and facts is not None and _reminds(mode, decision):
+        session = facts.session
+        try:
+            # Loaded here and nowhere else: a call no rule fires on, and the
+            # whole of observe mode, never pays for it.
+            from ember_armor.ledger.remind import remind
+
+            reminder = remind(
+                decision.fired,
+                session=session,
+                now=moment.timestamp(),
+                interval=lambda: remind_interval(env),
+                entries=lambda: past.read(session),
+            )
+        except Exception as exc:
+            decision = _and(mode, decision, f"reminder: {exc}")
     if record:
         try:
-            log.append(_record(call, facts, decision, mode), moment)
+            log.append(_record(call, facts, decision, mode, reminder), moment)
         except Exception as exc:
-            decision = _failure(mode, f"audit log: {exc}", decision)
-    return GateResult(decision, mode, facts)
+            decision = _and(mode, decision, f"audit log: {exc}")
+            # What the log does not hold is not sent.
+            reminder = None
+    if not _reminds(mode, decision):
+        reminder = None  # a failure made the decision blocking
+    return GateResult(decision, mode, facts, reminder)

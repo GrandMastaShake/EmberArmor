@@ -61,6 +61,8 @@ def probe(module: str) -> dict[str, list[str]]:
         "ember_armor.ledger.gate",
         "ember_armor.ledger.lint",
         "ember_armor.ledger.replay",
+        "ember_armor.ledger.remind",
+        "ember_armor.ledger.announce",
         "ember_armor",
     ],
 )
@@ -95,6 +97,9 @@ LAZY = (
     "ember_armor.ledger.cli",
     "ember_armor.ledger.lint",
     "ember_armor.ledger.replay",
+    "ember_armor.ledger.remind",
+    "ember_armor.ledger.announce",
+    "ember_armor.ledger.repo",
     "ember_armor.ledger.shell.bash",
     "ember_armor.ledger.shell.powershell",
     "ember_armor.ledger.shell.cmd",

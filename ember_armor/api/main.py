@@ -13,7 +13,7 @@ from ember_armor.api.middleware import (
     RequestLoggingMiddleware,
     SecurityHeadersMiddleware,
 )
-from ember_armor.api.routes import anchor, dissonance, health, metrics
+from ember_armor.api.routes import dissonance, health, ledger, metrics
 from ember_armor.core.circuit_breaker import CircuitBreaker
 from ember_armor.core.config import SETTINGS
 from ember_armor.core.consensus import EnsembleConductor
@@ -96,6 +96,6 @@ def create_app() -> FastAPI:
     app.include_router(health.router, tags=["health"])
     app.include_router(metrics.router, prefix="/v1", tags=["metrics"])
     app.include_router(dissonance.router, prefix="/v1", tags=["dissonance"])
-    app.include_router(anchor.router, prefix="/v1", tags=["anchor"])
+    app.include_router(ledger.router, prefix="/v1", tags=["ledger"])
 
     return app

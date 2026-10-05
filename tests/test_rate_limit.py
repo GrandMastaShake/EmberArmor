@@ -72,8 +72,13 @@ def test_exceeds_limit_returns_429() -> None:
 # 3. Limit resets after window
 # ---------------------------------------------------------------------------
 def test_limit_resets_after_window() -> None:
-    """After the window expires, the rate limit should reset."""
-    window = 0.3  # 300 ms window for fast testing.
+    """After the window expires, the rate limit should reset.
+
+    The window is wide enough that three requests fit inside it even on a
+    slow CI runner; with a 0.3 s window the third request could arrive after
+    the first had already aged out, and would then not be blocked.
+    """
+    window = 2.0
     client = _create_test_app(max_requests=2, window_seconds=window)
 
     # Exhaust the limit.
@@ -83,7 +88,7 @@ def test_limit_resets_after_window() -> None:
     assert blocked.status_code == 429
 
     # Wait for the window to pass.
-    time.sleep(window + 0.1)
+    time.sleep(window + 0.25)
 
     # Should be able to request again.
     response = client.get("/test")

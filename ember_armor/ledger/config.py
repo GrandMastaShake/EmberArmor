@@ -1,0 +1,161 @@
+"""Gate configuration: where the ledger lives and which mode the gate runs in.
+
+Everything is read from an environment mapping passed in by the caller, so
+tests never touch the real home directory.  ``EMBER_HOME`` replaces
+``~/.ember``.
+
+``config.json`` in the Ember home may hold ``mode`` (``observe`` or
+``enforce``), ``builtin`` (``false`` switches the built-in pack off),
+``disposable`` (directory patterns the built-in delete rules leave alone, in
+addition to the pack's own list) and ``shell_tools`` (tools whose input
+carries a shell command, see :func:`shell_tools`).  Anything else is an
+error: a misspelt setting must not be read as "not set".
+"""
+
+from __future__ import annotations
+
+import json
+from collections.abc import Mapping
+from pathlib import Path
+
+TYPE_CHECKING = False
+if TYPE_CHECKING:
+    from typing import Any
+
+MODES = ("observe", "enforce")
+SHELLS = ("bash", "powershell", "cmd", "native")
+_SETTINGS = ("mode", "builtin", "disposable", "shell_tools")
+_SHELL_TOOL_KEYS = ("shell", "field", "cwd")
+_FALSE_WORDS = frozenset({"0", "false", "no", "off"})
+
+
+class ConfigError(ValueError):
+    """The gate configuration is unreadable or invalid."""
+
+
+def ember_home(env: Mapping[str, str]) -> Path:
+    """Directory holding the user ledger, configuration and audit log."""
+    override = env.get("EMBER_HOME")
+    return Path(override) if override else Path.home() / ".ember"
+
+
+def _validate(config: Any, path: Path) -> dict[str, Any]:
+    if not isinstance(config, dict):
+        raise ConfigError(f"{path} must contain a JSON object")
+    unknown = sorted(set(config) - set(_SETTINGS))
+    if unknown:
+        raise ConfigError(
+            f"{path}: unknown setting(s) {', '.join(unknown)} "
+            f"(known: {', '.join(_SETTINGS)})"
+        )
+    if "mode" in config and config["mode"] not in MODES:
+        raise ConfigError(
+            f"{path}: unknown gate mode {config['mode']!r} "
+            "(expected observe or enforce)"
+        )
+    if not isinstance(config.get("builtin", True), bool):
+        raise ConfigError(f"{path}: 'builtin' must be true or false")
+    patterns = config.get("disposable", [])
+    if not isinstance(patterns, list) or not all(
+        isinstance(pattern, str) and pattern for pattern in patterns
+    ):
+        raise ConfigError(f"{path}: 'disposable' must be a list of path patterns")
+    _validate_shell_tools(config.get("shell_tools", {}), path)
+    return config
+
+
+def _validate_shell_tools(tools: Any, path: Path) -> None:
+    where = f"{path}: 'shell_tools'"
+    if not isinstance(tools, dict):
+        raise ConfigError(f"{where} must map tool names to objects")
+    for name, entry in tools.items():
+        if not name or not isinstance(entry, dict):
+            raise ConfigError(f"{where}: {name!r} must be an object with a 'shell'")
+        unknown = sorted(set(entry) - set(_SHELL_TOOL_KEYS))
+        if unknown:
+            raise ConfigError(
+                f"{where}: {name!r} has unknown key(s) {', '.join(unknown)} "
+                f"(known: {', '.join(_SHELL_TOOL_KEYS)})"
+            )
+        if entry.get("shell") not in SHELLS:
+            raise ConfigError(
+                f"{where}: {name!r} needs 'shell', one of {', '.join(SHELLS)}"
+            )
+        for key in ("field", "cwd"):
+            if not isinstance(entry.get(key, "x"), str) or entry.get(key) == "":
+                raise ConfigError(f"{where}: {name!r}: '{key}' must be a field name")
+
+
+def read_config(env: Mapping[str, str]) -> dict[str, Any]:
+    """Validated contents of ``config.json`` in the Ember home (``{}`` if absent).
+
+    A UTF-8 byte order mark is accepted, as written by Windows editors.
+
+    Raises
+    ------
+    ConfigError
+        If the file cannot be read or decoded, is not a JSON object, or
+        holds an unknown setting or a value of the wrong type.
+    """
+    path = ember_home(env) / "config.json"
+    try:
+        text = path.read_text(encoding="utf-8-sig")
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError) as exc:
+        raise ConfigError(f"cannot read {path}: {exc}") from exc
+    try:
+        config = json.loads(text)
+    except (ValueError, RecursionError) as exc:
+        raise ConfigError(f"{path} is not valid JSON: {exc}") from exc
+    return _validate(config, path)
+
+
+def gate_mode(env: Mapping[str, str]) -> str:
+    """``observe`` or ``enforce``.
+
+    Taken from ``EMBER_GATE_MODE``, else ``config.json``, else ``observe``.
+
+    Raises
+    ------
+    ConfigError
+        If a mode is configured but is not one of the two known values.
+    """
+    mode = env.get("EMBER_GATE_MODE") or read_config(env).get("mode") or "observe"
+    if mode not in MODES:
+        raise ConfigError(f"unknown gate mode {mode!r} (expected observe or enforce)")
+    return str(mode)
+
+
+def builtin_enabled(env: Mapping[str, str]) -> bool:
+    """False when the built-in pack was disabled by the user.
+
+    ``EMBER_GATE_BUILTIN=0`` or ``"builtin": false`` in ``config.json``.  A
+    project ledger cannot disable it.
+    """
+    flag = env.get("EMBER_GATE_BUILTIN")
+    if flag is not None:
+        return flag.strip().lower() not in _FALSE_WORDS
+    return bool(read_config(env).get("builtin", True))
+
+
+def shell_tools(env: Mapping[str, str]) -> dict[str, dict[str, str]]:
+    """The user's shell-carrying tools (``shell_tools`` in ``config.json``).
+
+    Maps a tool name or glob to ``shell`` (``bash``, ``powershell``, ``cmd``
+    or ``native``: PowerShell on Windows, Bash elsewhere), ``field`` (the
+    input field that holds the command, ``command`` when left out) and
+    optionally ``cwd`` (the input field that names the directory the command
+    starts in).  The command of such a tool is parsed like that of the
+    native shell tools.
+    """
+    return dict(read_config(env).get("shell_tools", {}))
+
+
+def disposable_patterns(env: Mapping[str, str]) -> tuple[str, ...]:
+    """The user's own disposable directories (``disposable`` in ``config.json``).
+
+    Only the user's configuration can name them; a project ledger cannot, so
+    a repository cannot widen what the built-in delete rules let through.
+    """
+    return tuple(read_config(env).get("disposable", ()))

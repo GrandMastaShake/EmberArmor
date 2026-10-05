@@ -10,8 +10,8 @@ from __future__ import annotations
 import json
 import math
 import time
-from collections.abc import Iterable, Mapping
-from dataclasses import dataclass, replace
+from collections.abc import Callable, Iterable, Mapping
+from dataclasses import dataclass, field, replace
 from fnmatch import fnmatchcase
 
 from ember_armor.ledger.facts import Facts
@@ -25,6 +25,7 @@ from ember_armor.ledger.model import (
     CountExceedsPred,
     Decision,
     DynamicShellPred,
+    ExceptedRule,
     ExprPred,
     FiredRule,
     NotPrecededByPred,
@@ -32,9 +33,12 @@ from ember_armor.ledger.model import (
     PathPred,
     Predicate,
     Rule,
+    RuleException,
     TextRegexPred,
+    exceptable,
 )
 from ember_armor.ledger.paths import (
+    UNKNOWN_DIR,
     PathFact,
     is_under,
     matches_glob,
@@ -51,6 +55,12 @@ if TYPE_CHECKING:
 
 TEXT_LIMIT = 20_000
 _MISSING = object()
+#: ``finder(directory)``: root of the nearest enclosing git repository of a
+#: normalised directory, or ``None``; see :mod:`ember_armor.ledger.repo`.
+RepoFinder = Callable[[str], str | None]
+#: What a relative directory of an exception resolves against: nowhere.
+_NO_BASE = "/\x00"
+_ERROR_CHARS = 300
 
 #: Options that take a value and may stand before a program's subcommand.
 _GLOBAL_VALUE_FLAGS: dict[str, frozenset[str]] = {
@@ -138,11 +148,67 @@ class _Session:
         return self.calls
 
 
+@dataclass(eq=False, repr=False)
+class _Roots:
+    """Nearest enclosing repositories, looked up at most once per directory.
+
+    Nothing is looked up, and the lookup module is not even loaded, until a
+    rule or an exception with ``repo_root`` has to be judged.  A lookup that
+    fails is recorded and answered as unknown.
+    """
+
+    find: RepoFinder | None
+    windows: bool
+    found: dict[str, str | None] = field(default_factory=dict)
+    errors: list[str] = field(default_factory=list)
+
+    def root(self, directory: str) -> str | None:
+        """Repository root of *directory*; ``UNKNOWN_DIR`` when not known."""
+        if directory == UNKNOWN_DIR or "$" in directory:
+            return UNKNOWN_DIR
+        if directory not in self.found:
+            if self.find is None:
+                from ember_armor.ledger.repo import finder
+
+                self.find = finder(self.windows)
+            try:
+                self.found[directory] = self.find(directory)
+            except OSError as exc:
+                problem = f"repository lookup failed for {directory}: {exc}"
+                self.errors.append(problem[:_ERROR_CHARS])
+                self.found[directory] = UNKNOWN_DIR
+        return self.found[directory]
+
+
+@dataclass(frozen=True, eq=False, repr=False)
+class _Area:
+    """Resolved directory scope of a rule or of an exception.
+
+    ``lenient`` is how a directory that cannot be known is judged: inside
+    for the scope of a rule (a ``cd`` the gate cannot read must not lead out
+    of it), outside for an exception (and must not lead into one).
+    """
+
+    under: tuple[str, ...]
+    not_under: tuple[str, ...]
+    roots: tuple[str, ...]
+    lenient: bool
+
+
 @dataclass(frozen=True, eq=False, repr=False)
 class _Context:
-    rule: Rule
+    """What a predicate is evaluated with.
+
+    ``base`` is the directory relative path patterns resolve against
+    (``None``: the working directory of the call) and ``area`` the directory
+    scope of the rule, which its history predicates apply to earlier calls.
+    """
+
+    base: str | None
     past: _Session | None
     now: float
+    roots: _Roots
+    area: _Area | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -194,10 +260,12 @@ def _command_matches(command: SimpleCommand, pred: CommandPred, windows: bool) -
     return True
 
 
-def _resolve(pattern: str, rule: Rule, facts: Facts, *, bare: bool = False) -> str:
+def _resolve(
+    pattern: str, base: str | None, facts: Facts, *, bare: bool = False
+) -> str:
     return resolve_pattern(
         pattern,
-        rule.base or facts.cwd,
+        base or facts.cwd,
         windows=facts.windows,
         home=facts.home,
         variables=facts.variables,
@@ -241,16 +309,16 @@ def _within(path: str, cwd: str, directories: list[str], windows: bool) -> bool:
     return False
 
 
-def _path_holds(pred: PathPred, rule: Rule, facts: Facts) -> bool:
+def _path_holds(pred: PathPred, base: str | None, facts: Facts) -> bool:
     """True when one path of the call satisfies every field of *pred*."""
     if not facts.paths:
         return False
     windows = facts.windows
-    under = [_resolve(d, rule, facts) for d in pred.under]
-    not_under = [_resolve(d, rule, facts) for d in pred.not_under]
-    not_within = [_resolve(d, rule, facts) for d in pred.not_within]
-    globs = [_resolve(g, rule, facts, bare=True) for g in pred.glob]
-    not_globs = [_resolve(g, rule, facts, bare=True) for g in pred.not_glob]
+    under = [_resolve(d, base, facts) for d in pred.under]
+    not_under = [_resolve(d, base, facts) for d in pred.not_under]
+    not_within = [_resolve(d, base, facts) for d in pred.not_within]
+    globs = [_resolve(g, base, facts, bare=True) for g in pred.glob]
+    not_globs = [_resolve(g, base, facts, bare=True) for g in pred.not_glob]
 
     def matches(path: PathFact) -> bool:
         if pred.op != "any" and path.op != pred.op:
@@ -395,22 +463,24 @@ def _past_matches(pred: Predicate, facts: Facts, ctx: _Context) -> list[PastCall
     """Earlier calls of the session on which *pred* holds.
 
     A call without a session id has no history: unrelated calls must not
-    vouch for each other.
+    vouch for each other.  A rule with a directory scope sees of an earlier
+    call what it would see of this one: the commands that ran in scope.
     """
     if ctx.past is None or not facts.session:
         return []
     inner = replace(ctx, past=None)
 
-    def as_now(past: Facts) -> Facts:
+    def seen(past: Facts) -> Facts | None:
         # Judge the earlier call with the path flavour and home of this one.
-        return replace(
+        now = replace(
             past, windows=facts.windows, home=facts.home, variables=facts.variables
         )
+        return _view(now, ctx.area, ctx.roots)
 
     return [
         past
         for past in ctx.past.earlier(facts.session)
-        if _holds(pred, as_now(past.facts), inner)
+        if (view := seen(past.facts)) is not None and _holds(pred, view, inner)
     ]
 
 
@@ -423,7 +493,7 @@ def _holds(pred: Predicate, facts: Facts, ctx: _Context) -> bool:
             if command.argv
         )
     if isinstance(pred, PathPred):
-        return _path_holds(pred, ctx.rule, facts)
+        return _path_holds(pred, ctx.base, facts)
     if isinstance(pred, ArgPred):
         return _arg_holds(pred, facts)
     if isinstance(pred, ExprPred):
@@ -453,12 +523,184 @@ def _holds(pred: Predicate, facts: Facts, ctx: _Context) -> bool:
     raise TypeError(f"unknown predicate {type(pred).__name__}")
 
 
-def _in_scope(rule: Rule, facts: Facts) -> bool:
-    tools, directories = rule.applies.tools, rule.applies.cwd_under
-    if tools and not any(fnmatchcase(facts.tool, tool) for tool in tools):
+# ---------------------------------------------------------------------------
+# Directory scopes
+# ---------------------------------------------------------------------------
+def _area(
+    under: tuple[str, ...],
+    not_under: tuple[str, ...],
+    roots: tuple[str, ...],
+    base: str | None,
+    facts: Facts,
+    *,
+    lenient: bool,
+) -> _Area | None:
+    """The directory scope with its patterns resolved; ``None`` when empty."""
+    if not (under or not_under or roots):
+        return None
+
+    def resolved(patterns: tuple[str, ...]) -> tuple[str, ...]:
+        return tuple(_resolve(pattern, base, facts) for pattern in patterns)
+
+    return _Area(resolved(under), resolved(not_under), resolved(roots), lenient)
+
+
+def _placed(directory: str, area: _Area, facts: Facts) -> bool:
+    """True when *directory* is under the area's directories and no exception."""
+    if area.under and not _under_any(directory, area.under, facts.windows):
         return False
-    resolved = [_resolve(directory, rule, facts) for directory in directories]
-    return not resolved or _under_any(facts.cwd, resolved, facts.windows)
+    return not _under_any(directory, area.not_under, facts.windows)
+
+
+def _rooted(path: str, area: _Area, facts: Facts, roots: _Roots) -> bool:
+    """True when the nearest repository around *path* is one the area names."""
+    root = roots.root(path)
+    if root == UNKNOWN_DIR:
+        return area.lenient
+    return root is not None and any(
+        matches_glob(root, wanted, windows=facts.windows) for wanted in area.roots
+    )
+
+
+def _inside(
+    directory: str, where: str, area: _Area, facts: Facts, roots: _Roots
+) -> bool:
+    """True when something done in *directory* is in *area*.
+
+    *where* is what ``repo_root`` is asked about: the same directory for a
+    command, the file for a file tool.
+    """
+    if directory == UNKNOWN_DIR:
+        return area.lenient
+    if not _placed(directory, area, facts):
+        return False
+    return not area.roots or _rooted(where, area, facts, roots)
+
+
+def _view(facts: Facts, area: _Area | None, roots: _Roots) -> Facts | None:
+    """The part of a call that lies in *area*; ``None`` when nothing does.
+
+    Of a shell call that is the commands that run in the area and the paths
+    they touch.  A call without commands is judged as a whole on its working
+    directory, and ``repo_root`` on each path it touches.
+    """
+    if area is None:
+        return facts
+    paths: tuple[PathFact, ...]
+    if facts.commands:
+        verdicts: dict[str, bool] = {}
+
+        def inside(cwd: str) -> bool:
+            if cwd not in verdicts:
+                here = cwd or facts.cwd
+                verdicts[cwd] = _inside(here, here, area, facts, roots)
+            return verdicts[cwd]
+
+        commands = tuple(c for c in facts.commands if inside(c.cwd))
+        paths = tuple(path for path in facts.paths if inside(path.cwd))
+        if not commands and not paths:
+            return None
+        if len(commands) == len(facts.commands) and len(paths) == len(facts.paths):
+            return facts
+        return replace(facts, commands=commands, paths=paths)
+    if not _placed(facts.cwd, area, facts):
+        return None
+    if not area.roots:
+        return facts
+    if not facts.paths:
+        return facts if _rooted(facts.cwd, area, facts, roots) else None
+    paths = tuple(p for p in facts.paths if _rooted(p.path, area, facts, roots))
+    if len(paths) == len(facts.paths):
+        return facts
+    return replace(facts, paths=paths) if paths else None
+
+
+# ---------------------------------------------------------------------------
+# Owner exceptions
+# ---------------------------------------------------------------------------
+def _excepted(
+    rule: Rule,
+    facts: Facts,
+    view: Facts,
+    exceptions: tuple[RuleException, ...],
+    ctx: _Context,
+) -> tuple[str, ...]:
+    """Reasons of the owner's exceptions that drop *rule* for this call.
+
+    An exception takes the commands it covers out of what the rule sees (for
+    a file tool: the paths it covers).  The rule is dropped when it does not
+    fire on what is left, and always when nothing is left.  So a rule that
+    fired on something no single command owns (``dynamic_shell``, a variable
+    that is set, a structured argument) is dropped only when every command
+    the rule sees is covered.  Empty when the rule stands.
+    """
+    if not exceptable(rule.id):
+        return ()
+    zones = [
+        (
+            _area(e.cwd_under, (), e.repo_root, _NO_BASE, facts, lenient=False),
+            e,
+        )
+        for e in exceptions
+        if fnmatchcase(rule.id, e.rule)
+        and (not e.tools or any(fnmatchcase(facts.tool, tool) for tool in e.tools))
+    ]
+    if not zones:
+        return ()
+    inner = replace(ctx, base=None, area=None)
+    used: dict[str, None] = {}
+
+    def covered(directory: str, where: str, alone: Callable[[], Facts]) -> bool:
+        for zone, exception in zones:
+            if zone is not None and not _inside(
+                directory, where, zone, facts, ctx.roots
+            ):
+                continue
+            when = exception.when
+            if when is None or _holds(when, alone(), inner):
+                used[exception.reason] = None
+                return True
+        return False
+
+    commands: tuple[SimpleCommand, ...] = ()
+    paths: tuple[PathFact, ...] = ()
+    if facts.commands:
+        visible = {id(command) for command in view.commands}
+        gone = set()
+        for index, command in enumerate(facts.commands):
+            here = command.cwd or facts.cwd
+
+            def alone(index: int = index, command: SimpleCommand = command) -> Facts:
+                own = tuple(path for path in facts.paths if path.source == index)
+                return replace(facts, commands=(command,), paths=own)
+
+            if id(command) in visible and covered(here, here, alone):
+                gone.add(index)
+        if not gone:
+            return ()
+        commands = tuple(
+            command
+            for index, command in enumerate(facts.commands)
+            if id(command) in visible and index not in gone
+        )
+        paths = tuple(path for path in view.paths if path.source not in gone)
+    elif view.paths:
+
+        def only(path: PathFact) -> Callable[[], Facts]:
+            return lambda: replace(facts, paths=(path,))
+
+        paths = tuple(
+            path for path in view.paths if not covered(facts.cwd, path.path, only(path))
+        )
+        if len(paths) == len(view.paths):
+            return ()
+    elif not covered(facts.cwd, facts.cwd, lambda: facts):
+        return ()
+    if commands or paths:
+        rest = replace(facts, commands=commands, paths=paths)
+        if _holds(rule.predicate, rest, ctx) != rule.obligation:
+            return ()  # it still fires on what no exception covers
+    return tuple(used)
 
 
 def evaluate(
@@ -467,6 +709,8 @@ def evaluate(
     history: History | None = None,
     *,
     now: float | None = None,
+    exceptions: Iterable[RuleException] = (),
+    repo_root: RepoFinder | None = None,
 ) -> Decision:
     """Decide what the ledger says about one call.
 
@@ -482,25 +726,60 @@ def evaluate(
         ``count_exceeds``.  ``None`` means no earlier calls.
     now:
         Current time in epoch seconds (for ``within_seconds``).
+    exceptions:
+        The owner's exceptions in force (``exceptions`` in ``config.json``).
+    repo_root:
+        ``repo_root(directory)`` giving the root of the nearest enclosing
+        git repository of a normalised directory, ``None`` when there is
+        none; it may raise :class:`OSError`.  Defaults to a lookup on the
+        filesystem (:mod:`ember_armor.ledger.repo`), which runs only when a
+        rule or an exception with ``repo_root`` has to be judged.
 
     Returns
     -------
     Decision
         ``none`` when no rule fired, otherwise the most restrictive effect
-        with every rule that fired, strongest first.
+        with every rule that fired, strongest first.  ``excepted`` names the
+        rules an exception dropped.  ``error`` is set when a repository
+        lookup failed; the scope it was needed for then counts as holding
+        for a rule and as not holding for an exception.
     """
     moment = time.time() if now is None else now
     past = None if history is None else _Session(history)
+    roots = _Roots(repo_root, facts.windows)
+    exceptions = tuple(exceptions)
     fired: list[FiredRule] = []
+    excepted: list[ExceptedRule] = []
     for rule in rules:
-        if not _in_scope(rule, facts):
+        applies = rule.applies
+        if applies.tools and not any(
+            fnmatchcase(facts.tool, tool) for tool in applies.tools
+        ):
             continue
-        holds = _holds(rule.predicate, facts, _Context(rule, past, moment))
-        if holds != rule.obligation:
-            fired.append(
-                FiredRule(rule.id, rule.text, rule.source, rule.effect, rule.origin)
+        area = None
+        if applies.directories:
+            area = _area(
+                applies.cwd_under,
+                applies.cwd_not_under,
+                applies.repo_root,
+                rule.base,
+                facts,
+                lenient=True,
             )
-    if not fired:
-        return Decision()
+        view = _view(facts, area, roots)
+        if view is None:
+            continue
+        ctx = _Context(rule.base, past, moment, roots, area)
+        if _holds(rule.predicate, view, ctx) == rule.obligation:
+            continue
+        reasons = _excepted(rule, facts, view, exceptions, ctx) if exceptions else ()
+        if reasons:
+            excepted += [ExceptedRule(rule.id, reason) for reason in reasons]
+            continue
+        fired.append(
+            FiredRule(rule.id, rule.text, rule.source, rule.effect, rule.origin)
+        )
+    error = "; ".join(dict.fromkeys(roots.errors)) or None
     fired.sort(key=lambda rule: -SEVERITY[rule.effect])
-    return Decision(effect=fired[0].effect, fired=tuple(fired))
+    effect = fired[0].effect if fired else "none"
+    return Decision(effect, tuple(fired), error, tuple(excepted))

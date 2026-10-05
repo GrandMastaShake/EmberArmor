@@ -14,7 +14,6 @@ import os
 import sys
 from collections import Counter
 from collections.abc import Sequence
-from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -131,7 +130,12 @@ def _rule_from_args(args: argparse.Namespace) -> dict[str, Any]:
         key: json.loads(args.when if args.when is not None else args.require),
     }
     parse_predicate(rule[key], key)
-    applies = {"tools": args.tools, "cwd_under": args.cwd_under}
+    applies = {
+        "tools": args.tools,
+        "cwd_under": args.cwd_under,
+        "cwd_not_under": args.cwd_not_under,
+        "repo_root": args.repo_root,
+    }
     if any(applies.values()):
         rule["applies"] = {k: v for k, v in applies.items() if v}
     if args.expires:
@@ -171,7 +175,7 @@ def _cmd_rules_remove(args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------------------
 def _cmd_lint(args: argparse.Namespace) -> int:
     """Check the ledger itself: 0 when clean, 1 with findings, 3 without Z3."""
-    from ember_armor.ledger.lint import SolverUnavailableError, lint
+    from ember_armor.ledger.lint import SolverUnavailableError, finding_data, lint
 
     rules = store.load_all(args.cwd or os.getcwd(), os.environ)
     try:
@@ -180,7 +184,9 @@ def _cmd_lint(args: argparse.Namespace) -> int:
         print(f"ember-gate: {exc}", file=sys.stderr)
         return EXIT_NO_SOLVER
     if args.json:
-        _print_json({"rules": len(rules), "findings": [asdict(f) for f in findings]})
+        _print_json(
+            {"rules": len(rules), "findings": [finding_data(f) for f in findings]}
+        )
     else:
         for finding in findings:
             print(f"{finding.kind}: {finding.message}")
@@ -334,6 +340,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_add.add_argument("--require", help="predicate JSON; the rule fires when false")
     p_add.add_argument("--tools", nargs="+", help="tool names or globs")
     p_add.add_argument("--cwd-under", nargs="+", help="directories the rule covers")
+    p_add.add_argument(
+        "--cwd-not-under", nargs="+", help="directories the rule leaves out"
+    )
+    p_add.add_argument(
+        "--repo-root",
+        nargs="+",
+        help="repositories the rule covers, by their top-level directory",
+    )
     p_add.add_argument("--expires", help="ISO date after which the rule is ignored")
     _add_ledger_options(p_add)
     p_add.set_defaults(func=_cmd_rules_add)

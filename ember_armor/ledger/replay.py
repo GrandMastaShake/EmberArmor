@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from ember_armor.ledger.audit import restore, summarise
-from ember_armor.ledger.engine import MemoryHistory, evaluate
+from ember_armor.ledger.engine import MemoryHistory, RepoFinder, evaluate
 from ember_armor.ledger.facts import extract
 from ember_armor.ledger.gate import configured_shell_tools
 from ember_armor.ledger.model import Rule
@@ -177,6 +177,7 @@ def replay(
     env: Mapping[str, str] | None = None,
     windows: bool | None = None,
     examples: int = 3,
+    repo_root: RepoFinder | None = None,
 ) -> ReplayReport:
     """Evaluate every recorded tool call and return the aggregates.
 
@@ -191,6 +192,10 @@ def replay(
         Path flavour; defaults to the running platform.
     examples:
         Most example calls kept per rule.
+    repo_root:
+        Lookup of the nearest enclosing git repository of a directory, for
+        ``repo_root`` scopes.  Defaults to the filesystem as it is today,
+        which may differ from what it was when the call was recorded.
 
     Raises
     ------
@@ -220,7 +225,9 @@ def replay(
             report.tools[call["tool_name"]] += 1
             try:
                 facts = extract(call, windows=windows, env=env, shell_tools=carriers)
-                decision = evaluate(rules_by_cwd[cwd], facts, history, now=when)
+                decision = evaluate(
+                    rules_by_cwd[cwd], facts, history, now=when, repo_root=repo_root
+                )
                 summary = summarise(facts)
             except Exception:  # one bad call must not end the replay
                 report.errors += 1

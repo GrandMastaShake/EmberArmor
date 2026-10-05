@@ -8,16 +8,17 @@ endpoints require authentication via ``Depends(get_current_auth)``.
 The server reads the ledger file named by the ``EMBER_LEDGER_PATH`` setting,
 or else the user ledger.  It never looks for a project ledger: the working
 directory of a call comes from the request, and no file path is taken from
-a request.  A check over HTTP is a dry run: it is not written to the audit
-log.  When the ledger cannot be loaded, the response says so in fixed words
-and the details go to the server log.
+a request.  For the same reason no repository is looked up for a directory
+a request names: a ``repo_root`` scope then counts as holding, and a
+``repo_root`` exception as not holding.  A check over HTTP is a dry run: it
+is not written to the audit log.  When the ledger cannot be loaded, the
+response says so in fixed words and the details go to the server log.
 """
 
 from __future__ import annotations
 
 import os
 import threading
-from dataclasses import asdict
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -26,7 +27,8 @@ from ember_armor.api.auth import get_current_auth
 from ember_armor.core.config import SETTINGS
 from ember_armor.ledger import LedgerError, Rule, check, load_all
 from ember_armor.ledger.gate import configured_shell_tools
-from ember_armor.ledger.lint import SolverUnavailableError, lint
+from ember_armor.ledger.lint import SolverUnavailableError, finding_data, lint
+from ember_armor.ledger.paths import UNKNOWN_DIR
 from ember_armor.models.requests import LedgerCheckRequest
 from ember_armor.utils.logging import logger
 
@@ -46,6 +48,11 @@ def _ledger_env() -> dict[str, str]:
     if SETTINGS.ledger_path:
         env["EMBER_LEDGER"] = SETTINGS.ledger_path
     return env
+
+
+def _no_lookup(directory: str) -> str | None:
+    """Stand-in for the repository lookup: the server's disk is not asked."""
+    return UNKNOWN_DIR
 
 
 def _load() -> list[Rule]:
@@ -70,7 +77,7 @@ def check_call(
     ----------
     body:
         The call in Claude Code PreToolUse shape.  Its ``cwd`` is only data
-        for path resolution and ``cwd_under`` scopes.
+        for path resolution and directory scopes.
     auth:
         Validated API-key string (injected by ``get_current_auth``).
 
@@ -81,7 +88,13 @@ def check_call(
         ``mode``, the ``rules`` that fired with their text and source, a
         fixed ``error`` message if the gate failed, and the redacted ``call``.
     """
-    result = check(body.model_dump(), env=_ledger_env(), record=False, project=False)
+    result = check(
+        body.model_dump(),
+        env=_ledger_env(),
+        record=False,
+        project=False,
+        repo_root=_no_lookup,
+    )
     report = result.report()
     if result.decision.error:
         logger.error("ledger.gate_failed", error=result.decision.error)
@@ -135,4 +148,4 @@ def lint_ledger(auth: str = Depends(get_current_auth)) -> dict[str, Any]:
         raise HTTPException(
             status_code=status.HTTP_501_NOT_IMPLEMENTED, detail=str(exc)
         ) from exc
-    return {"rules": len(rules), "findings": [asdict(f) for f in findings]}
+    return {"rules": len(rules), "findings": [finding_data(f) for f in findings]}

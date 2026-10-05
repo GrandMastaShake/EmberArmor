@@ -14,6 +14,7 @@ import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
+from fnmatch import fnmatchcase
 
 from ember_armor.ledger.shell.core import DYNAMIC_KINDS
 
@@ -29,6 +30,17 @@ ARG_OPS = ("<", "<=", ">", ">=", "==", "!=", "in", "matches")
 EXPR_OPS = ("<", "<=", ">", ">=", "==", "!=")
 SHELLS = ("bash", "powershell", "any")
 BUILTIN_PREFIX = "builtin."
+#: Rules no exception can drop: the deny rules of the built-in pack and the
+#: rules that guard the gate itself (also any later ``builtin.gate.`` rule).
+UNEXCEPTABLE = (
+    "builtin.delete.protected",
+    "builtin.delete.git-dir",
+    "builtin.gate.files",
+    "builtin.gate.rules",
+    "builtin.gate.environment",
+    "builtin.gate.host-settings",
+)
+GATE_RULES = "builtin.gate."
 #: Longest rule text and source quoted to the agent when a rule fires.
 REASON_CHARS = 400
 
@@ -193,10 +205,26 @@ Predicate = (
 # ---------------------------------------------------------------------------
 @dataclass(frozen=True)
 class Applies:
-    """Scope of a rule.  Empty tuples mean everywhere."""
+    """Scope of a rule.  Empty tuples mean everywhere.
+
+    The three directory scopes are judged for each command of a shell call
+    on the directory in effect when it runs, and the rule then sees only the
+    commands in scope and the paths they touch.  ``cwd_not_under`` holds
+    exceptions to ``cwd_under``.  ``repo_root`` holds when the nearest
+    enclosing git repository of that directory is one of the directories
+    listed.  For any other tool the first two look at the working directory
+    of the call and ``repo_root`` at each path the call touches.
+    """
 
     tools: tuple[str, ...] = ()
     cwd_under: tuple[str, ...] = ()
+    cwd_not_under: tuple[str, ...] = ()
+    repo_root: tuple[str, ...] = ()
+
+    @property
+    def directories(self) -> bool:
+        """True when the scope names a directory in any of the three ways."""
+        return bool(self.cwd_under or self.cwd_not_under or self.repo_root)
 
 
 @dataclass(frozen=True)
@@ -239,12 +267,46 @@ class FiredRule:
 
 
 @dataclass(frozen=True)
+class RuleException:
+    """An exception the owner made to rules (``exceptions`` in ``config.json``).
+
+    ``rule`` is a rule id or a glob over ids.  The exception covers a
+    command when the tool is one of ``tools`` (any tool when empty), the
+    directory the command runs in is under one of ``cwd_under``, its nearest
+    enclosing repository is one of ``repo_root`` and ``when`` holds for that
+    command alone.  At least one of the last three is present.
+    """
+
+    rule: str
+    reason: str
+    cwd_under: tuple[str, ...] = ()
+    repo_root: tuple[str, ...] = ()
+    tools: tuple[str, ...] = ()
+    when: Predicate | None = None
+    expires: date | None = None
+    raw: Mapping[str, Any] = field(default_factory=dict, compare=False, repr=False)
+
+
+@dataclass(frozen=True)
+class ExceptedRule:
+    """A rule that would have fired and was dropped by an owner's exception."""
+
+    rule: str
+    reason: str
+
+
+@dataclass(frozen=True)
 class Decision:
-    """Outcome of evaluating one call: ``none``, ``warn``, ``ask`` or ``deny``."""
+    """Outcome of evaluating one call: ``none``, ``warn``, ``ask`` or ``deny``.
+
+    ``excepted`` lists the rules that an owner's exception dropped for this
+    call, with the reason the owner gave.
+    """
 
     effect: str = "none"
     fired: tuple[FiredRule, ...] = ()
     error: str | None = None
+    excepted: tuple[ExceptedRule, ...] = ()
 
     def reason(self) -> str:
         """Human-readable reason quoting each fired rule's text and source.
@@ -478,12 +540,16 @@ def parse_predicate(obj: Any, where: str, *, history: bool = False) -> Predicate
 # ---------------------------------------------------------------------------
 _RULE_REQUIRED = ("id", "text", "source", "effect")
 _RULE_OPTIONAL = ("applies", "when", "require", "confirmed", "expires")
+_EXCEPTION_REQUIRED = ("rule", "reason")
+_EXCEPTION_OPTIONAL = ("cwd_under", "repo_root", "tools", "when", "expires")
+#: An absolute directory, or one that starts with ``~`` or a variable.
+_ROOTED_RE = re.compile(r"[/\\~$%]|[A-Za-z]:[/\\]")
 
 
 def _parse_applies(obj: Any, where: str) -> Applies:
     if not isinstance(obj, dict):
         raise LedgerError(f"{where}: expected an object")
-    _check_keys(obj, where, (), ("tools", "cwd_under"))
+    _check_keys(obj, where, (), ("tools", "cwd_under", "cwd_not_under", "repo_root"))
     values = {k: _strings(v, f"{where}.{k}") for k, v in obj.items()}
     return Applies(**values)
 
@@ -542,6 +608,66 @@ def parse_rule(
         origin=origin,
         base=base,
         raw=obj,
+    )
+
+
+def exceptable(rule_id: str) -> bool:
+    """False for a rule that no exception can drop (see :data:`UNEXCEPTABLE`)."""
+    return rule_id not in UNEXCEPTABLE and not rule_id.startswith(GATE_RULES)
+
+
+def parse_exception(obj: Any, where: str = "exception") -> RuleException:
+    """Validate one exception object of ``config.json``.
+
+    An exception must say where it holds (``cwd_under``, ``repo_root`` or
+    ``when``) and why (``reason``).  Its directories are absolute, or start
+    with ``~`` or a variable: the working directory of a call never decides
+    where an exception holds.  It cannot name a rule of
+    :data:`UNEXCEPTABLE`, alone or through a glob.
+
+    Raises
+    ------
+    LedgerError
+        If the object is malformed.
+    """
+    if not isinstance(obj, dict):
+        raise LedgerError(f"{where}: expected an exception object")
+    _check_keys(obj, where, _EXCEPTION_REQUIRED, _EXCEPTION_OPTIONAL)
+    glob = _string(obj["rule"], f"{where}.rule")
+    if glob.startswith(GATE_RULES) or any(fnmatchcase(i, glob) for i in UNEXCEPTABLE):
+        raise LedgerError(
+            f"{where}.rule: {glob!r} covers a rule that takes no exception "
+            f"({', '.join(UNEXCEPTABLE[:2])} and every {GATE_RULES}* rule); "
+            "name the rules it is meant for"
+        )
+    lists = {
+        key: _strings(obj[key], f"{where}.{key}")
+        for key in ("cwd_under", "repo_root", "tools")
+        if key in obj
+    }
+    for key in ("cwd_under", "repo_root"):
+        for directory in lists.get(key, ()):
+            if not _ROOTED_RE.match(directory):
+                raise LedgerError(
+                    f"{where}.{key}: {directory!r} is not an absolute directory "
+                    "(it may start with ~ or a variable)"
+                )
+    when = parse_predicate(obj["when"], f"{where}.when") if "when" in obj else None
+    if when is None and not (lists.get("cwd_under") or lists.get("repo_root")):
+        raise LedgerError(
+            f"{where}: needs at least one of cwd_under, repo_root and when; an "
+            "exception that holds everywhere is the rule switched off"
+        )
+    expires = obj.get("expires")
+    if expires is not None:
+        expires = _parse_expires(expires, f"{where}.expires")
+    return RuleException(
+        rule=glob,
+        reason=_string(obj["reason"], f"{where}.reason"),
+        when=when,
+        expires=expires,
+        raw=obj,
+        **lists,
     )
 
 

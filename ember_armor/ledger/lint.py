@@ -10,6 +10,11 @@ symbolically:
 - Tool names, working directories, command predicates and path predicates
   are boolean atoms, with implications added only where they are certain
   (see :mod:`ember_armor.ledger.implies`).
+- A rule with a directory scope sees only the commands that run in scope,
+  so its command and path atoms are its own: they imply the atoms of a rule
+  that sees at least as much, and nothing else.  A repository root is an
+  atom nothing is known about, and so is a scope that combines directories
+  with exceptions or repository roots, beyond what it shares with its parts.
 - ``text_regex`` and the history predicates are atoms nothing is known about.
 
 Every finding is an "unsatisfiable" answer from the solver.  Because the
@@ -30,7 +35,7 @@ import math
 import operator
 import os
 from collections.abc import Hashable, Iterable
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import date
 from fnmatch import fnmatchcase
 from fractions import Fraction
@@ -72,6 +77,9 @@ _COMPARE = {
     "!=": operator.ne,
 }
 _Key = TypeVar("_Key", bound=Hashable)
+#: Directory scope of a rule: ``cwd_under``, ``cwd_not_under``, ``repo_root``
+#: and the base its patterns resolve against.  ``None``: the whole call.
+_View = tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...], str | None] | None
 
 
 class SolverUnavailableError(RuntimeError):
@@ -115,10 +123,33 @@ def _constant_key(value: Any) -> str:
     return json.dumps(value, sort_keys=True, default=str)
 
 
+def finding_data(finding: Finding) -> dict[str, Any]:
+    """A finding as JSON data.
+
+    The scope of a contradiction names its tools and ``cwd_under``, and the
+    newer scope fields only where they are set.
+    """
+    data = asdict(finding)
+    if finding.scope is not None:
+        for key in ("cwd_not_under", "repo_root"):
+            if not data["scope"][key]:
+                del data["scope"][key]
+    return data
+
+
 def _describe(scope: Applies) -> str:
     parts = [f"tool {tool}" for tool in scope.tools]
     parts += [f"working directory under {d}" for d in scope.cwd_under]
+    parts += [f"working directory not under {d}" for d in scope.cwd_not_under]
+    parts += [f"repository root {d}" for d in scope.repo_root]
     return " and ".join(parts) if parts else "everywhere"
+
+
+def _view(applies: Applies, base: str | None) -> _View:
+    """What a rule with this scope sees of a call (``None``: all of it)."""
+    if not applies.directories:
+        return None
+    return (applies.cwd_under, applies.cwd_not_under, applies.repo_root, base)
 
 
 class _Model:
@@ -130,8 +161,10 @@ class _Model:
         self.carriers = tuple(name.lower() for name in (*SHELL_TOOLS, *carriers))
         self.tools: dict[str, Any] = {}
         self.directories: dict[tuple[str, str | None], Any] = {}
-        self.commands: dict[CommandPred, Any] = {}
-        self.paths: dict[tuple[PathPred, str | None], Any] = {}
+        self.roots: dict[tuple[str, str | None], Any] = {}
+        self.areas: dict[_View, Any] = {}
+        self.commands: dict[tuple[CommandPred, _View], Any] = {}
+        self.paths: dict[tuple[PathPred, str | None, _View], Any] = {}
         self.opaque: dict[Hashable, Any] = {}
         self.kinds = {kind: z3.Bool(f"dynamic:{kind}") for kind in DYNAMIC_KINDS}
         self.values: dict[str, tuple[Any, Any, Any]] = {}
@@ -198,13 +231,17 @@ class _Model:
         compared = _COMPARE[pred.op](z3.Sum(terms), self._real(pred.rhs))
         return z3.And(*numeric, compared)
 
-    def predicate(self, pred: Predicate, base: str | None) -> Any:
-        """Solver term for *pred* in a rule whose patterns resolve on *base*."""
+    def predicate(self, pred: Predicate, base: str | None, view: _View = None) -> Any:
+        """Solver term for *pred* in a rule whose patterns resolve on *base*.
+
+        *view* is the directory scope of the rule (see :func:`_view`): what
+        it finds among the commands and paths it sees is an atom of its own.
+        """
         z3 = self.z3
         if isinstance(pred, CommandPred):
-            return self._atom(self.commands, pred, "command")
+            return self._atom(self.commands, (pred, view), "command")
         if isinstance(pred, PathPred):
-            return self._atom(self.paths, (pred, base), "path")
+            return self._atom(self.paths, (pred, base, view), "path")
         if isinstance(pred, ArgPred):
             return self._arg(pred)
         if isinstance(pred, ExprPred):
@@ -212,19 +249,25 @@ class _Model:
         if isinstance(pred, DynamicShellPred):
             return z3.Or([self.kinds[kind] for kind in pred.reason or DYNAMIC_KINDS])
         if isinstance(pred, AllPred):
-            return z3.And([self.predicate(inner, base) for inner in pred.of])
+            return z3.And([self.predicate(inner, base, view) for inner in pred.of])
         if isinstance(pred, AnyPred):
-            return z3.Or([self.predicate(inner, base) for inner in pred.of])
+            return z3.Or([self.predicate(inner, base, view) for inner in pred.of])
         if isinstance(pred, NotPred):
-            return z3.Not(self.predicate(pred.of, base))
+            return z3.Not(self.predicate(pred.of, base, view))
         if isinstance(pred, TextRegexPred):
             return self._atom(self.opaque, repr(pred), "text")
         if isinstance(pred, AssignsPred):
             return self._atom(self.opaque, repr(pred), "assigns")
-        return self._atom(self.opaque, (repr(pred), base), "history")
+        return self._atom(self.opaque, (repr(pred), base, view), "history")
 
     def scope(self, scope: Applies, base: str | None) -> Any:
-        """Term that is true for the calls *scope* covers."""
+        """Term that is true for the calls *scope* covers.
+
+        Directories alone, and repository roots alone, are a choice among
+        their atoms.  Any other combination is one atom of its own that
+        implies a directory and a root of those it names: whether one
+        command meets all of its parts is not something lint can know.
+        """
         z3 = self.z3
         parts = []
         names = [self._atom(self.tools, tool, "tool") for tool in scope.tools]
@@ -234,8 +277,14 @@ class _Model:
             self._atom(self.directories, (directory, base), "cwd")
             for directory in scope.cwd_under
         ]
-        if under:
-            parts.append(z3.Or(under))
+        roots = [
+            self._atom(self.roots, (directory, base), "repo")
+            for directory in scope.repo_root
+        ]
+        if scope.cwd_not_under or (under and roots):
+            parts.append(self._atom(self.areas, _view(scope, base), "area"))
+        elif under or roots:
+            parts.append(z3.Or(under or roots))
         return z3.And(parts)
 
     # -- what is certain about any call --------------------------------------
@@ -285,16 +334,76 @@ class _Model:
             known.append(z3.Implies(numeric, present))
         return known
 
+    def _sees_less(self, narrow: _View, wide: _View) -> bool:
+        """True when a rule with scope *narrow* sees nothing *wide* does not.
+
+        Certain only when every command in *narrow* is in *wide*: under one
+        of its directories, left out by none of its exceptions that *narrow*
+        does not also have, and in one of its repositories.
+        """
+        if wide is None or narrow == wide:
+            return True
+        if narrow is None:
+            return False
+        windows = self.windows
+        under, excluded, roots, base = narrow
+        wide_under, wide_excluded, wide_roots, wide_base = wide
+
+        def inside(
+            inner: tuple[str, str | None], outer: tuple[str, str | None]
+        ) -> bool:
+            return directory_inside(
+                resolved(*inner, windows=windows),
+                resolved(*outer, windows=windows),
+                windows=windows,
+            )
+
+        if wide_under and not (
+            under
+            and all(
+                any(inside((d, base), (w, wide_base)) for w in wide_under)
+                for d in under
+            )
+        ):
+            return False
+        if not all(
+            any(inside((theirs, wide_base), (mine, base)) for mine in excluded)
+            for theirs in wide_excluded
+        ):
+            return False
+        mine = {resolved(d, base, windows=windows) for d in roots}
+        theirs = {resolved(d, wide_base, windows=windows) for d in wide_roots}
+        return not wide_roots or (bool(mine) and None not in mine and mine <= theirs)
+
+    def _area_axioms(self) -> list[Any]:
+        """What a combined directory scope shares with its parts and with others."""
+        z3 = self.z3
+        known = []
+        for view, atom in list(self.areas.items()):
+            if view is None:
+                continue
+            under, _, roots, base = view
+            for table, names in ((self.directories, under), (self.roots, roots)):
+                if names:
+                    parts = [self._atom(table, (name, base), "part") for name in names]
+                    known.append(z3.Implies(atom, z3.Or(parts)))
+        for (narrow, atom), (wide, other) in permutations(self.areas.items(), 2):
+            if self._sees_less(narrow, wide):
+                known.append(z3.Implies(atom, other))
+        return known
+
     def axioms(self) -> list[Any]:
         """Implications that hold for every call (add after all predicates)."""
         z3 = self.z3
         windows = self.windows
-        known = self._tool_axioms() + self._argument_axioms()
-        for (command, atom), (wider, other) in permutations(self.commands.items(), 2):
-            if command_implies(command, wider):
+        known = self._area_axioms() + self._tool_axioms() + self._argument_axioms()
+        for (a, atom), (b, other) in permutations(self.commands.items(), 2):
+            same = a[0] == b[0] or command_implies(a[0], b[0])
+            if same and self._sees_less(a[1], b[1]):
                 known.append(z3.Implies(atom, other))
-        for (path, atom), (around, other) in permutations(self.paths.items(), 2):
-            if path_implies(*path, *around, windows=windows):
+        for (c, atom), (d, other) in permutations(self.paths.items(), 2):
+            same = c[:2] == d[:2] or path_implies(*c[:2], *d[:2], windows=windows)
+            if same and self._sees_less(c[2], d[2]):
                 known.append(z3.Implies(atom, other))
         for (inner, atom), (outer, other) in permutations(self.directories.items(), 2):
             inside = resolved(*inner, windows=windows)
@@ -320,7 +429,8 @@ class _Linter:
     def _case(self, rule: Rule) -> _Case:
         z3 = self.z3
         scope = self.model.scope(rule.applies, rule.base)
-        holds = self.model.predicate(rule.predicate, rule.base)
+        view = _view(rule.applies, rule.base)
+        holds = self.model.predicate(rule.predicate, rule.base, view)
         fires = z3.Not(holds) if rule.obligation else holds
         return _Case(rule, scope, fires, z3.And(scope, fires))
 
@@ -392,21 +502,22 @@ class _Linter:
     def _scopes(self, cases: list[_Case]) -> list[tuple[Applies, Any]]:
         """Scopes to test for contradictions, widest first.
 
-        One per tool pattern and working directory the deny rules name.
+        One per tool pattern and per working directory or repository root
+        the deny rules name.
         """
         found: dict[Hashable, tuple[Applies, Any]] = {}
         for case in cases:
             applies, base = case.rule.applies, case.rule.base
+            places = [Applies(cwd_under=(d,)) for d in applies.cwd_under]
+            places += [Applies(repo_root=(d,)) for d in applies.repo_root]
             for tool in applies.tools or (None,):
-                for directory in applies.cwd_under or (None,):
-                    scope = Applies(
-                        tools=(tool,) if tool else (),
-                        cwd_under=(directory,) if directory else (),
-                    )
-                    key = (scope, base if directory else None)
+                for place in places or [Applies()]:
+                    scope = replace(place, tools=(tool,) if tool else ())
+                    key = (scope, base if place.directories else None)
                     found.setdefault(key, (scope, self.model.scope(scope, base)))
         return sorted(
-            found.values(), key=lambda item: len(item[0].tools + item[0].cwd_under)
+            found.values(),
+            key=lambda item: len(item[0].tools + item[0].cwd_under + item[0].repo_root),
         )
 
     def _contradictions(self, cases: list[_Case]) -> list[Finding]:

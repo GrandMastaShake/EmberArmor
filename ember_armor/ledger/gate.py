@@ -18,7 +18,7 @@ from datetime import datetime
 
 from ember_armor.ledger.audit import AuditLog, summarise
 from ember_armor.ledger.config import ConfigError, ember_home, gate_mode, shell_tools
-from ember_armor.ledger.engine import History, evaluate
+from ember_armor.ledger.engine import History, RepoFinder, evaluate
 from ember_armor.ledger.facts import Facts, ShellTool, extract, shell_tools_from
 from ember_armor.ledger.model import SEVERITY, Decision
 from ember_armor.ledger.redact import MAX_TEXT
@@ -110,6 +110,7 @@ def check(
     now: datetime | None = None,
     problem: str | None = None,
     project: bool = True,
+    repo_root: RepoFinder | None = None,
 ) -> GateResult:
     """Evaluate one proposed tool call against the ledger.
 
@@ -134,6 +135,10 @@ def check(
         unreadable hook input).  It is handled like any other gate failure.
     project:
         Look for a project ledger above the call's working directory.
+    repo_root:
+        Lookup of the nearest enclosing git repository of a directory, for
+        ``repo_root`` scopes.  Defaults to the filesystem (see
+        :func:`ember_armor.ledger.engine.evaluate`).
 
     Returns
     -------
@@ -166,8 +171,11 @@ def check(
             facts,
             log if history is None else history,
             now=moment.timestamp(),
+            repo_root=repo_root,
         )
-        problems = list(dict.fromkeys(problems + unloaded))
+        # A repository lookup that failed is a gate failure like the others.
+        failed = [decision.error] if decision.error else []
+        problems = list(dict.fromkeys(problems + unloaded + failed))
         if problems:
             # What did load was evaluated; the failure can only add an ask.
             decision = _failure(mode, "; ".join(problems), decision)

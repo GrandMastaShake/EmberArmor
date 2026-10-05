@@ -32,8 +32,8 @@ from ember_armor.ledger.config import (
 from ember_armor.ledger.engine import History, PastCall, RepoFinder, evaluate
 from ember_armor.ledger.facts import Facts, ShellTool, extract, shell_tools_from
 from ember_armor.ledger.model import SEVERITY, Decision, FiredRule
-from ember_armor.ledger.redact import MAX_TEXT
-from ember_armor.ledger.store import active_rules, load_sources, sayable
+from ember_armor.ledger.redact import MAX_TEXT, session_key
+from ember_armor.ledger.store import LoadFailure, active_rules, load_sources, sayable
 
 TYPE_CHECKING = False
 if TYPE_CHECKING:
@@ -77,25 +77,27 @@ class GateResult:
         """For each rule that fired: how it reaches the agent, or why not.
 
         Only a rule the owner vouches for is ever quoted, in a reminder or
-        in the reason of a blocking decision.
+        in the reason of a blocking decision.  The rules go by their key: a
+        project rule is ``project:<id>``, so it is not taken for a user
+        rule of the same id.
         """
         reminder = self.reminder
         told: dict[str, str] = {}
         for rule in self.decision.fired:
             if self.mode == "observe":
-                told[rule.id] = LOGGED_OBSERVE
+                told[rule.key] = LOGGED_OBSERVE
             elif not rule.confirmed:
-                told[rule.id] = LOGGED_UNCONFIRMED
+                told[rule.key] = LOGGED_UNCONFIRMED
             elif self.blocking:
-                told[rule.id] = IN_DECISION
+                told[rule.key] = IN_DECISION
             elif reminder is None:
-                told[rule.id] = LOGGED_FAILURE
-            elif rule.id in reminder.quoted:
-                told[rule.id] = REMINDED
-            elif rule.id in reminder.recent:
-                told[rule.id] = LOGGED_RECENT
+                told[rule.key] = LOGGED_FAILURE
+            elif rule.key in reminder.quoted:
+                told[rule.key] = REMINDED
+            elif rule.key in reminder.recent:
+                told[rule.key] = LOGGED_RECENT
             else:
-                told[rule.id] = LOGGED_LEFT_OUT
+                told[rule.key] = LOGGED_LEFT_OUT
         return told
 
     def report(self) -> dict[str, Any]:
@@ -232,7 +234,7 @@ def _record(
 ) -> dict[str, Any]:
     source = call if isinstance(call, Mapping) else {}
     record: dict[str, Any] = {
-        "session": str(source.get("session_id") or "")[:MAX_TEXT],
+        "session": session_key(source.get("session_id")),
         "tool": str(source.get("tool_name") or "")[:MAX_TEXT],
         "cwd": (facts.cwd if facts else str(source.get("cwd") or ""))[: 4 * MAX_TEXT],
         "decision": decision.effect,
@@ -244,7 +246,8 @@ def _record(
     if decision.excepted:
         record["excepted"] = _excepted(decision)
     if reminder is not None:
-        # What the reminder quoted: nothing when no confirmed rule was due.
+        # What the reminder quoted, by rule key: nothing when no confirmed
+        # rule was due.
         record["reminded"] = list(reminder.quoted)
     if decision.error:
         record["error"] = decision.error[:500]
@@ -329,15 +332,20 @@ def check(
             exceptions=configured_exceptions(env, moment.date()),
             repo_root=repo_root,
         )
-        # A repository lookup that failed is a gate failure like the others.
-        failed = [decision.error] if decision.error else []
+        # A repository lookup that failed, or a rule that could not be
+        # judged, is a gate failure like the others.
+        failed: list[str] = []
+        if decision.error:
+            failed.append(LoadFailure(decision.error, decision.said))
         problems = list(dict.fromkeys(problems + unloaded + failed))
         if problems:
             # What did load was evaluated; the failure can only add an ask.
             said = "; ".join(sayable(problems))
             decision = _failure(mode, "; ".join(problems), decision, said)
     except Exception as exc:
-        decision = _failure(mode, f"{type(exc).__name__}: {exc}")
+        # What was already known to be wrong (the configuration) is kept.
+        problems.append(f"{type(exc).__name__}: {exc}")
+        decision = _failure(mode, "; ".join(dict.fromkeys(problems)))
     if decision.fired and facts is not None and _reminds(mode, decision):
         session = facts.session
         try:

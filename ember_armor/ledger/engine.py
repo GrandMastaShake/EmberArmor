@@ -851,6 +851,25 @@ def _excepted(
     return tuple(used)
 
 
+#: What is said of a project rule that could not be judged: nothing of it.
+UNJUDGED_PROJECT_RULE = (
+    "a rule of the project ledger could not be evaluated "
+    "(ember-gate check, run in that directory, says which)"
+)
+
+
+def _unjudged(rule: Rule, exc: Exception) -> tuple[str, str]:
+    """The failure of one rule: in full, and as it may be printed.
+
+    A rule of a project ledger is named and quoted in the full text only.
+    Its id and whatever the error repeats of its patterns were written in
+    the repository, and the hook prints nothing a repository wrote.
+    """
+    detail = f"{type(exc).__name__}: {exc}"[:_ERROR_CHARS]
+    full = f"rule {rule.id} could not be evaluated: {detail}"
+    return full, UNJUDGED_PROJECT_RULE if rule.origin == "project" else full
+
+
 def evaluate(
     rules: Iterable[Rule],
     facts: Facts,
@@ -889,8 +908,11 @@ def evaluate(
         ``none`` when no rule fired, otherwise the most restrictive effect
         with every rule that fired, strongest first.  ``excepted`` names the
         rules an exception dropped.  ``error`` is set when a repository
-        lookup failed; the scope it was needed for then counts as holding
-        for a rule and as not holding for an exception.
+        lookup failed (the scope it was needed for then counts as holding
+        for a rule and as not holding for an exception) and when a rule
+        could not be judged (it does not fire; the others are judged all
+        the same).  ``said`` is the error without the words of a project
+        rule, when that differs.
     """
     moment = time.time() if now is None else now
     past = None if history is None else _Session(history)
@@ -898,29 +920,42 @@ def evaluate(
     exceptions = tuple(exceptions)
     fired: list[FiredRule] = []
     excepted: list[ExceptedRule] = []
+    failures: list[tuple[str, str]] = []
     for rule in rules:
-        applies = rule.applies
-        if applies.tools and not any(
-            fnmatchcase(facts.tool, tool) for tool in applies.tools
-        ):
+        # Each rule is judged on its own: one that cannot be judged is a
+        # failure of the gate, and the rules after it are still judged.
+        try:
+            applies = rule.applies
+            if applies.tools and not any(
+                fnmatchcase(facts.tool, tool) for tool in applies.tools
+            ):
+                continue
+            area = None
+            if applies.directories:
+                area = _area(
+                    applies.cwd_under,
+                    applies.cwd_not_under,
+                    applies.repo_root,
+                    rule.base,
+                    facts,
+                    lenient=True,
+                )
+            view = _view(facts, area, roots)
+            if view is None:
+                continue
+            ctx = _Context(rule.base, past, moment, roots, area)
+            if _holds(rule.predicate, view, ctx) == rule.obligation:
+                continue
+        except Exception as exc:
+            failures.append(_unjudged(rule, exc))
             continue
-        area = None
-        if applies.directories:
-            area = _area(
-                applies.cwd_under,
-                applies.cwd_not_under,
-                applies.repo_root,
-                rule.base,
-                facts,
-                lenient=True,
-            )
-        view = _view(facts, area, roots)
-        if view is None:
-            continue
-        ctx = _Context(rule.base, past, moment, roots, area)
-        if _holds(rule.predicate, view, ctx) == rule.obligation:
-            continue
-        reasons = _excepted(rule, facts, view, exceptions, ctx) if exceptions else ()
+        reasons: tuple[str, ...] = ()
+        try:
+            if exceptions:
+                reasons = _excepted(rule, facts, view, exceptions, ctx)
+        except Exception as exc:
+            # The rule fired; an exception that cannot be judged drops nothing.
+            failures.append(_unjudged(rule, exc))
         if reasons:
             from ember_armor.ledger.exceptions import ExceptedRule
 
@@ -936,7 +971,12 @@ def evaluate(
                 rule.confirmed,
             )
         )
-    error = "; ".join(dict.fromkeys(roots.errors)) or None
+    full = [*roots.errors, *(failure[0] for failure in failures)]
+    words = [*roots.errors, *(failure[1] for failure in failures)]
+    error = "; ".join(dict.fromkeys(full)) or None
+    said = "; ".join(dict.fromkeys(words)) or None
     fired.sort(key=lambda rule: -SEVERITY[rule.effect])
     effect = fired[0].effect if fired else "none"
-    return Decision(effect, tuple(fired), error, tuple(excepted))
+    return Decision(
+        effect, tuple(fired), error, tuple(excepted), None if said == error else said
+    )

@@ -205,6 +205,18 @@ Predicate = (
 # ---------------------------------------------------------------------------
 # Rules and decisions
 # ---------------------------------------------------------------------------
+def rule_key(rule_id: str, origin: str) -> str:
+    """A rule's name among the rules of every ledger.
+
+    An id is unique in its ledger, and a project ledger may use an id the
+    user ledger uses too.  Where two such rules must be told apart (which
+    of them a session was reminded of, how each reaches the agent) a
+    project rule goes by ``project:<id>``.  An id holds no colon, so the
+    two forms never meet.
+    """
+    return f"project:{rule_id}" if origin == "project" else rule_id
+
+
 @dataclass(frozen=True)
 class Applies:
     """Scope of a rule.  Empty tuples mean everywhere.
@@ -253,6 +265,11 @@ class Rule:
     base: str | None = None
     raw: Mapping[str, Any] = field(default_factory=dict, compare=False, repr=False)
 
+    @property
+    def key(self) -> str:
+        """The rule's name among the rules of every ledger (see :func:`rule_key`)."""
+        return rule_key(self.id, self.origin)
+
 
 @dataclass(frozen=True)
 class FiredRule:
@@ -270,6 +287,11 @@ class FiredRule:
     effect: str
     origin: str = "user"
     confirmed: bool = False
+
+    @property
+    def key(self) -> str:
+        """The rule's name among the rules of every ledger (see :func:`rule_key`)."""
+        return rule_key(self.id, self.origin)
 
 
 @dataclass(frozen=True)
@@ -505,6 +527,10 @@ def parse_predicate(obj: Any, where: str, *, history: bool = False) -> Predicate
     if not isinstance(obj, dict):
         raise LedgerError(f"{where}: expected a predicate object")
     kind = obj.get("type")
+    if not isinstance(kind, str):
+        raise LedgerError(
+            f"{where}: 'type' must be one of {', '.join(PREDICATE_TYPES)}"
+        )
     if kind in _LEAF_PARSERS:
         return _LEAF_PARSERS[kind](obj, where)
     if kind in ("all", "any", "not"):

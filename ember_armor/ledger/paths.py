@@ -47,6 +47,9 @@ _VAR_RE = re.compile(
 _OPEN_RE = re.compile(r"[$`]|%\w+%")
 _WILD_ROOT_RE = re.compile(r"(\*\*|[?*]:)")
 _CLASS_RE = re.compile(r"\[[^\]]*\]")
+#: Characters that mean something to ``re`` inside a class and nothing to a
+#: glob (the backslash first: the others are escaped with one).
+_CLASS_SPECIAL = ("\\", "[", "&", "|", "~")
 _WILDCARDS = frozenset("*?[")
 _MAX_EXPANSIONS = 4
 #: Stands in for a rule pattern that names an unset variable: no path has it.
@@ -235,6 +238,25 @@ def resolve_pattern(
     return normalize(pattern, base, windows=windows, home=home, variables=variables)
 
 
+def _class(body: str) -> str | None:
+    """The regular expression for ``[body]`` of a glob, if it is a class.
+
+    ``None`` for a body that is none (a range that runs backwards, ``[!]``):
+    the bracket is then literal text, as a bracket that is never closed is.
+    A pattern from a ledger must not be able to make the matcher raise.
+    """
+    negated = body.startswith("!")
+    inner = body[1:] if negated else body
+    for special in _CLASS_SPECIAL:
+        inner = inner.replace(special, "\\" + special)
+    group = f"[{'^' if negated else ''}{inner}]"
+    try:
+        re.compile(group)
+    except re.error:
+        return None
+    return group
+
+
 @lru_cache(maxsize=1024)
 def _glob_regex(pattern: str, windows: bool, under: bool) -> re.Pattern[str]:
     if under:
@@ -255,11 +277,12 @@ def _glob_regex(pattern: str, windows: bool, under: bool) -> re.Pattern[str]:
         elif char == "?":
             out.append("[^/]")
             i += 1
-        elif char == "[" and (close := pattern.find("]", i + 2)) != -1:
-            body = pattern[i + 1 : close].replace("\\", "\\\\")
-            if body.startswith("!"):
-                body = "^" + body[1:]
-            out.append(f"[{body}]")
+        elif (
+            char == "["
+            and (close := pattern.find("]", i + 2)) != -1
+            and (group := _class(pattern[i + 1 : close])) is not None
+        ):
+            out.append(group)
             i = close + 1
         else:
             out.append(re.escape(char))

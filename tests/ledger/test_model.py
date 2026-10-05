@@ -206,12 +206,12 @@ def test_history_predicates_parse() -> None:
 def test_decision_reason_quotes_text_and_source() -> None:
     decision = Decision(
         effect="deny",
-        fired=(FiredRule("r1", "Never touch prod.", "Alexander, 2026-10-02", "deny"),),
+        fired=(FiredRule("r1", "Never touch prod.", "the owner, 2026-10-02", "deny"),),
     )
     reason = decision.reason()
     assert "r1" in reason
     assert '"Never touch prod."' in reason
-    assert "Alexander, 2026-10-02" in reason
+    assert "the owner, 2026-10-02" in reason
 
 
 def test_decision_reason_includes_gate_failure() -> None:

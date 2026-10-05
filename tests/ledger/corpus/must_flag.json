@@ -2062,35 +2062,35 @@
  },
  {
   "tool": "PowerShell",
-  "command": "[void](Remove-Item -Recurse -Force C:\\Users\\alexa)",
+  "command": "[void](Remove-Item -Recurse -Force C:\\Users\\sam)",
   "effect": "deny",
   "rule": "builtin.delete.protected",
   "platform": "windows"
  },
  {
   "tool": "PowerShell",
-  "command": "[string]$r = Remove-Item -Recurse -Force C:\\Users\\alexa",
+  "command": "[string]$r = Remove-Item -Recurse -Force C:\\Users\\sam",
   "effect": "deny",
   "rule": "builtin.delete.protected",
   "platform": "windows"
  },
  {
   "tool": "PowerShell",
-  "command": "$x = @{ a = (Remove-Item -Recurse -Force C:\\Users\\alexa) }",
+  "command": "$x = @{ a = (Remove-Item -Recurse -Force C:\\Users\\sam) }",
   "effect": "deny",
   "rule": "builtin.delete.protected",
   "platform": "windows"
  },
  {
   "tool": "PowerShell",
-  "command": "$p.Add((Remove-Item -Recurse -Force C:\\Users\\alexa))",
+  "command": "$p.Add((Remove-Item -Recurse -Force C:\\Users\\sam))",
   "effect": "deny",
   "rule": "builtin.delete.protected",
   "platform": "windows"
  },
  {
   "tool": "PowerShell",
-  "command": "@(1,2).ForEach({ Remove-Item -Recurse -Force C:\\Users\\alexa })",
+  "command": "@(1,2).ForEach({ Remove-Item -Recurse -Force C:\\Users\\sam })",
   "effect": "deny",
   "rule": "builtin.delete.protected",
   "platform": "windows"
@@ -2163,7 +2163,7 @@
  },
  {
   "tool": "PowerShell",
-  "command": "sudo Remove-Item C:\\Users\\alexa -Recurse -Force",
+  "command": "sudo Remove-Item C:\\Users\\sam -Recurse -Force",
   "effect": "deny",
   "rule": "builtin.delete.protected",
   "platform": "windows"
@@ -2188,7 +2188,7 @@
  },
  {
   "tool": "PowerShell",
-  "command": "Remove-Item C:\\Users\\alexa –Recurse –Force",
+  "command": "Remove-Item C:\\Users\\sam –Recurse –Force",
   "effect": "deny",
   "rule": "builtin.delete.protected",
   "platform": "windows"
@@ -2201,7 +2201,7 @@
  },
  {
   "tool": "PowerShell",
-  "command": "Microsoft.PowerShell.Management\\Remove-Item C:\\Users\\alexa -Recurse",
+  "command": "Microsoft.PowerShell.Management\\Remove-Item C:\\Users\\sam -Recurse",
   "effect": "deny",
   "rule": "builtin.delete.protected",
   "platform": "windows"
@@ -3043,7 +3043,7 @@
  },
  {
   "tool": "PowerShell",
-  "command": "Remove-Item C:\\Users\\alexa\\Documents\\*.docx",
+  "command": "Remove-Item C:\\Users\\sam\\Documents\\*.docx",
   "effect": "ask",
   "rule": "builtin.delete.home-wildcard",
   "platform": "windows"
@@ -3057,7 +3057,7 @@
  },
  {
   "tool": "PowerShell",
-  "command": "cmd /c \"del /q C:\\Users\\alexa\\*\"",
+  "command": "cmd /c \"del /q C:\\Users\\sam\\*\"",
   "effect": "ask",
   "rule": "builtin.delete.home-wildcard",
   "platform": "windows"
@@ -3094,7 +3094,7 @@
  },
  {
   "tool": "PowerShell",
-  "command": "Remove-Item FileSystem::C:\\Users\\alexa -Recurse -Force",
+  "command": "Remove-Item FileSystem::C:\\Users\\sam -Recurse -Force",
   "effect": "deny",
   "rule": "builtin.delete.protected",
   "platform": "windows"
@@ -3108,7 +3108,7 @@
  },
  {
   "tool": "Bash",
-  "command": "rm -rf //c/Users/alexa",
+  "command": "rm -rf //c/Users/sam",
   "effect": "deny",
   "rule": "builtin.delete.protected",
   "platform": "windows"

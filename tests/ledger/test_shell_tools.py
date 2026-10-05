@@ -69,7 +69,7 @@ def test_windows_mcp_powershell_is_parsed() -> None:
     found = facts("mcp__Windows-MCP__PowerShell", {"command": "git reset --hard"})
     assert found.shell == "powershell"
     assert effect(found) == "ask"
-    removal = {"command": "Remove-Item -Recurse -Force C:\\Users\\alexa"}
+    removal = {"command": "Remove-Item -Recurse -Force C:\\Users\\sam"}
     assert (
         effect(facts("mcp__Windows-MCP__PowerShell", removal, windows=True)) == "deny"
     )

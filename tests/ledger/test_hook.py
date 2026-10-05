@@ -97,7 +97,7 @@ def test_enforce_mode_denies_with_the_users_rule_text(gate_env, tmp_path: Path) 
         rule(
             "no-force",
             text="Never force-push this repo.",
-            source="Alexander, 2026-10-02",
+            source="the owner, 2026-10-02",
         ),
     )
     done = hook(
@@ -106,7 +106,7 @@ def test_enforce_mode_denies_with_the_users_rule_text(gate_env, tmp_path: Path) 
     specific = decision_of(done.stdout)
     assert specific["permissionDecision"] == "deny"
     assert '"Never force-push this repo."' in specific["permissionDecisionReason"]
-    assert "Alexander, 2026-10-02" in specific["permissionDecisionReason"]
+    assert "the owner, 2026-10-02" in specific["permissionDecisionReason"]
 
 
 def test_enforce_mode_denies_protected_deletes_in_powershell(

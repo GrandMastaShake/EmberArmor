@@ -132,7 +132,7 @@ def test_rules_add_confirm_remove(cli_env, capsys) -> None:
         "--when",
         predicate,
         "--source",
-        "Alexander",
+        "the owner",
         "--tools",
         "Bash",
         "PowerShell",
@@ -145,7 +145,7 @@ def test_rules_add_confirm_remove(cli_env, capsys) -> None:
     assert stored == {
         "id": "no-prod",
         "text": "Never touch prod.",
-        "source": "Alexander",
+        "source": "the owner",
         "effect": "deny",
         "when": json.loads(predicate),
         "applies": {"tools": ["Bash", "PowerShell"]},

@@ -55,7 +55,7 @@ uv pip install -e ".[dev]"
 uv run --no-sync pytest tests/ -q
 ```
 
-3,881 tests are collected: 3,684 for the ledger under `tests/ledger/`, the rest for the service. All of them passed on 2026-10-02 on this machine, run as `python -m pytest tests -q` in that virtualenv with `EMBER_HOME` pointing at an empty directory; the run took three and a half minutes (`tests/ledger/test_never_vanishes.py` alone evaluates about 19,000 generated shell statements). One service test is timing-sensitive: `tests/test_rate_limit.py::test_limit_resets_after_window` needs three requests to land inside a 0.3 second window, so it can fail on a slow or busy machine. `ember_proxy/` has no tests.
+3,906 tests are collected: 3,709 for the ledger under `tests/ledger/`, the rest for the service. All of them passed on 2026-10-04 on this machine, run as `python -m pytest tests -q` in that virtualenv with `EMBER_HOME` pointing at an empty directory; the run took between three and a half and six minutes depending on what else the machine was doing (`tests/ledger/test_never_vanishes.py` alone evaluates about 19,000 generated shell statements). One service test is timing-sensitive: `tests/test_rate_limit.py::test_limit_resets_after_window` needs three requests to land inside a 0.3 second window, so it can fail on a slow or busy machine. `ember_proxy/` has no tests.
 
 Start the service on localhost with two generated secrets:
 
@@ -97,7 +97,7 @@ decision: ask (mode: observe)
 ```
 
 ```bash
-ember-gate check 'Remove-Item -Recurse -Force C:\Users\alexa' --tool PowerShell
+ember-gate check 'Remove-Item -Recurse -Force C:\Users\sam' --tool PowerShell
 ```
 
 ```text

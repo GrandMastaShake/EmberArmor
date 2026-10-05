@@ -2044,7 +2044,7 @@
  },
  {
   "tool": "PowerShell",
-  "command": "Remove-Item C:\\Users\\alexa\\projects\\app\\build\\*",
+  "command": "Remove-Item C:\\Users\\sam\\projects\\app\\build\\*",
   "platform": "windows"
  },
  {

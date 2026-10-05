@@ -15,6 +15,7 @@ from dataclasses import dataclass, field, replace
 from fnmatch import fnmatchcase
 
 from ember_armor.ledger.paths import PATH_VARIABLES, Lookup, PathFact, normalize
+from ember_armor.ledger.redact import session_key
 from ember_armor.ledger.shell import (
     Dynamic,
     ParseResult,
@@ -374,7 +375,7 @@ def extract(
     return Facts(
         tool=tool,
         cwd=cwd,
-        session=str(call.get("session_id") or ""),
+        session=session_key(call.get("session_id")),
         windows=windows,
         home=home,
         commands=commands,

@@ -96,6 +96,27 @@ def _flag_values(text: str) -> str:
     return "".join(pieces)
 
 
+def writable(text: str) -> str:
+    """*text* with half a surrogate pair turned into its escape.
+
+    JSON can carry one (``"\\ud83d"``) and UTF-8 cannot, so a field that
+    held one could be neither hashed nor written.
+    """
+    if text.isascii():
+        return text
+    return text.encode("utf-8", "backslashreplace").decode("utf-8")
+
+
+def session_key(value: Any) -> str:
+    """A session id as the gate keeps it, logs it and looks it up.
+
+    Text that can be written, capped like every logged field.  One form
+    everywhere, so the entries of a session are found again whatever the
+    host sent as its id.
+    """
+    return writable(str(value or ""))[:MAX_TEXT]
+
+
 def redact_path(path: str, limit: int = 4 * MAX_TEXT) -> str:
     """Cap a path and replace the unmistakable key shapes in it.
 

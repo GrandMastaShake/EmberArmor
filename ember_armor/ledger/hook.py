@@ -183,7 +183,10 @@ def main(argv: Sequence[str] = ()) -> int:
         return 0
     try:
         result = handle(sys.stdin.buffer.read(), problem=problem)
-        output, error = hook_output(result), result.decision.error
+        decision = result.decision
+        # A project ledger's reason for not loading is not printed: see
+        # ``Decision.said``.
+        output, error = hook_output(result), decision.said or decision.error
     except Exception as exc:
         # Last resort.  Unless the gate is known to be observing or
         # reminding, ask: the mode may be enforce in a configuration this

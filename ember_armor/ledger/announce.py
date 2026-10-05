@@ -27,7 +27,7 @@ from ember_armor.ledger.gate import audit_log
 from ember_armor.ledger.model import LedgerError
 from ember_armor.ledger.redact import MAX_TEXT
 from ember_armor.ledger.remind import compose
-from ember_armor.ledger.store import active_rules, load_sources
+from ember_armor.ledger.store import active_rules, load_sources, sayable
 
 TYPE_CHECKING = False
 if TYPE_CHECKING:
@@ -108,7 +108,8 @@ def announce(
     cwd = start.get("cwd")
     rules, problems = load_sources(cwd if isinstance(cwd, str) else "", env)
     if problems:
-        raise LedgerError("; ".join(problems))
+        # In the words that may be printed: the hook writes this error out.
+        raise LedgerError("; ".join(sayable(problems)))
     place = {
         "tool_name": "SessionStart",
         "cwd": cwd,

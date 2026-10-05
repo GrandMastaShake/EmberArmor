@@ -277,13 +277,17 @@ class Decision:
     """Outcome of evaluating one call: ``none``, ``warn``, ``ask`` or ``deny``.
 
     ``excepted`` lists the rules that an owner's exception dropped for this
-    call, with the reason the owner gave.
+    call, with the reason the owner gave.  ``said`` is the failure in the
+    words the gate may print where an agent reads them, when those differ
+    from ``error``: the reason a project ledger could not be loaded can
+    quote the file, and is replaced by fixed words there.
     """
 
     effect: str = "none"
     fired: tuple[FiredRule, ...] = ()
     error: str | None = None
     excepted: tuple[ExceptedRule, ...] = ()
+    said: str | None = None
 
     def reason(self) -> str:
         """Human-readable reason quoting each fired rule's text and source.
@@ -298,8 +302,9 @@ class Decision:
                 f"EmberArmor ledger rule {rule.id}{where} ({rule.effect}): "
                 f'"{rule.text[:REASON_CHARS]}" [source: {rule.source[:REASON_CHARS]}]'
             )
-        if self.error:
-            lines.append(f"EmberArmor gate failure: {self.error}")
+        failure = self.said or self.error
+        if failure:
+            lines.append(f"EmberArmor gate failure: {failure}")
         return "\n".join(lines)
 
 

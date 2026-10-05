@@ -33,7 +33,7 @@ from ember_armor.ledger.engine import History, PastCall, RepoFinder, evaluate
 from ember_armor.ledger.facts import Facts, ShellTool, extract, shell_tools_from
 from ember_armor.ledger.model import SEVERITY, Decision, FiredRule
 from ember_armor.ledger.redact import MAX_TEXT
-from ember_armor.ledger.store import active_rules, load_sources
+from ember_armor.ledger.store import active_rules, load_sources, sayable
 
 TYPE_CHECKING = False
 if TYPE_CHECKING:
@@ -189,17 +189,31 @@ def _fired(rule: FiredRule) -> dict[str, str]:
     return {key: value for key, value in asdict(rule).items() if key != "confirmed"}
 
 
-def _failure(mode: str, error: str, earlier: Decision | None = None) -> Decision:
+def _failure(
+    mode: str,
+    error: str,
+    earlier: Decision | None = None,
+    said: str | None = None,
+) -> Decision:
+    """The decision after a failure of the gate.
+
+    *said* is the failure as it may be printed where an agent reads it,
+    when that is not *error* itself.
+    """
+    said = None if said == error else said
     if earlier is None:
-        return Decision(effect="ask" if mode == "enforce" else "none", error=error)
+        effect = "ask" if mode == "enforce" else "none"
+        return Decision(effect=effect, error=error, said=said)
     if mode != "enforce" or SEVERITY[earlier.effect] >= SEVERITY["ask"]:
-        return replace(earlier, error=error)
-    return replace(earlier, effect="ask", error=error)
+        return replace(earlier, error=error, said=said)
+    return replace(earlier, effect="ask", error=error, said=said)
 
 
-def _also(decision: Decision, error: str) -> str:
-    """*error* added to the failure the decision already carries, if any."""
-    return f"{decision.error}; {error}" if decision.error else error
+def _and(mode: str, decision: Decision, error: str) -> Decision:
+    """*decision* with one more failure added to what it already carries."""
+    full = f"{decision.error}; {error}" if decision.error else error
+    said = f"{decision.said}; {error}" if decision.said else None
+    return _failure(mode, full, decision, said)
 
 
 def _reminds(mode: str, decision: Decision) -> bool:
@@ -320,7 +334,8 @@ def check(
         problems = list(dict.fromkeys(problems + unloaded + failed))
         if problems:
             # What did load was evaluated; the failure can only add an ask.
-            decision = _failure(mode, "; ".join(problems), decision)
+            said = "; ".join(sayable(problems))
+            decision = _failure(mode, "; ".join(problems), decision, said)
     except Exception as exc:
         decision = _failure(mode, f"{type(exc).__name__}: {exc}")
     if decision.fired and facts is not None and _reminds(mode, decision):
@@ -338,12 +353,12 @@ def check(
                 entries=lambda: past.read(session),
             )
         except Exception as exc:
-            decision = _failure(mode, _also(decision, f"reminder: {exc}"), decision)
+            decision = _and(mode, decision, f"reminder: {exc}")
     if record:
         try:
             log.append(_record(call, facts, decision, mode, reminder), moment)
         except Exception as exc:
-            decision = _failure(mode, _also(decision, f"audit log: {exc}"), decision)
+            decision = _and(mode, decision, f"audit log: {exc}")
             # What the log does not hold is not sent.
             reminder = None
     if not _reminds(mode, decision):

@@ -183,6 +183,7 @@ _GATE_VARIABLES = [
     "EMBER_LEDGER",
     "EMBER_HOME",
     "EMBER_GATE_BUILTIN",
+    "EMBER_GATE_REMIND_INTERVAL",
 ]
 _GATE_EDITS = ["add", "confirm", "remove"]
 _GATE_MODULE = (
@@ -759,7 +760,7 @@ def _rules(disposable: Sequence[str]) -> list[dict[str, Any]]:
             "gate.environment",
             "ask",
             "Ask before setting the variables that choose the gate's mode, "
-            "ledger, home or built-in pack.",
+            "ledger, home, built-in pack or reminder interval.",
             {"type": "assigns", "name": _GATE_VARIABLES},
         ),
         _rule(

@@ -4,12 +4,13 @@ Everything is read from an environment mapping passed in by the caller, so
 tests never touch the real home directory.  ``EMBER_HOME`` replaces
 ``~/.ember``.
 
-``config.json`` in the Ember home may hold ``mode`` (``observe`` or
-``enforce``), ``builtin`` (``false`` switches the built-in pack off),
+``config.json`` in the Ember home may hold ``mode`` (``observe``, ``remind``
+or ``enforce``), ``builtin`` (``false`` switches the built-in pack off),
 ``disposable`` (directory patterns the built-in delete rules leave alone, in
 addition to the pack's own list), ``shell_tools`` (tools whose input
-carries a shell command, see :func:`shell_tools`) and ``exceptions`` (the
-owner's exceptions to rules, see :func:`rule_exceptions`).  Anything else is
+carries a shell command, see :func:`shell_tools`), ``exceptions`` (the
+owner's exceptions to rules, see :func:`rule_exceptions`) and
+``remind_interval_minutes`` (see :func:`remind_interval`).  Anything else is
 an error: a misspelt setting must not be read as "not set".
 """
 
@@ -26,9 +27,19 @@ if TYPE_CHECKING:
 
     from ember_armor.ledger.exceptions import RuleException
 
-MODES = ("observe", "enforce")
+MODES = ("observe", "remind", "enforce")
 SHELLS = ("bash", "powershell", "cmd", "native")
-_SETTINGS = ("mode", "builtin", "disposable", "shell_tools", "exceptions")
+#: Minutes before the same rule is reminded again in one session.
+REMIND_INTERVAL_MINUTES = 15.0
+_SETTINGS = (
+    "mode",
+    "builtin",
+    "disposable",
+    "shell_tools",
+    "exceptions",
+    "remind_interval_minutes",
+)
+_EXPECTED_MODES = "expected observe, remind or enforce"
 _SHELL_TOOL_KEYS = ("shell", "field", "cwd")
 _FALSE_WORDS = frozenset({"0", "false", "no", "off"})
 
@@ -54,8 +65,7 @@ def _validate(config: Any, path: Path) -> dict[str, Any]:
         )
     if "mode" in config and config["mode"] not in MODES:
         raise ConfigError(
-            f"{path}: unknown gate mode {config['mode']!r} "
-            "(expected observe or enforce)"
+            f"{path}: unknown gate mode {config['mode']!r} ({_EXPECTED_MODES})"
         )
     if not isinstance(config.get("builtin", True), bool):
         raise ConfigError(f"{path}: 'builtin' must be true or false")
@@ -66,7 +76,19 @@ def _validate(config: Any, path: Path) -> dict[str, Any]:
         raise ConfigError(f"{path}: 'disposable' must be a list of path patterns")
     _validate_shell_tools(config.get("shell_tools", {}), path)
     _exceptions(config.get("exceptions", []), path)
+    if "remind_interval_minutes" in config:
+        _minutes(
+            config["remind_interval_minutes"], f"{path}: 'remind_interval_minutes'"
+        )
     return config
+
+
+def _minutes(value: Any, where: str) -> float:
+    """A reminder interval: a finite number of minutes, zero or more."""
+    number = isinstance(value, int | float) and not isinstance(value, bool)
+    if not number or not 0 <= value < float("inf"):
+        raise ConfigError(f"{where} must be a number of minutes, 0 or more")
+    return float(value)
 
 
 def _exceptions(items: Any, path: Path) -> list[RuleException]:
@@ -138,19 +160,42 @@ def read_config(env: Mapping[str, str]) -> dict[str, Any]:
 
 
 def gate_mode(env: Mapping[str, str]) -> str:
-    """``observe`` or ``enforce``.
+    """``observe``, ``remind`` or ``enforce``.
 
     Taken from ``EMBER_GATE_MODE``, else ``config.json``, else ``observe``.
 
     Raises
     ------
     ConfigError
-        If a mode is configured but is not one of the two known values.
+        If a mode is configured but is not one of the three known values.
     """
     mode = env.get("EMBER_GATE_MODE") or read_config(env).get("mode") or "observe"
     if mode not in MODES:
-        raise ConfigError(f"unknown gate mode {mode!r} (expected observe or enforce)")
+        raise ConfigError(f"unknown gate mode {mode!r} ({_EXPECTED_MODES})")
     return str(mode)
+
+
+def remind_interval(env: Mapping[str, str]) -> float:
+    """Seconds before the same rule is reminded again in one session.
+
+    Taken from ``EMBER_GATE_REMIND_INTERVAL`` (minutes), else
+    ``remind_interval_minutes`` in ``config.json``, else 15 minutes.  Zero
+    means every time.
+
+    Raises
+    ------
+    ConfigError
+        If the value is not a finite number of minutes, zero or more.
+    """
+    raw = env.get("EMBER_GATE_REMIND_INTERVAL")
+    if raw:
+        try:
+            given: Any = float(raw)
+        except ValueError:
+            given = None
+        return 60 * _minutes(given, "EMBER_GATE_REMIND_INTERVAL")
+    configured = read_config(env).get("remind_interval_minutes")
+    return 60 * (REMIND_INTERVAL_MINUTES if configured is None else float(configured))
 
 
 def builtin_enabled(env: Mapping[str, str]) -> bool:

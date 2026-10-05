@@ -119,14 +119,32 @@ def test_enforce_mode_denies_protected_deletes_in_powershell(
     assert "builtin.delete.protected" in specific["permissionDecisionReason"]
 
 
-def test_warn_prints_nothing_even_in_enforce_mode(gate_env, tmp_path: Path) -> None:
+def reminder_of(stdout: bytes) -> str:
+    """The text of a reminder: an object with no decision in it."""
+    output = json.loads(stdout)
+    assert set(output) == {"hookSpecificOutput"}
+    specific = output["hookSpecificOutput"]
+    assert set(specific) == {"hookEventName", "additionalContext"}
+    assert specific["hookEventName"] == "PreToolUse"
+    return specific["additionalContext"]
+
+
+def test_warn_is_never_a_decision_and_in_enforce_mode_a_reminder(
+    gate_env, tmp_path: Path
+) -> None:
+    # Until reminders existed a warning printed nothing in enforce mode.  It
+    # still decides nothing: the agent is told the rule, the call goes on.
     write_ledger(
         Path(gate_env["EMBER_LEDGER"]),
         rule("soft", effect="warn", when={"type": "command", "program": "ls"}),
     )
     done = hook(gate_env, make_call("Bash", "ls", cwd=str(tmp_path)), "enforce")
-    assert (done.returncode, done.stdout) == (0, b"")
+    assert done.returncode == 0
+    assert b"permissionDecision" not in done.stdout
+    assert reminder_of(done.stdout).startswith("EmberArmor reminder, rule soft: ")
     assert entries(gate_env)[0]["decision"] == "warn"
+    observed = hook(gate_env, make_call("Bash", "ls", cwd=str(tmp_path)), "observe")
+    assert (observed.returncode, observed.stdout) == (0, b"")
 
 
 MALFORMED = [
@@ -189,7 +207,7 @@ ALL_CALLS = [
 ]
 
 
-@pytest.mark.parametrize("mode", [None, "observe", "enforce", "bogus"])
+@pytest.mark.parametrize("mode", [None, "observe", "remind", "enforce", "bogus"])
 def test_allow_is_never_a_permission_decision(gate_env, mode) -> None:
     write_ledger(
         Path(gate_env["EMBER_LEDGER"]),
@@ -198,8 +216,14 @@ def test_allow_is_never_a_permission_decision(gate_env, mode) -> None:
     for call in ALL_CALLS:
         done = hook(gate_env, call, mode)
         assert done.returncode == 0
-        if done.stdout:
+        if mode in (None, "observe"):
+            assert done.stdout == b""
+        elif b"permissionDecision" in done.stdout:
+            assert mode != "remind"
             assert decision_of(done.stdout)["permissionDecision"] in ("deny", "ask")
+        elif done.stdout:
+            # A reminder carries no decision at all.
+            assert reminder_of(done.stdout)
         assert b'"allow"' not in done.stdout
 
 
@@ -213,7 +237,7 @@ def test_ember_gate_hook_subcommand_is_the_same_hook(gate_env, tmp_path: Path) -
 EFFECTS = ["none", "warn", "ask", "deny"]
 
 
-@pytest.mark.parametrize("mode", ["observe", "enforce"])
+@pytest.mark.parametrize("mode", ["observe", "remind", "enforce"])
 @pytest.mark.parametrize("effect", EFFECTS)
 def test_hook_output_table(mode: str, effect: str) -> None:
     fired = (FiredRule("r", "text", "source", effect),) if effect != "none" else ()

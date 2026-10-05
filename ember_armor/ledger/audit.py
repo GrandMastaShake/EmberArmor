@@ -25,7 +25,7 @@ import os
 import re
 import sys
 import time
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -417,15 +417,13 @@ class AuditLog:
             )
         return Verification(count, tuple(problems))
 
-    def earlier(self, session: str) -> list[PastCall]:
-        """Earlier calls of *session* that were proposed and not denied.
+    def session_entries(self, session: str) -> list[dict[str, Any]]:
+        """Entries of *session* in the newest log files, oldest first.
 
-        A call counts as denied only when the gate blocked it (``deny`` in
-        ``enforce`` mode).  v0 does not know whether a call succeeded.
+        Only lines that mention the session are decoded: the cost of the
+        rest of the log is one substring test per line.
         """
-        calls: list[PastCall] = []
-        # Only lines that mention the session are decoded: the cost of the
-        # rest of the log is one substring test per line.
+        found: list[dict[str, Any]] = []
         marker = json.dumps(session, ensure_ascii=False).encode("utf-8")
         needle = b'"session": ' + marker
         for path in self.files()[-_HISTORY_FILES:]:
@@ -433,12 +431,30 @@ class AuditLog:
                 for line in handle:
                     if needle not in line:
                         continue
-                    with contextlib.suppress(KeyError, TypeError, ValueError):
+                    with contextlib.suppress(ValueError):
                         entry = json.loads(line)
-                        if entry["session"] != session or "call" not in entry:
-                            continue
-                        if (entry["mode"], entry["decision"]) == ("enforce", "deny"):
-                            continue
-                        when = datetime.fromisoformat(entry["ts"]).timestamp()
-                        calls.append(PastCall(when, restore(entry)))
-        return calls
+                        if isinstance(entry, dict) and entry.get("session") == session:
+                            found.append(entry)
+        return found
+
+    def earlier(self, session: str) -> list[PastCall]:
+        """Earlier calls of *session* that were proposed and not denied.
+
+        A call counts as denied only when the gate blocked it (``deny`` in
+        ``enforce`` mode).  v0 does not know whether a call succeeded.
+        """
+        return past_calls(self.session_entries(session))
+
+
+def past_calls(entries: Iterable[Mapping[str, Any]]) -> list[PastCall]:
+    """The calls among audit *entries* that were proposed and not denied."""
+    calls: list[PastCall] = []
+    for entry in entries:
+        with contextlib.suppress(KeyError, TypeError, ValueError):
+            if "call" not in entry:
+                continue
+            if (entry["mode"], entry["decision"]) == ("enforce", "deny"):
+                continue
+            when = datetime.fromisoformat(entry["ts"]).timestamp()
+            calls.append(PastCall(when, restore(entry)))
+    return calls

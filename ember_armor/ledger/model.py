@@ -259,6 +259,9 @@ class FiredRule:
     """A rule that fired for a call, with the effect it contributed.
 
     ``origin`` names the ledger the rule came from (see :class:`Rule`).
+    ``confirmed`` is true when the owner vouches for the rule: a built-in
+    rule, a rule confirmed in the user ledger, or a project rule confirmed
+    on this machine.  Only such a rule's words are ever shown to the agent.
     """
 
     id: str
@@ -266,6 +269,7 @@ class FiredRule:
     source: str
     effect: str
     origin: str = "user"
+    confirmed: bool = False
 
 
 @dataclass(frozen=True)

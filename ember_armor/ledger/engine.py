@@ -867,7 +867,14 @@ def evaluate(
             excepted += [ExceptedRule(rule.id, reason) for reason in reasons]
             continue
         fired.append(
-            FiredRule(rule.id, rule.text, rule.source, rule.effect, rule.origin)
+            FiredRule(
+                rule.id,
+                rule.text,
+                rule.source,
+                rule.effect,
+                rule.origin,
+                rule.confirmed,
+            )
         )
     error = "; ".join(dict.fromkeys(roots.errors)) or None
     fired.sort(key=lambda rule: -SEVERITY[rule.effect])

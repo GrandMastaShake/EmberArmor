@@ -1,12 +1,20 @@
 """Claude Code PreToolUse hook adapter.
 
 Reads the hook JSON (``session_id``, ``cwd``, ``tool_name``, ``tool_input``)
-on standard input.  On ``deny`` or ``ask`` in ``enforce`` mode it prints a
-``hookSpecificOutput`` object with ``permissionDecision`` and a reason that
-quotes the rule's text and source.  In every other case it prints nothing, so
-the host's normal permission flow is untouched.  It never prints ``allow``
-and always exits 0.  A failure of the gate itself is also reported on
-standard error, which the host does not treat as a decision.
+on standard input and prints at most one object:
+
+- On ``deny`` or ``ask`` in ``enforce`` mode, ``hookSpecificOutput`` with
+  ``permissionDecision`` and a reason that quotes the rule's text and source.
+- In ``remind`` mode, and in ``enforce`` mode when the decision does not
+  block, ``hookSpecificOutput`` with ``additionalContext`` and no
+  ``permissionDecision``: a reminder of the rules that fired.  The host
+  hands it to the agent and its own permission flow is untouched.
+- In every other case, and always in ``observe`` mode, nothing.
+
+Only a rule the owner vouches for is ever quoted, in a reason or in a
+reminder.  The hook never prints ``allow`` and always exits 0.  A failure
+of the gate itself is also reported on standard error, which the host does
+not treat as a decision.
 
 Run as ``ember-gate hook`` or ``python -m ember_armor.ledger.hook``.
 """
@@ -17,6 +25,7 @@ import json
 import os
 import sys
 from collections.abc import Mapping
+from dataclasses import replace
 
 from ember_armor.ledger.config import gate_mode
 from ember_armor.ledger.gate import GateResult, check
@@ -25,7 +34,11 @@ TYPE_CHECKING = False
 if TYPE_CHECKING:
     from typing import Any
 
+    from ember_armor.ledger.model import Decision
+
 BLOCKING_DECISIONS = ("deny", "ask")
+#: Modes in which a failure of the gate lets the call proceed.
+_PASSIVE = ("observe", "remind")
 
 
 def _decision_object(decision: str, reason: str) -> str:
@@ -40,12 +53,36 @@ def _decision_object(decision: str, reason: str) -> str:
     )
 
 
+def _context_object(event: str, text: str) -> str:
+    """Text for the agent, with no decision: the permission flow is untouched."""
+    return json.dumps(
+        {"hookSpecificOutput": {"hookEventName": event, "additionalContext": text}}
+    )
+
+
+def _reason(decision: Decision) -> str:
+    """The reason of a blocking decision, quoting confirmed rules only.
+
+    A rule nobody confirmed can fire next to the rule that blocks.  Its
+    words are not the owner's, so they stay in the log.
+    """
+    if not all(rule.confirmed for rule in decision.fired):
+        vouched = tuple(rule for rule in decision.fired if rule.confirmed)
+        decision = replace(decision, fired=vouched)
+    return decision.reason() or f"EmberArmor ledger decision: {decision.effect}"
+
+
 def hook_output(result: GateResult) -> str:
-    """Text for standard output: a decision object, or nothing."""
+    """Text for standard output: a decision object, a reminder, or nothing."""
     effect = result.decision.effect
-    if not result.blocking or effect not in BLOCKING_DECISIONS:
+    if result.blocking and effect in BLOCKING_DECISIONS:
+        return _decision_object(effect, _reason(result.decision))
+    reminder = result.reminder
+    if reminder is None or not reminder.text:
         return ""
-    return _decision_object(effect, result.decision.reason())
+    if result.mode == "observe" or result.blocking:
+        return ""  # observe prints nothing, whatever the result holds
+    return _context_object("PreToolUse", reminder.text)
 
 
 def handle(raw: bytes, env: Mapping[str, str] | None = None) -> GateResult:
@@ -67,25 +104,26 @@ def handle(raw: bytes, env: Mapping[str, str] | None = None) -> GateResult:
     return check(call, env=env, problem=problem)
 
 
-def _observing() -> bool:
-    """True only when the configured mode is positively known to be observe."""
+def _passive() -> bool:
+    """True only when the mode is positively known to let a failure pass."""
     try:
-        return gate_mode(os.environ) == "observe"
+        return gate_mode(os.environ) in _PASSIVE
     except Exception:
         return False
 
 
 def main() -> int:
-    """Entry point: read standard input, print the decision, exit 0."""
+    """Entry point: read standard input, print the output, exit 0."""
     try:
         result = handle(sys.stdin.buffer.read())
         output, error = hook_output(result), result.decision.error
     except Exception as exc:
-        # Last resort.  Unless the gate is known to be observing, ask: the
-        # mode may be enforce in a configuration this failure kept unread.
+        # Last resort.  Unless the gate is known to be observing or
+        # reminding, ask: the mode may be enforce in a configuration this
+        # failure kept unread.
         error = f"{type(exc).__name__}: {exc}"
         failure = f"EmberArmor gate failure: {error}"
-        output = "" if _observing() else _decision_object("ask", failure)
+        output = "" if _passive() else _decision_object("ask", failure)
     if error:
         sys.stderr.write(f"ember-gate: gate failure: {error}\n")
     if output:

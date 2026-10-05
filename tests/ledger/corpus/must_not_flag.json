@@ -2326,5 +2326,25 @@
  {
   "tool": "Bash",
   "command": "sudo DEBIAN_FRONTEND=noninteractive apt-get install -y jq"
+ },
+ {
+  "tool": "Bash",
+  "command": "mv README.md docs/"
+ },
+ {
+  "tool": "Bash",
+  "command": "mv .env.example .env.sample"
+ },
+ {
+  "tool": "Bash",
+  "command": "mv src/old.ts src/new.ts && git add -A src"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Move-Item notes.txt docs\\"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Move-Item -Path build.log -Destination logs"
  }
 ]

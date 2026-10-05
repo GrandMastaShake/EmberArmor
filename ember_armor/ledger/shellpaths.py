@@ -66,6 +66,9 @@ class _Cmdlet:
     last: str | None = None
 
 
+#: Operation of a moved source.  The file leaves its place (a write) and its
+#: content arrives somewhere else (a read), so a move yields both path facts.
+_MOVE = "move"
 _READERS = ("cat", "tac", "nl", "less", "more", "bat", "strings", "xxd", "od",
             "hexdump", "base64", "source", ".", "diff")  # fmt: skip
 _GREP_VALUES = frozenset({"-e", "-f", "-m", "-A", "-B", "-C", "-g", "-t",
@@ -93,7 +96,7 @@ _BASH: dict[str, _Native] = {
     "rmdir": _Native("delete"),
     "unlink": _Native("delete"),
     "cp": _Native("read", frozenset({"-t", "-S"}), last="write"),
-    "mv": _Native("write", frozenset({"-t", "-S"})),
+    "mv": _Native(_MOVE, frozenset({"-t", "-S"}), last="write"),
     "tee": _Native("write"),
     "touch": _Native("write", frozenset({"-d", "-t", "-r"})),
     "truncate": _Native("write", frozenset({"-s", "-r"})),
@@ -116,7 +119,7 @@ _CMD: dict[str, _Native] = {
     "rmdir": _Native("delete", recursive=("/s",)),
     "type": _Native("read"),
     "copy": _Native("read", last="write"),
-    "move": _Native("write"),
+    "move": _Native(_MOVE, last="write"),
 }
 
 _COMMON_VALUES: dict[str, None] = dict.fromkeys(
@@ -173,7 +176,7 @@ _POWERSHELL: dict[str, _Cmdlet] = {
         {**_path_params("read"), "destination": "write"}, rest="read", last="write"
     ),
     "move-item": _cmdlet(
-        {**_path_params("write"), "destination": "write"}, rest="write"
+        {**_path_params(_MOVE), "destination": "write"}, rest=_MOVE, last="write"
     ),
     "rename-item": _cmdlet(_path_params("write"), ("newname",), ("write", None)),
     "select-string": _cmdlet(
@@ -475,6 +478,14 @@ def _find_paths(command: SimpleCommand) -> list[tuple[str, str, bool]]:
 
 
 def _command_paths(command: SimpleCommand) -> list[tuple[str, str, bool]]:
+    return [
+        (path, op, recursive)
+        for path, kind, recursive in _recognised_paths(command)
+        for op in (("write", "read") if kind == _MOVE else (kind,))
+    ]
+
+
+def _recognised_paths(command: SimpleCommand) -> list[tuple[str, str, bool]]:
     name = program_name(command.argv[0])
     if command.shell == "powershell" and name in _POWERSHELL:
         return _cmdlet_paths(command, _POWERSHELL[name])

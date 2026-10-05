@@ -42,7 +42,11 @@ POSIX_PATHS = [
     ),
     (
         "mv a.txt b.txt",
-        [("/work/app/a.txt", "write", False), ("/work/app/b.txt", "write", False)],
+        [
+            ("/work/app/a.txt", "write", False),
+            ("/work/app/a.txt", "read", False),
+            ("/work/app/b.txt", "write", False),
+        ],
     ),
     ("tee out.log", [("/work/app/out.log", "write", False)]),
     ("touch new.txt", [("/work/app/new.txt", "write", False)]),
@@ -174,7 +178,11 @@ POWERSHELL_PATHS = [
     ),
     (
         "Move-Item a.txt b.txt",
-        [("C:/work/app/a.txt", "write", False), ("C:/work/app/b.txt", "write", False)],
+        [
+            ("C:/work/app/a.txt", "write", False),
+            ("C:/work/app/a.txt", "read", False),
+            ("C:/work/app/b.txt", "write", False),
+        ],
     ),
     ("New-Item -ItemType File -Path n.txt", [("C:/work/app/n.txt", "write", False)]),
     (

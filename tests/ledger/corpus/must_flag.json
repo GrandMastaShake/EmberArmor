@@ -2188,14 +2188,14 @@
  },
  {
   "tool": "PowerShell",
-  "command": "Remove-Item C:\\Users\\alexa \u2013Recurse \u2013Force",
+  "command": "Remove-Item C:\\Users\\alexa –Recurse –Force",
   "effect": "deny",
   "rule": "builtin.delete.protected",
   "platform": "windows"
  },
  {
   "tool": "PowerShell",
-  "command": "powershell \u2013Command 'Remove-Item src -Recurse'",
+  "command": "powershell –Command 'Remove-Item src -Recurse'",
   "effect": "ask",
   "rule": "builtin.delete.recursive"
  },
@@ -3684,6 +3684,63 @@
    "pattern": "KEY",
    "glob": ".env*"
   },
+  "effect": "ask",
+  "rule": "builtin.secrets.read"
+ },
+ {
+  "tool": "Bash",
+  "command": "mv .env dist/",
+  "effect": "ask",
+  "rule": "builtin.secrets.read"
+ },
+ {
+  "tool": "Bash",
+  "command": "mv .env public/.env",
+  "effect": "ask",
+  "rule": "builtin.secrets.read"
+ },
+ {
+  "tool": "Bash",
+  "command": "cd app && mv .env.local ../public/",
+  "effect": "ask",
+  "rule": "builtin.secrets.read"
+ },
+ {
+  "tool": "Bash",
+  "command": "mv ~/.ssh/id_rsa /tmp/key",
+  "effect": "ask",
+  "rule": "builtin.secrets.read"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Move-Item .env .\\dist\\",
+  "platform": "windows",
+  "effect": "ask",
+  "rule": "builtin.secrets.read"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Move-Item -Path .env -Destination public",
+  "effect": "ask",
+  "rule": "builtin.secrets.read"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Move-Item -Destination public -Path .env",
+  "effect": "ask",
+  "rule": "builtin.secrets.read"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "mv $HOME\\.ssh\\id_rsa C:\\inetpub\\key",
+  "platform": "windows",
+  "effect": "ask",
+  "rule": "builtin.secrets.read"
+ },
+ {
+  "tool": "Bash",
+  "command": "cmd /c move .env public",
+  "platform": "windows",
   "effect": "ask",
   "rule": "builtin.secrets.read"
  }

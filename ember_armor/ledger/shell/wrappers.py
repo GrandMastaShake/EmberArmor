@@ -12,7 +12,7 @@ import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from ember_armor.ledger.shell.core import program_name
+from ember_armor.ledger.shell.core import UNKNOWN_DIR, program_name
 
 #: More stacked wrappers than this is a parse error, not a silent pass.
 MAX_WRAPPERS = 32
@@ -28,7 +28,9 @@ class Wrapper:
     positionals stand before the wrapped command (a duration, a container);
     ``versioned`` runners accept ``name@version`` for the command.  When
     ``only_flags`` is set, any other flag means the program is doing
-    something else (``wsl --shutdown``).
+    something else (``wsl --shutdown``).  ``dir_flags`` name the directory
+    the wrapped command starts in (``env -C dir``); with ``dir_unknown``
+    such a flag only says that the directory is not the shell's.
     """
 
     value_flags: frozenset[str] = frozenset()
@@ -36,6 +38,8 @@ class Wrapper:
     leads: tuple[tuple[str, ...], ...] = ()
     versioned: bool = False
     only_flags: frozenset[str] | None = None
+    dir_flags: frozenset[str] = frozenset()
+    dir_unknown: bool = False
 
 
 @dataclass(frozen=True, eq=False, repr=False)
@@ -45,7 +49,10 @@ class Unwrapped:
     ``program`` replaces the command word when a runner named a version
     (``vercel@latest``); ``capped`` is set when more than
     :data:`MAX_WRAPPERS` were stacked; ``assigned`` are the variables an
-    ``env`` wrapper set; ``names`` are the wrappers removed, outermost first.
+    ``env`` wrapper set; ``names`` are the wrappers removed, outermost first;
+    ``chdir`` are the directories they start the command in, outermost first
+    (:data:`~ember_armor.ledger.shell.core.UNKNOWN_DIR` for one that cannot
+    be known).
     """
 
     start: int = 0
@@ -53,6 +60,7 @@ class Unwrapped:
     capped: bool = False
     assigned: tuple[str, ...] = ()
     names: tuple[str, ...] = ()
+    chdir: tuple[str, ...] = ()
 
 
 _CONTAINER_FLAGS = frozenset(
@@ -64,7 +72,8 @@ _CONTAINER = Wrapper(_CONTAINER_FLAGS, 1, (("exec",), ("compose", "exec")))
 _SUDO = Wrapper(
     frozenset({"-u", "-g", "-h", "-p", "-C", "-D", "-R", "-T", "-r", "-t", "--user",
                "--group", "--host", "--prompt", "--chdir", "--integrity",
-               "--loglevel"})
+               "--loglevel"}),
+    dir_flags=frozenset({"-D", "--chdir"}),
 )  # fmt: skip
 _WSL_VALUES = frozenset(
     {"-d", "--distribution", "-u", "--user", "--cd", "--shell-type"}
@@ -73,7 +82,10 @@ WRAPPERS: dict[str, Wrapper] = {
     "sudo": _SUDO,
     "gsudo": _SUDO,
     "doas": Wrapper(frozenset({"-u", "-C"})),
-    "env": Wrapper(frozenset({"-u", "-C", "--unset", "--chdir"})),
+    "env": Wrapper(
+        frozenset({"-u", "-C", "--unset", "--chdir"}),
+        dir_flags=frozenset({"-C", "--chdir"}),
+    ),
     "nohup": Wrapper(),
     "time": Wrapper(frozenset({"-f", "-o"})),
     "nice": Wrapper(frozenset({"-n"})),
@@ -90,7 +102,11 @@ WRAPPERS: dict[str, Wrapper] = {
     "setsid": Wrapper(),
     "winpty": Wrapper(),
     "busybox": Wrapper(),
-    "wsl": Wrapper(_WSL_VALUES, only_flags=_WSL_VALUES | {"-e", "--exec"}),
+    "wsl": Wrapper(
+        _WSL_VALUES,
+        only_flags=_WSL_VALUES | {"-e", "--exec"},
+        dir_flags=frozenset({"--cd"}),
+    ),
     "npx": Wrapper(frozenset({"-p", "--package"}), versioned=True),
     "bunx": Wrapper(versioned=True),
     "uvx": Wrapper(frozenset({"--from", "--with", "-p", "--python"}), versioned=True),
@@ -98,18 +114,29 @@ WRAPPERS: dict[str, Wrapper] = {
         frozenset({"--with", "-p", "--python", "--project", "--directory",
                    "--env-file", "--group", "--extra", "--package"}),
         leads=(("run",),),
+        dir_flags=frozenset({"--directory"}),
     ),
+    # Where ``npm exec`` starts the command under ``--prefix`` is npm's own
+    # business: the directory is only known not to be the shell's.
     "npm": Wrapper(
-        frozenset({"--prefix", "-w", "--workspace", "-p", "--package"}),
+        frozenset({"--prefix", "-C", "-w", "--workspace", "-p", "--package"}),
         leads=(("exec",), ("x",)),
         versioned=True,
+        dir_flags=frozenset({"--prefix", "-C"}),
+        dir_unknown=True,
     ),
     "pnpm": Wrapper(
         frozenset({"-C", "--dir", "-F", "--filter"}),
         leads=(("dlx",), ("exec",)),
         versioned=True,
+        dir_flags=frozenset({"-C", "--dir"}),
     ),
-    "yarn": Wrapper(leads=(("dlx",), ("exec",)), versioned=True),
+    "yarn": Wrapper(
+        frozenset({"--cwd"}),
+        leads=(("dlx",), ("exec",)),
+        versioned=True,
+        dir_flags=frozenset({"--cwd"}),
+    ),
     "bun": Wrapper(leads=(("x",),), versioned=True),
     "pipx": Wrapper(
         frozenset({"--spec", "--python"}), leads=(("run",),), versioned=True
@@ -120,8 +147,28 @@ WRAPPERS: dict[str, Wrapper] = {
 }  # fmt: skip
 
 
+def _directory(texts: Sequence[str], at: int, spec: Wrapper) -> list[str]:
+    """The directory the wrapper's flag at *at* starts the command in, if any.
+
+    ``-C dir``, ``--chdir dir``, ``--chdir=dir`` and ``-Cdir``.
+    """
+    text = texts[at]
+    flag, attached, value = text.partition("=")
+    if text in spec.dir_flags:
+        value = texts[at + 1] if at + 1 < len(texts) else ""
+    elif not (attached and flag in spec.dir_flags):
+        if text.startswith("--") or text[:2] not in spec.dir_flags:
+            return []
+        value = text[2:]
+    return [UNKNOWN_DIR if spec.dir_unknown or not value else value]
+
+
 def _wrapped_at(
-    texts: Sequence[str], start: int, spec: Wrapper, assigned: list[str]
+    texts: Sequence[str],
+    start: int,
+    spec: Wrapper,
+    assigned: list[str],
+    chdir: list[str],
 ) -> int | None:
     """Index of the command a wrapper at *start* runs, or ``None`` if none."""
     wrapper = program_name(texts[start])
@@ -130,6 +177,7 @@ def _wrapped_at(
     pending = bool(spec.leads)
     skip = spec.skip
     names: list[str] = []
+    moves: list[str] = []
     i = start + 1
     found: int | None = None
     while i < len(texts):
@@ -146,6 +194,7 @@ def _wrapped_at(
                 return None
             if wrapper == "env" and text in ("-u", "--unset"):
                 names += texts[i + 1 : i + 2]
+            moves += _directory(texts, i, spec)
             i += 2 if text in spec.value_flags else 1
         elif pending:
             lead += (text,)
@@ -158,6 +207,7 @@ def _wrapped_at(
             break
     if found is not None and found < len(texts):
         assigned += names
+        chdir += moves
         return found
     return None
 
@@ -177,6 +227,7 @@ def unwrap(texts: Sequence[str], literal: Sequence[bool]) -> Unwrapped:
     program: str | None = None
     assigned: list[str] = []
     names: list[str] = []
+    chdir: list[str] = []
     for _ in range(MAX_WRAPPERS):
         if start >= len(texts):
             break
@@ -188,7 +239,7 @@ def unwrap(texts: Sequence[str], literal: Sequence[bool]) -> Unwrapped:
             text in ("-v", "-V") for text in texts[start + 1 : start + 3]
         ):
             break
-        inner = _wrapped_at(texts, start, spec, assigned)
+        inner = _wrapped_at(texts, start, spec, assigned, chdir)
         if inner is None:
             break
         start, program = inner, None
@@ -198,5 +249,7 @@ def unwrap(texts: Sequence[str], literal: Sequence[bool]) -> Unwrapped:
             program = texts[start][:version]
     else:
         capped = start < len(texts) and program_name(texts[start]) in WRAPPERS
-        return Unwrapped(start, program, capped, tuple(assigned), tuple(names))
-    return Unwrapped(start, program, False, tuple(assigned), tuple(names))
+        return Unwrapped(
+            start, program, capped, tuple(assigned), tuple(names), tuple(chdir)
+        )
+    return Unwrapped(start, program, False, tuple(assigned), tuple(names), tuple(chdir))

@@ -86,7 +86,9 @@ class _Cmd:
             self.out.dynamic.append(Dynamic("variable_command", command[0][:200]))
         found = nested.inspect(command)
         if found is not None and found.kind == "script":
-            self.out.merge(self.recurse(found.script, found.shell, self.depth + 1))
+            inner = self.recurse(found.script, found.shell, self.depth + 1)
+            chdir = (found.chdir,) if found.chdir else ()
+            self.out.merge(inner, chdir, starter="cmd")
 
 
 def parse_cmd(text: str, depth: int, recurse: Recurse) -> ParseResult:

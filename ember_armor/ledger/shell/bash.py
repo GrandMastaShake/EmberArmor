@@ -24,13 +24,14 @@ from ember_armor.ledger.shell.core import (
     MAX_DEPTH,
     POWERSHELLS,
     SELECTORS,
+    UNKNOWN_DIR,
     Dynamic,
     ParseError,
     ParseResult,
     Recurse,
     Redirect,
     SimpleCommand,
-    find_exec,
+    find_runs,
     program_name,
 )
 
@@ -119,7 +120,8 @@ class _Heredoc:
 
     ``expands`` is set for an unquoted delimiter: the shell then runs the
     substitutions in the body.  ``shell`` names the shell that reads the
-    body as a script, when the command ended before the body was read.
+    body as a script, when the command ended before the body was read, and
+    ``chdir`` the directories that shell is started in.
     """
 
     delimiter: str
@@ -128,6 +130,7 @@ class _Heredoc:
     body: str = ""
     command: int = -1
     shell: str = ""
+    chdir: tuple[str, ...] = ()
 
 
 @dataclass(eq=False, repr=False)
@@ -148,6 +151,11 @@ class _Stage:
     program: str
     piped_script: bool
     feed: tuple[str, ...]
+
+
+def _started_in(chdir: tuple[str, ...], found: nested.Nested) -> tuple[str, ...]:
+    """Directories a nested shell starts in: its wrappers', then its own."""
+    return (*chdir, found.chdir) if found.chdir else chdir
 
 
 def _strip_wrappers(words: list[_Word]) -> tuple[list[_Word], wrappers.Unwrapped]:
@@ -307,7 +315,8 @@ class _Bash:
         scripts = [doc for doc in self.pending if doc.shell]
         self.pending.clear()
         for doc in scripts:
-            self.out.merge(self.recurse(doc.body, doc.shell, self.depth + 1))
+            script = self.recurse(doc.body, doc.shell, self.depth + 1)
+            self.out.merge(script, doc.chdir, starter="bash")
         for start, stop in expanded:
             # An unquoted delimiter: the shell runs the body's substitutions.
             self._scan(start, stop, quotes=False)
@@ -734,14 +743,20 @@ class _Bash:
 
         return _PLAIN_VAR_RE.sub(value, text)
 
-    def _exec_command(self, argv: tuple[str, ...]) -> None:
-        """Add a command that ``find -exec`` runs (wrappers and shells followed)."""
+    def _exec_command(self, argv: tuple[str, ...], chdir: tuple[str, ...]) -> None:
+        """Add a command that ``find -exec`` runs (wrappers and shells followed).
+
+        *chdir* names where ``find`` starts it: the directories of ``find``
+        itself, and an unknown one for ``-execdir``.
+        """
         found = wrappers.unwrap(argv, [True] * len(argv))
         argv = (found.program or argv[found.start], *argv[found.start + 1 :])
-        self._add(SimpleCommand(argv, "bash"))
+        chdir += found.chdir
+        self._add(SimpleCommand(argv, "bash", chdir=chdir))
         script = nested.inspect(argv)
         if script is not None and script.kind == "script":
-            self.out.merge(self.recurse(script.script, script.shell, self.depth + 1))
+            inner = self.recurse(script.script, script.shell, self.depth + 1)
+            self.out.merge(inner, _started_in(chdir, script), starter="bash")
 
     def _trap(self, words: list[_Word]) -> None:
         """Parse the command a ``trap`` installs (its first operand)."""
@@ -834,7 +849,8 @@ class _Bash:
         if cur.herestring is not None:
             stdin.append(cur.herestring.text)
         feed = stages[-1].feed if stages else ()
-        command = SimpleCommand(argv, "bash", redirects, "\n".join(stdin), feed)
+        chdir = wrapped.chdir
+        command = SimpleCommand(argv, "bash", redirects, "\n".join(stdin), feed, chdir)
         index = self._add(command)
         for doc in cur.heredocs:
             doc.command = index
@@ -852,8 +868,8 @@ class _Bash:
         elif program == "trap":
             self._trap(words[1:])
         if program == "find":
-            for inner in find_exec(argv[1:]):
-                self._exec_command(inner)
+            for inner, moved in find_runs(argv[1:]):
+                self._exec_command(inner, chdir + (UNKNOWN_DIR,) * moved)
         found = nested.inspect(argv)
         downloaded = program in _RUNNERS and self._spans_download(
             self._code_words(words, program, found)
@@ -865,9 +881,11 @@ class _Bash:
                 self.out.dynamic.append(Dynamic("eval", " ".join(argv)[:200]))
             if not all(word.only_expansion for word in words[1:]):
                 # Read as written: what a variable adds to it is not known.
+                # The shell runs it itself, so a ``cd`` in it stays in force.
                 script = " ".join(argv[1:])
-                self.out.merge(self.recurse(script, "bash", self.depth + 1))
-        piped = self._descend(cur, words, program, found, downloaded)
+                evaluated = self.recurse(script, "bash", self.depth + 1)
+                self.out.merge(evaluated, keep=True)
+        piped = self._descend(cur, words, program, found, downloaded, chdir)
         stages.append(_Stage(program, piped, feed if program in SELECTORS else argv))
 
     @staticmethod
@@ -894,10 +912,15 @@ class _Bash:
         program: str,
         found: nested.Nested | None,
         downloaded: bool,
+        chdir: tuple[str, ...],
     ) -> bool:
-        """Parse a nested literal shell; return True if it reads a piped script."""
+        """Parse a nested literal shell; return True if it reads a piped script.
+
+        *chdir* names the directories the wrappers start that shell in.
+        """
         if found is None:
             return False
+        chdir = _started_in(chdir, found)
         if found.kind == "encoded":
             self.out.dynamic.append(Dynamic("encoded_command", program))
         if found.kind == "script":
@@ -907,17 +930,20 @@ class _Bash:
             unknown = any(word.only_expansion for word in rest[:1])
             if not unknown:
                 # With substitutions in it the script is read as written.
-                self.out.merge(self.recurse(found.script, found.shell, self.depth + 1))
+                script = self.recurse(found.script, found.shell, self.depth + 1)
+                self.out.merge(script, chdir, starter="bash")
             if (unknown or any(word.spans for word in rest)) and not downloaded:
                 self.out.dynamic.append(Dynamic("nested_dynamic", program))
         if found.kind != "stdin":
             return False
         if cur.heredocs or cur.herestring is not None:
-            self._stdin_script(cur, found.shell, program)
+            self._stdin_script(cur, found.shell, program, chdir)
             return False
         return True
 
-    def _stdin_script(self, cur: _Pending, shell: str, program: str) -> None:
+    def _stdin_script(
+        self, cur: _Pending, shell: str, program: str, chdir: tuple[str, ...]
+    ) -> None:
         """Parse a script handed to a shell by here-document or here-string."""
         if not shell:
             return
@@ -925,13 +951,15 @@ class _Bash:
         if cur.heredocs and any(doc is cur.heredocs[-1] for doc in self.pending):
             # ``bash <<EOF | tee log``: the body is read at the next newline.
             cur.heredocs[-1].shell = shell
+            cur.heredocs[-1].chdir = chdir
             return
         if cur.herestring is not None:
             if cur.herestring.expands:
                 self.out.dynamic.append(Dynamic("nested_dynamic", program))
                 return
             text = cur.herestring.text
-        self.out.merge(self.recurse(text, shell, self.depth + 1))
+        script = self.recurse(text, shell, self.depth + 1)
+        self.out.merge(script, chdir, starter="bash")
 
     def _end_pipeline(self, stages: list[_Stage]) -> None:
         download = decoder = False

@@ -21,6 +21,7 @@ from ember_armor.ledger.shell.core import (
     MAX_COMMANDS,
     MAX_DEPTH,
     SELECTORS,
+    UNKNOWN_DIR,
     Dynamic,
     ParseError,
     ParseResult,
@@ -704,7 +705,8 @@ class _PowerShell:
             if "wsl" in found.names:
                 # What ``wsl`` runs is a Linux command line.
                 line = nested.join_arguments([word.text for word in words], "'")
-                self.out.merge(self.recurse(line, "bash", self.depth + 1))
+                inner = self.recurse(line, "bash", self.depth + 1)
+                self.out.merge(inner, found.chdir, starter="bash")
                 self._expression(redirects, stages, raw)
                 return
         if not first.literal and "$" in name.replace("\\", "/").rsplit("/", 1)[-1]:
@@ -721,11 +723,12 @@ class _PowerShell:
             if value is not None and not (cmdlet and value.startswith("-")):
                 words[index] = _Word(value, "string")
         argv = (program, *(word.text for word in words[1:]))
-        index = self._add(SimpleCommand(argv, "powershell", tuple(redirects)))
+        command = SimpleCommand(argv, "powershell", tuple(redirects), chdir=found.chdir)
+        index = self._add(command)
         blocks = tuple(span for w in words if w.kind == "block" for span in w.spans)
         if program.lower() == "start-process":
             self._start_process(words)
-        piped = self._descend(words, argv, raw)
+        piped = self._descend(words, argv, raw, found.chdir)
         stages.append(_Stage(program_name(program), piped, raw, index, blocks))
 
     def _start_process(self, words: list[_Word]) -> None:
@@ -767,13 +770,34 @@ class _PowerShell:
         line = " ".join(argument.text for argument in arguments)
         pieces = (piece.replace('"', "") for piece in _ARGUMENT_RE.findall(line))
         argv = (program.text, *pieces)
-        self._add(SimpleCommand(argv, "cmd"))
+        chdir = self._working_directory(named.get("workingdirectory"))
+        self._add(SimpleCommand(argv, "cmd", chdir=chdir))
         script = nested.inspect(argv)
         if script is not None and script.kind == "script":
-            self.out.merge(self.recurse(script.script, script.shell, self.depth + 1))
+            inner = self.recurse(script.script, script.shell, self.depth + 1)
+            if script.chdir:
+                chdir = (*chdir, script.chdir)
+            self.out.merge(inner, chdir, starter="powershell")
 
-    def _descend(self, words: list[_Word], argv: tuple[str, ...], raw: str) -> bool:
-        """Handle Invoke-Expression and nested shells; True if fed by a pipe."""
+    @staticmethod
+    def _working_directory(values: list[_Word] | None) -> tuple[str, ...]:
+        """Where ``Start-Process -WorkingDirectory`` starts the program."""
+        if values is None:
+            return ()
+        literal = len(values) == 1 and values[0].kind in ("bare", "string")
+        return (values[0].text if literal and values[0].literal else UNKNOWN_DIR,)
+
+    def _descend(
+        self,
+        words: list[_Word],
+        argv: tuple[str, ...],
+        raw: str,
+        chdir: tuple[str, ...],
+    ) -> bool:
+        """Handle Invoke-Expression and nested shells; True if fed by a pipe.
+
+        *chdir* names the directories the wrappers start the command in.
+        """
         program = program_name(argv[0])
         rest = words[1:]
         if program == "invoke-expression":
@@ -785,8 +809,10 @@ class _PowerShell:
                 Dynamic("download_pipe" if fetched else "eval", raw[:200])
             )
             if len(rest) == 1 and rest[0].kind == "string":
-                # With variables in it the string is read as written.
-                self.out.merge(self.recurse(rest[0].text, "powershell", self.depth + 1))
+                # With variables in it the string is read as written.  It
+                # runs in the session itself: a ``cd`` in it stays in force.
+                inner = self.recurse(rest[0].text, "powershell", self.depth + 1)
+                self.out.merge(inner, keep=True)
             return False
         found = nested.inspect(argv)
         if found is None:
@@ -800,7 +826,10 @@ class _PowerShell:
                 kind = "download_pipe" if fetched else "nested_dynamic"
                 self.out.dynamic.append(Dynamic(kind, program))
             elif not (script_words and all(w.kind == "block" for w in script_words)):
-                self.out.merge(self.recurse(found.script, found.shell, self.depth + 1))
+                inner = self.recurse(found.script, found.shell, self.depth + 1)
+                if found.chdir:
+                    chdir = (*chdir, found.chdir)
+                self.out.merge(inner, chdir, starter="powershell")
         return found.kind == "stdin"
 
     def _end_pipeline(self, stages: list[_Stage]) -> None:

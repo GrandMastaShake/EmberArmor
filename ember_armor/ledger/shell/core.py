@@ -10,6 +10,9 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 
 MAX_COMMAND_CHARS = 200_000
+#: The directory a command runs in when the command string does not say
+#: (``cd $SOMEWHERE``).  No normalised path has this form.
+UNKNOWN_DIR = "?"
 MAX_COMMANDS = 2_000
 MAX_DEPTH = 8
 
@@ -65,6 +68,13 @@ class SimpleCommand:
     ``stdin`` is the literal text handed to the command by a here-document
     or here-string.  ``upstream`` is the argument vector of the pipeline
     stage that feeds the command (stages that only select are skipped).
+    ``chdir`` holds the directories that wrappers removed from the command
+    start it in, outermost first (``env -C dir``, ``sudo -D dir``,
+    ``pnpm -C dir exec``); an entry is :data:`UNKNOWN_DIR` when the directory
+    cannot be known.  ``cwd`` is not set by the parsers: it is the directory
+    in effect when the command runs, filled in when facts are extracted
+    (empty for the working directory of the call, :data:`UNKNOWN_DIR` when
+    it cannot be known).
     """
 
     argv: tuple[str, ...]
@@ -72,6 +82,8 @@ class SimpleCommand:
     redirects: tuple[Redirect, ...] = ()
     stdin: str = ""
     upstream: tuple[str, ...] = ()
+    chdir: tuple[str, ...] = ()
+    cwd: str = field(default="", compare=False)
 
 
 @dataclass(frozen=True)
@@ -97,7 +109,13 @@ class ParseResult:
     does not move the commands after it.  ``assigned`` names every variable
     the string sets in the environment of a command: any assignment in Bash
     (alone, in front of a command, through ``export`` or ``env``, also
-    ``unset``), and ``$env:NAME`` in PowerShell.
+    ``unset``), and ``$env:NAME`` in PowerShell.  ``entered`` maps the index
+    of a scope to the shell that names its start and the directories its
+    starter puts it in, outermost first (``env -C dir sh -c '...'``, ``pwsh
+    -WorkingDirectory dir -Command ...``).
+    ``kept`` holds the indexes of scopes that run in the shell itself
+    (``eval``, ``Invoke-Expression``): a ``cd`` inside one stays in force
+    after it.
     """
 
     commands: list[SimpleCommand] = field(default_factory=list)
@@ -107,6 +125,8 @@ class ParseResult:
     unknown: set[str] = field(default_factory=set)
     scopes: list[tuple[int, int]] = field(default_factory=list)
     assigned: list[str] = field(default_factory=list)
+    entered: dict[int, tuple[str, tuple[str, ...]]] = field(default_factory=dict)
+    kept: set[int] = field(default_factory=set)
 
     def assign(self, name: str, value: str | tuple[str, ...] | None) -> None:
         """Record an assignment to *name*.
@@ -130,10 +150,31 @@ class ParseResult:
         self.variables.pop(name, None)
         self.choices.pop(name, None)
 
-    def merge(self, other: ParseResult) -> None:
-        """Append the findings of a nested shell, which is a scope of its own."""
+    def merge(
+        self,
+        other: ParseResult,
+        chdir: tuple[str, ...] = (),
+        *,
+        starter: str = "",
+        keep: bool = False,
+    ) -> None:
+        """Append the findings of a nested shell, which is a scope of its own.
+
+        *chdir* names the directories its starter puts it in, outermost
+        first, as the shell *starter* reads them.  *keep* is set for a script
+        the shell runs itself (``eval``): a ``cd`` in it stays in force
+        afterwards.
+        """
         offset = len(self.commands)
+        number = len(self.scopes)
         self.scopes.append((offset, offset + len(other.commands)))
+        if chdir:
+            self.entered[number] = (starter, chdir)
+        if keep:
+            self.kept.add(number)
+        for inner, chain in other.entered.items():
+            self.entered[number + 1 + inner] = chain
+        self.kept.update(number + 1 + inner for inner in other.kept)
         self.scopes += [(low + offset, high + offset) for low, high in other.scopes]
         self.commands.extend(other.commands)
         self.dynamic.extend(other.dynamic)
@@ -240,12 +281,22 @@ def lister_targets(argv: Sequence[str]) -> tuple[list[str], bool] | None:
 
 def find_exec(args: Sequence[str]) -> list[tuple[str, ...]]:
     """Commands a ``find`` runs through ``-exec``, with ``{}`` filled in."""
+    return [command for command, _ in find_runs(args)]
+
+
+def find_runs(args: Sequence[str]) -> list[tuple[tuple[str, ...], bool]]:
+    """Commands a ``find`` runs, and whether each runs where its file lies.
+
+    ``-execdir`` and ``-okdir`` start the command in the directory of the
+    file found, which the command string does not name.
+    """
     targets, _ = find_targets(args)
-    commands: list[tuple[str, ...]] = []
+    commands: list[tuple[tuple[str, ...], bool]] = []
     for i, arg in enumerate(args):
         if arg in _FIND_EXEC:
             rest = args[i + 1 :]
             ends = [j for j, a in enumerate(rest) if a in (";", "+")]
             inner = rest[: ends[0]] if ends else rest
-            commands.append(tuple(targets[0] if a == "{}" else a for a in inner))
-    return [command for command in commands if command]
+            command = tuple(targets[0] if a == "{}" else a for a in inner)
+            commands.append((command, arg.endswith("dir")))
+    return [(command, moved) for command, moved in commands if command]

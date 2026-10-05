@@ -11,8 +11,24 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
+
+from ember_armor.ledger.shell.core import UNKNOWN_DIR
+
+__all__ = [
+    "NO_PATH",
+    "PATH_VARIABLES",
+    "UNKNOWN_DIR",
+    "Lookup",
+    "PathFact",
+    "expand_variables",
+    "is_under",
+    "matches_glob",
+    "may_match",
+    "normalize",
+    "resolve_pattern",
+]
 
 _DRIVE_RE = re.compile(r"([A-Za-z]):(.*)", re.DOTALL)
 _MSYS_RE = re.compile(r"/([A-Za-z])(/.*)?", re.DOTALL)
@@ -40,11 +56,20 @@ Lookup = Callable[[str], str | None]
 
 @dataclass(frozen=True)
 class PathFact:
-    """One path a call touches: ``op`` is ``read``, ``write`` or ``delete``."""
+    """One path a call touches: ``op`` is ``read``, ``write`` or ``delete``.
+
+    ``cwd`` is the directory in effect where a shell command touches the
+    path: empty for the working directory of the call, :data:`UNKNOWN_DIR`
+    when it cannot be known.  ``source`` is the index of that command among
+    the commands of the call (``-1`` for a file tool).  Neither is part of
+    the fact's identity.
+    """
 
     path: str
     op: str
     recursive: bool = False
+    cwd: str = field(default="", compare=False)
+    source: int = field(default=-1, compare=False)
 
 
 #: Environment variables that may be expanded inside a path.

@@ -11,7 +11,7 @@ from __future__ import annotations
 import os
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from fnmatch import fnmatchcase
 
 from ember_armor.ledger.paths import PATH_VARIABLES, Lookup, PathFact, normalize
@@ -79,7 +79,9 @@ class Facts:
     and ``variables`` the upper-cased variables that path patterns may use.
     ``assigned`` names the variables the shell input sets (see
     :func:`assigned_names`) and ``shell`` the shell whose command the tool
-    carries (empty for any other tool).
+    carries (empty for any other tool).  Each command and each path of a
+    shell call carries the directory in effect for it (``cwd``: empty when
+    that is the working directory of the call).
     """
 
     tool: str
@@ -279,7 +281,7 @@ def extract(
             start = cwd
         else:
             start = normalize(start, cwd, windows=windows, home=home)
-        from ember_armor.ledger.shellpaths import shell_paths
+        from ember_armor.ledger.shellpaths import shell_facts
 
         parsed = parse_shell(command, shell)
         overlong = False
@@ -303,8 +305,14 @@ def extract(
                 for text in _alternatives(raw, parsed.choices, fold)
             ]
 
-        paths = shell_paths(parsed, start, resolve, home)
-        commands, dynamic = tuple(parsed.commands), tuple(parsed.dynamic)
+        paths, directories = shell_facts(
+            parsed, start, resolve, home, origin=cwd, windows=windows
+        )
+        commands = tuple(
+            replace(command, cwd=directory) if directory else command
+            for command, directory in zip(parsed.commands, directories, strict=True)
+        )
+        dynamic = tuple(parsed.dynamic)
         assigned = assigned_names(parsed)
         if overlong:
             dynamic += (Dynamic("parse_error", "path too long"),)

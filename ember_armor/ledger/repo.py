@@ -54,7 +54,11 @@ def has_git(directory: str) -> bool:
     return True
 
 
-def find_root(directory: str, probe: Callable[[str], bool] = has_git) -> str | None:
+def find_root(
+    directory: str,
+    probe: Callable[[str], bool] = has_git,
+    seen: dict[str, str | None] | None = None,
+) -> str | None:
     """Root of the nearest git repository at or above *directory*.
 
     A directory that does not exist is looked up from its nearest existing
@@ -69,20 +73,33 @@ def find_root(directory: str, probe: Callable[[str], bool] = has_git) -> str | N
         A normalised path (see :mod:`ember_armor.ledger.paths`).
     probe:
         ``probe(directory)`` saying whether the directory holds ``.git``.
+    seen:
+        Answers found earlier, by directory.  Every level this walk passes
+        is added, so directories that share ancestors ask about each
+        ancestor once.
 
     Raises
     ------
     OSError
-        If a probe fails.
+        If a probe fails.  Nothing is remembered about that walk.
     """
     if directory.startswith("//") or "$" in directory or directory == UNKNOWN_DIR:
         return UNKNOWN_DIR
+    passed: list[str] = []
+    root: str | None = None
     current: str | None = directory
     while current is not None:
+        if seen is not None and current in seen:
+            root = seen[current]
+            break
+        passed.append(current)
         if probe(current):
-            return current
+            root = current
+            break
         current = parent(current)
-    return None
+    if seen is not None:
+        seen.update(dict.fromkeys(passed, root))
+    return root
 
 
 def finder(windows: bool) -> Finder:
@@ -90,13 +107,15 @@ def finder(windows: bool) -> Finder:
 
     With the Windows flavour only a path on a drive is looked up.  Anything
     else (``/srv/app`` inside WSL) names no directory this machine's
-    filesystem can be asked about.
+    filesystem can be asked about.  The lookup remembers every directory
+    level it has asked about, for as long as it is kept.
     """
-    if not windows:
-        return find_root
+    seen: dict[str, str | None] = {}
 
     def find(directory: str) -> str | None:
         on_drive = directory[1:3] == ":/" and directory[:1].isalpha()
-        return find_root(directory) if on_drive else UNKNOWN_DIR
+        if windows and not on_drive:
+            return UNKNOWN_DIR
+        return find_root(directory, seen=seen)
 
     return find

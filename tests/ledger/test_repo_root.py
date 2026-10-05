@@ -126,7 +126,7 @@ def test_a_network_path_is_never_probed() -> None:
 def test_the_windows_lookup_asks_only_about_paths_on_a_drive(monkeypatch) -> None:
     asked: list[str] = []
 
-    def find_root(directory: str) -> str | None:
+    def find_root(directory: str, **remembered: object) -> str | None:
         asked.append(directory)
         return None
 
@@ -136,7 +136,9 @@ def test_the_windows_lookup_asks_only_about_paths_on_a_drive(monkeypatch) -> Non
     assert find("/srv/repo") == UNKNOWN_DIR  # a directory inside WSL
     assert find("//host/share/x") == UNKNOWN_DIR
     assert asked == ["C:/srv/repo"]
-    assert repo.finder(False) is find_root
+    # The POSIX lookup asks about every path it is given.
+    assert repo.finder(False)("/srv/repo") is None
+    assert asked == ["C:/srv/repo", "/srv/repo"]
 
 
 def real(path: Path) -> str:
@@ -404,7 +406,10 @@ def test_each_directory_is_looked_up_once_per_call() -> None:
 
 
 def test_nothing_is_looked_up_unless_a_rule_names_a_repository() -> None:
+    asked: list[str] = []
+
     def lookup(directory: str) -> str | None:
+        asked.append(directory)
         raise AssertionError(f"looked up {directory}")
 
     rules = [
@@ -417,6 +422,102 @@ def test_nothing_is_looked_up_unless_a_rule_names_a_repository() -> None:
     for command in ("git status", "cd /srv/repo && git commit", "rm -rf /"):
         evaluate(rules, facts("Bash", command, "/srv/repo"), repo_root=lookup)
     evaluate(rules, facts("Write", {"file_path": "a"}, "/srv/repo"), repo_root=lookup)
+    assert asked == []
+
+
+@pytest.mark.parametrize(
+    "problem",
+    [
+        RuntimeError("the lookup broke"),
+        ValueError("embedded null byte"),
+        TimeoutError("timed out"),
+        KeyError("x"),
+    ],
+)
+def test_whatever_a_lookup_raises_the_other_rules_are_still_judged(
+    problem: Exception,
+) -> None:
+    def lookup(directory: str) -> str | None:
+        raise problem
+
+    protected = [r for r in builtin_rules() if r.id == "builtin.delete.protected"]
+    found = facts("Bash", "git commit && rm -rf /", "/srv/repo")
+    asking = rule("rooted", when=COMMIT, effect="ask", applies={"repo_root": ["/x"]})
+    decision = evaluate([parse_rule(asking), *protected], found, repo_root=lookup)
+    # The scope counts as holding, and the deny of the other rule stands.
+    assert [f.id for f in decision.fired] == ["builtin.delete.protected", "rooted"]
+    assert decision.effect == "deny"
+    assert "repository lookup failed for /srv/repo" in (decision.error or "")
+
+
+def test_directories_that_share_ancestors_ask_about_each_ancestor_once(
+    tmp_path: Path, monkeypatch
+) -> None:
+    top = tmp_path / "top"
+    (top / ".git").mkdir(parents=True)
+    asked: list[str] = []
+    original = os.lstat
+
+    def lstat(path: str) -> os.stat_result:
+        asked.append(str(path))
+        return original(path)
+
+    monkeypatch.setattr(os, "lstat", lstat)
+    deep = "/".join(f"d{n}" for n in range(30))
+    siblings = [f"{real(top)}/src/{deep}/k{n}" for n in range(50)]
+    find = repo.finder(os.name == "nt")
+    assert {find(directory) for directory in siblings} == {real(top)}
+    # One walk up to the repository (33 levels), then one question for each
+    # of the other siblings.
+    assert len(asked) == 33 + 49
+    assert len(set(asked)) == len(asked)
+    asked.clear()
+    assert find(f"{real(top)}/src/{deep}") == real(top)
+    assert find(real(top)) == real(top)
+    assert asked == []
+
+
+def test_a_walk_that_fails_is_not_remembered() -> None:
+    seen: dict[str, str | None] = {}
+    broken = True
+
+    def probe(directory: str) -> bool:
+        if broken and directory == "/srv":
+            raise PermissionError(errno.EACCES, "Permission denied")
+        return directory == "/"
+
+    with pytest.raises(PermissionError):
+        repo.find_root("/srv/a/b", probe, seen)
+    assert seen == {}
+    broken = False
+    assert repo.find_root("/srv/a/b", probe, seen) == "/"
+    assert seen == {"/srv/a/b": "/", "/srv/a": "/", "/srv": "/", "/": "/"}
+    assert repo.find_root("/srv/a/c", lambda directory: False, seen) == "/"
+
+
+def test_the_gate_asks_the_disk_once_for_many_sibling_directories(
+    tmp_path: Path, monkeypatch
+) -> None:
+    top = tmp_path / "top"
+    (top / ".git").mkdir(parents=True)
+    item = rule("rooted", when=COMMIT, applies={"repo_root": [str(top)]})
+    deep = "/".join(f"d{n}" for n in range(20))
+    command = "; ".join(
+        f'git -C "{real(top)}/src/{deep}/k{n}" commit' for n in range(40)
+    )
+    found = extract(make_call("Bash", command, cwd=str(tmp_path)), env=POSIX_ENV)
+    asked: list[str] = []
+    original = os.lstat
+
+    def lstat(path: str) -> os.stat_result:
+        asked.append(str(path))
+        return original(path)
+
+    monkeypatch.setattr(os, "lstat", lstat)
+    decision = evaluate([parse_rule(item)], found)
+    assert (decision.effect, decision.error) == ("deny", None)
+    # 23 levels for the first directory, one question for each of the rest.
+    assert len(asked) == 23 + 39
 
 
 LAZY_PROBE = """
@@ -520,7 +621,13 @@ def repositories(tmp_path: Path) -> dict[str, Path]:
     for directory in (top / "src", nested / "src", made, tmp_path / "work" / "plain"):
         directory.mkdir(parents=True)
     for directory in (top, nested):
-        subprocess.run([git, "init", "-q", str(directory)], check=True, timeout=60)
+        # Without the sample hooks: their names are long, and so may the
+        # temporary directory be.
+        command = [git, "init", "-q", "--template=", str(directory)]
+        made_it = subprocess.run(command, capture_output=True, timeout=60, check=False)
+        if made_it.returncode and b"too long" in made_it.stderr:
+            pytest.skip("the temporary directory is too deep for git")
+        assert made_it.returncode == 0, made_it.stderr
     (made / ".git").mkdir()
     return {"top": top, "nested": nested, "made": made, "plain": made.parent / "plain"}
 

@@ -14,6 +14,7 @@ import os
 import sys
 from collections import Counter
 from collections.abc import Sequence
+from datetime import date
 from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import Any
@@ -114,7 +115,10 @@ def _describe_exception(exception: RuleException) -> str:
         parts.append(f"tools {', '.join(exception.tools)}")
     if exception.when is not None:
         parts.append("with a condition")
-    until = f", expires {exception.expires}" if exception.expires else ""
+    until = ""
+    if exception.expires is not None:
+        past = date.today() > exception.expires
+        until = f", {'expired' if past else 'expires'} {exception.expires}"
     return f"{'; '.join(parts)} (reason: {exception.reason}{until})"
 
 

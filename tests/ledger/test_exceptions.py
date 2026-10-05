@@ -758,6 +758,20 @@ def test_rules_list_shows_the_exceptions(cli_home, capsys) -> None:
     assert all("exceptions" not in r for r in listed if r["id"] != RESET)
 
 
+def test_rules_list_marks_an_expired_exception(cli_home, capsys) -> None:
+    old = {**WORKSPACE_EXCEPTION, "expires": "2026-01-31"}
+    write_config(cli_home, {"exceptions": [old]})
+    assert cli.main(["rules", "list"]) == 0
+    out = capsys.readouterr().out
+    assert (
+        f"exception: under /home/dev/workspace (reason: {REASON}, expired 2026-01-31)"
+        in out
+    )
+    argv = ["check", "--cwd", "/home/dev/workspace/repo", "git reset --hard"]
+    assert cli.main(argv) == 0
+    assert "decision: ask" in capsys.readouterr().out
+
+
 def test_rules_list_reports_a_malformed_exception(
     cli_home, capsys, monkeypatch
 ) -> None:

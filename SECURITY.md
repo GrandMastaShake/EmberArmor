@@ -27,6 +27,6 @@ Checked against the code on 2026-10-02:
 - There is no audit log. `AuditLogger` exists, but no route calls it.
 - JWT signing (`ember_armor/security/tokens.py`) and PBKDF2 key derivation (`ember_armor/security/crypto.py`) exist with tests, but no route uses them.
 - There is no Dockerfile and no container configuration in this repository.
-- `ember_proxy/` is experimental and should not be installed. Its installer adds a mitmproxy root certificate to the machine-wide Windows Trusted Root store, its launcher runs `git pull` on every start, and its scripts carry a hardcoded default API key (in `ember_proxy/addon.py`, `ember_proxy/start.bat` and `ember_proxy/install_windows.bat`). If you already ran the installer, follow the removal steps in [ember_proxy/README.md](ember_proxy/README.md).
+- `ember_proxy/` is an experimental sketch that does not work. Its installer and launcher scripts were removed on 2026-10-05; they remain in the git history. The installer added a mitmproxy root certificate to the machine-wide Windows Trusted Root store and the launcher ran `git pull` on every start. `ember_proxy/addon.py` still carries a hardcoded default API key. If you ran the installer from an earlier commit, follow the removal steps in [ember_proxy/README.md](ember_proxy/README.md).
 
 Other known weaknesses are listed under Known issues in the README.

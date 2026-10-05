@@ -28,7 +28,7 @@ Each item below was checked against this code (Python 3.12, Windows 11).
 - There is no audit log. `AuditLogger` is created at start-up and never called. The JWT and PBKDF2 helpers in `ember_armor/security/` are not used by any route.
 - There is no Dockerfile or other container file, and no CI workflow.
 - There is no module-level `app`, so `uvicorn ember_armor.api.main:app` fails. Use the factory form shown below.
-- `ember_proxy/` is a sketch of a Windows proxy. It is experimental, it does not work as shipped, and it should not be installed: its installer adds a root certificate to the Windows Trusted Root store and its launcher runs `git pull` on every start. If you already ran the installer, follow the removal steps in [ember_proxy/README.md](ember_proxy/README.md).
+- `ember_proxy/` is a sketch of a mitmproxy addon for a Windows workstation proxy. It does not work. Its installer and launcher scripts were removed on 2026-10-05: the installer added a root certificate to the Windows Trusted Root store and the launcher ran `git pull` on every start. If you ran the installer from an earlier commit, follow the removal steps in [ember_proxy/README.md](ember_proxy/README.md).
 
 Earlier versions of this README published detection, false-positive and latency figures and a model comparison table; those were measured in April 2026 on a different scorer that is not in this repository, against a 91-case development set that scorer had been tuned on, so they do not describe this code and have been removed.
 

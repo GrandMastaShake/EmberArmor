@@ -28,6 +28,8 @@ The constraint ledger (`ember_armor/ledger`, standard library only on the hot pa
 
 - Rules are JSON (`~/.ember/ledger.json`, or `.ember/ledger.json` in a repository): an id, the constraint in words, its source, an effect (`deny`, `ask`, `warn`), a scope and a predicate over the parsed tool call. There is no `allow` effect; rules only restrict.
 - The gate parses Bash, PowerShell and `cmd.exe` command strings into simple commands and the paths they read, write or delete, follows `cd`, resolves variables the string assigns, strips `sudo`-like wrappers and package runners, and parses nested shells. Input it cannot read in full is marked and asked about rather than passed.
+- A rule can be scoped to tools, to directories (`cwd_under`, with `cwd_not_under` for exceptions) and to a repository (`repo_root`: the nearest enclosing git repository is exactly the one named, which leaves out a repository nested inside it). For a shell call the directory scopes are judged for each command, on the directory in effect when it runs: the call's own, as moved by `cd`, `pushd`, `popd` and `Set-Location` in the same string, by `git -C`, `make -C`, `npm --prefix`, `pnpm -C`, `yarn --cwd` and `cargo -C`, and by a nested `cmd /c "cd /d X && ..."`. The rule then sees only the commands in scope and the paths they touch. A directory the gate cannot read from the command string (`cd $SOMEWHERE`) counts as in scope, so a rule is not escaped that way. `repo_root` looks for `.git` on disk with `lstat` calls only, once per directory and call, and not at all unless a rule or exception in force uses it.
+- The owner can make exceptions to rules in `~/.ember/config.json`, each tied to a directory, a repository or a condition and carrying a reason. A ledger cannot hold one, so a repository cannot ship one. The two built-in deny rules and the rules that guard the gate take none, a directory the gate cannot read gains none, and each use is recorded in the audit log.
 - A built-in pack of 37 rules covers recursive deletion, git history and working-tree destruction, SQL `DROP`/`TRUNCATE`/`DELETE` without `WHERE`, cloud and platform deletion, system trust and defences, secret files read or sent, login files, downloads piped into a shell, unreadable input, and the gate's own files, rules and settings.
 - `ember-gate hook` is a Claude Code `PreToolUse` hook. In `enforce` mode it prints `ask` or `deny` with the rule's text and source; in `observe` mode (the default) it prints nothing and only records. It never prints `allow`.
 - Every evaluation is appended to a hash-chained audit log (`~/.ember/audit/`), with secret-shaped values replaced. `ember-gate log verify` recomputes the chain.
@@ -55,7 +57,7 @@ uv pip install -e ".[dev]"
 uv run --no-sync pytest tests/ -q
 ```
 
-3,906 tests are collected: 3,709 for the ledger under `tests/ledger/`, the rest for the service. All of them passed on 2026-10-04 on this machine, run as `python -m pytest tests -q` in that virtualenv with `EMBER_HOME` pointing at an empty directory; the run took between three and a half and six minutes depending on what else the machine was doing (`tests/ledger/test_never_vanishes.py` alone evaluates about 19,000 generated shell statements). One service test is timing-sensitive: `tests/test_rate_limit.py::test_limit_resets_after_window` needs three requests to land inside a 0.3 second window, so it can fail on a slow or busy machine. `ember_proxy/` has no tests.
+4,479 tests are collected: 4,282 for the ledger under `tests/ledger/`, the rest for the service. All of them passed on 2026-10-05 on this machine, on Python 3.12 and again on Python 3.11, run as `python -m pytest tests -q -p no:cacheprovider -o addopts=""` in a virtualenv of each version with `EMBER_HOME` pointing at an empty directory, which was still empty afterwards; the two runs took 5 minutes 52 seconds and 4 minutes 45 seconds, and earlier runs took between three and a half and six minutes depending on what else the machine was doing (`tests/ledger/test_never_vanishes.py` alone evaluates about 19,000 generated shell statements). One service test is timing-sensitive: `tests/test_rate_limit.py::test_limit_resets_after_window` needs three requests to land inside a 0.3 second window, so it can fail on a slow or busy machine. `ember_proxy/` has no tests.
 
 Start the service on localhost with two generated secrets:
 
@@ -133,11 +135,64 @@ In the default `observe` mode the same call prints nothing and exits 0, so Claud
 
 `ember-gate replay ~/.claude/projects` runs recorded tool calls through the current rules in observe mode and prints counts per tool, decision and rule, with a few redacted, truncated example calls per rule. Nothing is written to the audit log and no command is run.
 
+### A rule for one directory, and an exception
+
+These commands were run as written on 2026-10-05 in Git Bash, again with `EMBER_HOME` pointing at an empty directory. The first writes a user ledger with one rule scoped to a directory:
+
+```bash
+cat > "$EMBER_HOME/ledger.json" <<'EOF'
+{"version": 1, "rules": [{
+  "id": "no-commit-on-site",
+  "text": "Never commit in the site repository; work in a clone and open a pull request.",
+  "source": "the owner, 2026-10-05",
+  "effect": "deny",
+  "confirmed": true,
+  "applies": {"cwd_under": ["C:/work/site"]},
+  "when": {"type": "command", "program": "git", "subcommand": ["commit"]}
+}]}
+EOF
+ember-gate check --cwd C:/work "cd C:/work/site && git commit -m wip"
+```
+
+```text
+decision: deny (mode: observe)
+  no-commit-on-site [deny] Never commit in the site repository; work in a clone and open a pull request. (source: the owner, 2026-10-05)
+```
+
+`ember-gate check --cwd C:/work "git -C C:/work/site commit -m wip"` printed the same two lines. Leaving the directory first, `ember-gate check --cwd C:/work/site "cd C:/work/other && git commit -m wip"`, printed `decision: none (mode: observe)`. A `cd` the gate cannot read, `ember-gate check --cwd C:/work 'cd "$REPO" && git commit -m wip'`, printed the deny again: the directory is unknown, and unknown counts as in scope.
+
+An exception for a job that resets its own checkout:
+
+```bash
+cat > "$EMBER_HOME/config.json" <<'EOF'
+{"exceptions": [{
+  "rule": "builtin.git.reset-hard",
+  "cwd_under": ["C:/work/jobs"],
+  "reason": "the nightly job resets its own checkout"
+}]}
+EOF
+ember-gate check --cwd C:/work "git -C C:/work/jobs/site fetch origin && git -C C:/work/jobs/site reset --hard origin/main"
+```
+
+```text
+decision: none (mode: observe)
+  excepted: builtin.git.reset-hard (reason: the nightly job resets its own checkout)
+```
+
+The same reset after leaving that directory, `ember-gate check --cwd C:/work/jobs/site "cd C:/work/other && git reset --hard"`, still printed `decision: ask (mode: observe)` with `builtin.git.reset-hard`. `ember-gate rules list` now shows the exception under the rule:
+
+```text
+builtin.git.reset-hard  [ask, confirmed]  (builtin)
+    Ask before git reset --hard: it discards uncommitted work.
+    exception: under C:/work/jobs (reason: the nightly job resets its own checkout)
+```
+
 ### Measured on this machine
 
 Windows 11, Python 3.12, the virtualenv above, 2026-10-02.
 
 - Hook wall time, `python -m ember_armor.ledger.hook` with a `git status` call on standard input, 30 runs in a row, measured with `time.perf_counter()` around `subprocess.run` from a Python script, machine otherwise idle: median 302 ms, p95 336 ms, min 292 ms, max 347 ms. The same method on the commit before this round of work: median 347 ms, p95 360 ms, min 338 ms, max 394 ms. A bare interpreter (`python -c pass`) measured the same way: median 84 ms, p95 87 ms. The target was a median under 250 ms; it was not reached. What remains is mostly `dataclasses`: importing it and creating the forty classes on the hook path takes about 50 ms here, and replacing them with hand-written classes was not done.
+- The directory scopes and exceptions (2026-10-05), measured the same way but with the hook started as the printed snippet starts it (`python -I -m ember_armor.ledger.hook`), on Python 3.12: the median of 30 runs was 325 ms and 301 ms in two series before the work, and 376 ms, 382 ms and 367 ms in three series after it. The machine was busier during the later series (`tasklist` showed fourteen other Python processes), so the commit before the work and the last commit were also run in turns, each from its own checkout, 30 runs each: 381 ms against 383 ms, and 383 ms against 383 ms with the order swapped. On Python 3.11 the same comparison gave 401 ms against 406 ms. No difference could be measured. Inside a warm interpreter a `git status` check took at least 3.8 to 4.5 ms before and 4.4 to 4.6 ms after (minimum of 400 calls, three series each). Nothing is looked up on disk for a call unless a rule or exception in force has a `repo_root`.
 - Replay of the owner's Claude Code transcripts (1,604 files, 48,018 tool calls, read-only, aggregates only), before and after this round of work on the same files: before, 96 asks and 0 denies, from delete.recursive 23, secrets.read 21, git.reset-hard 20, shell.unreadable 16, git.branch-force-delete 8, git.force-push 8, git.discard-worktree 1, with 173 calls marked variable_command and 16 parse_error; after (48,032 calls, the 14 extra being this session's own commands recorded between the two runs), 127 asks and 0 denies, from gate.environment 44 (every one a command of a ledger development session that set EMBER_HOME, EMBER_GATE_MODE or EMBER_LEDGER, which is what the rule is for), delete.recursive 23, git.reset-hard 20, shell.unreadable 14, git.branch-force-delete 8, git.force-push 8, git.stash-drop 5, secrets.read 4, gate.rules 2, git.remote-delete 2, git.discard-worktree 1, with 17 calls marked variable_command and 14 parse_error. The 17 secrets.read asks that went away were wildcard operands such as `readme*` and `vite.config.*` matching `*key*.pem` and a negated Grep glob; the 4 that remain read `.env.local` files. The two parse errors that went away were a `case` after `do`; the 14 left are input no shell accepts. The 156 variable_command marks that went away were `PY=$S/...; $PY ...`, now resolved.
 
 ### Known limits
@@ -148,6 +203,7 @@ The full list is in [docs/constraint-ledger.md](docs/constraint-ledger.md). The 
 - Only what crosses the hook is seen. Files destroyed through `python -c`, `git rm`, or truncation with `>` are not a delete to the gate; that includes the gate's own files.
 - A recursive search or an archive of a whole directory is not treated as reading the secret files in it.
 - The gate does not know whether an earlier call succeeded; ordering rules count a call that was proposed.
+- The directory a command runs in is read from the command string and not checked. A `cd` is taken to succeed, and directory options are read for the programs listed above only (`tar -C`, `go -C`, `GIT_DIR` and the like are not followed), so a rule scoped to a directory can miss a command that got there another way.
 - Nothing here has been measured on a public benchmark.
 
 ## Known issues

@@ -24,13 +24,39 @@ A ledger is a JSON file: `{"version": 1, "rules": [ ... ]}`. Each rule:
 | `text` | The constraint as a person would say it. Shown to the agent and the user when the rule fires. |
 | `source` | Where the rule came from (who, when, which conversation or document). |
 | `effect` | `deny`, `ask` or `warn`. |
-| `applies` | Scope: `tools` (names or globs), `cwd_under` (directories). Missing means everywhere. |
+| `applies` | Scope: `tools` (names or globs), `cwd_under` and `cwd_not_under` (directories), `repo_root` (repositories). Missing means everywhere. See Scope. |
 | `when` | A predicate (below). The rule fires when it is true for the call. |
 | `require` | Alternative to `when` for obligations: the rule fires when the predicate is false. Exactly one of `when` and `require` is present. |
 | `confirmed` | `true` once a human has approved the rule. An unconfirmed rule can do no more than `warn`. In a project ledger this field is ignored (see Ledger files). |
 | `expires` | Optional ISO date after which the rule is ignored. |
 
-There is no `allow` effect. Exceptions are written into the predicate (`not`, `not_under`, `not_glob`, `flags_none`, `args_none_glob`). When several rules fire, the most restrictive effect wins: `deny` over `ask` over `warn`.
+There is no `allow` effect. Exceptions are written into the predicate (`not`, `not_under`, `not_glob`, `flags_none`, `args_none_glob`) or into the scope (`cwd_not_under`). The owner alone can also make exceptions outside the ledger (see Owner exceptions). When several rules fire, the most restrictive effect wins: `deny` over `ask` over `warn`.
+
+### Scope
+
+`tools` names the tools a rule applies to. The other three fields say where:
+
+- `cwd_under`: the command runs in one of these directories or below it.
+- `cwd_not_under`: exceptions to that. The command does not run in one of these directories or below it.
+- `repo_root`: the nearest enclosing git repository of the directory the command runs in is exactly one of these directories. This says "at the top-level repository, but not in a repository nested inside it" (a submodule, a vendored clone, a worktree), which `cwd_under` cannot. An entry may hold wildcards (`~/work/*`: every repository directly below `~/work`).
+
+A rule with several of them applies where all of them hold. Relative directories resolve like the path patterns of the rule: against the repository for a project ledger, else against the working directory of the call.
+
+For a shell call the three are judged for each command, on the directory in effect when that command runs:
+
+- It starts as the working directory of the call (for a tool with its own `cwd` field, that directory).
+- `cd`, `pushd`, `popd`, `cd -`, and `Set-Location`, `Push-Location`, `Pop-Location` with their aliases move it. A move inside a subshell, a substitution or a nested shell (`bash -c`, `cmd /c "cd /d X && ..."`, `powershell -Command`) ends with it. A move inside `eval` or `Invoke-Expression` of a literal string stays in force.
+- A program's own directory option moves it for that command: `git -C dir` (repeatable, each relative to the one before; only in front of the subcommand, where it is that option), `make -C dir`, `-Cdir` and `--directory`, `npm --prefix dir` and `-C dir`, `pnpm -C dir` and `--dir dir`, `yarn --cwd dir`, `cargo -C dir`.
+- So do the directory options of wrappers the parser removes (`env -C dir`, `sudo -D dir` and `--chdir`, `pnpm -C dir exec`, `yarn --cwd dir exec`, `uv run --directory dir`, `wsl --cd dir`) and of a nested shell or started process (`pwsh -WorkingDirectory dir`, `Start-Process -WorkingDirectory dir`).
+- In PowerShell and `cmd.exe` on Windows, a path without a drive letter (`\dir`) lies on the drive the shell is on.
+
+When the command string does not say where a command runs, the directory is unknown: a variable nobody set, a command substitution, a wildcard, several values of a loop variable, `~user`, `popd` on an empty stack, `cd -` with nothing before it, `pushd +1`, an option of `cd` the gate does not know, a `cd` that is one stage of a Bash pipeline (`cd dir | cat`), a bare `Set-Location`, `D:` on its own in PowerShell or `cmd.exe`, `git --git-dir` or `--work-tree`, `pnpm`, `yarn` or `cargo` with the option after the subcommand, `npm --prefix dir exec`, `find -execdir`, and anything relative to a directory that is itself unknown. An absolute `cd` makes it known again. **An unknown directory counts as in scope**: a rule scoped to a directory must not be escaped through a `cd` the gate cannot read. For `cwd_not_under` it counts as not excepted.
+
+A rule with one of the three fields sees only the commands in scope and the paths those commands touch. So `git -C other status && rm -rf build` run in the scoped directory is seen as `rm -rf build` there, and `cd elsewhere && rm -rf build` is not seen at all. A redirection belongs to the directory the shell is in, whatever option the command carries. What belongs to no single command (`dynamic_shell`, `assigns`, `arg`, `expr`, `text_regex`) is judged on the whole call whenever at least one command is in scope. The history predicates of such a rule see earlier calls the same way: for a rule scoped to `repo`, "tests before push" is answered by an earlier `cd repo && pytest`, not by `pytest` run in another directory.
+
+A shell call from which no command could be read is judged on its working directory. So is a call of any other tool: `cwd_under` and `cwd_not_under` look at the working directory of the call. `repo_root` looks at each path such a call touches (the file itself, then its directory, and so on upwards) and the rule sees the paths in scope; without a path it looks at the working directory.
+
+`repo_root` is the one scope that reads the filesystem. For each directory it walks up and asks whether a `.git` entry is there (a directory, or the file a worktree or submodule has), with `lstat` only: no file is opened and no `git` process is started. A directory that does not exist is looked up from its nearest existing ancestor. Each directory is looked up once per call, and nothing is looked up unless an active rule or exception with `repo_root` has to be judged for the call. Network paths, paths with an unresolved variable and, on Windows, paths that are not on a drive are not looked up; like an unknown directory they count as in scope. A lookup that fails (permission denied) also counts as in scope and is a gate failure (see Failure behaviour).
 
 ### Predicates
 
@@ -57,7 +83,7 @@ Tools whose input is a shell command are parsed as shells: `Bash` and `PowerShel
 
 Paths follow the shell where that is certain:
 
-- `cd`, `cd -`, `pushd` and `popd` are followed; a move inside a subshell, a substitution or a nested shell ends with it; a bare `cd` in Bash goes home.
+- `cd`, `cd -`, `pushd` and `popd` are followed; a move inside a subshell, a substitution or a nested shell ends with it; a bare `cd` in Bash goes home. When a move is unclear, relative paths keep resolving against the directory before it. (The directory a rule's scope is judged on is tracked separately and becomes unknown instead; see Scope.) The operands of a command that a wrapper starts elsewhere (`env -C dir rm -rf data`) are relative to that directory.
 - A variable resolves when the command string gives it exactly one value made of literal text and other resolvable variables, when it is a loop variable or array over literal words (each word is tried), or when it comes from `mktemp -d` or a literal `Join-Path`. Anything else assigned in the string (a command's output, `read`, two different values) is unknown and stays as written; it is not replaced by an environment variable of a similar name. Bash names are case-sensitive. In PowerShell only `$env:NAME`, `$HOME` and `$PWD` read the environment. A resolved variable is also filled in where it names the program (`PY=$VENV/bin/python; $PY -m ...`, `& $exe`; a variable left in the directory part does not hide the program) and, in PowerShell, as an argument of a native program (`git push $flag`), never as a parameter name of a cmdlet.
 - A delete or read that takes its targets from a pipe uses what a literal lister before it names (`find ... -name X | xargs rm`, `Get-ChildItem dir -Filter X | Remove-Item`, `$_` inside `ForEach-Object`). Fed by anything else, a delete is taken to act on the working directory.
 - `-WhatIf` means nothing is touched; `-WhatIf:$false` does not.
@@ -79,13 +105,44 @@ Evaluation of a concrete call is direct: predicates are evaluated on the facts e
 
 Mode comes from `EMBER_GATE_MODE`, else `~/.ember/config.json`, else `observe`.
 
-`config.json` may hold `mode`, `builtin` (`false` switches the built-in pack off), `disposable` (a list of directory patterns the built-in delete rules leave alone, added to the pack's own list) and `shell_tools` (a map from a tool name or glob to `{"shell": ..., "field": ..., "cwd": ...}`: `shell` is `bash`, `powershell`, `cmd` or `native` (PowerShell on Windows, Bash elsewhere); `field` is the input field holding the command, `command` when left out; `cwd`, optional, names the field with the directory the command starts in). Any other key, or a value of the wrong type, is an error. A UTF-8 byte order mark is accepted. A configuration file that cannot be read or decoded (for example one saved as UTF-16) is treated as `enforce` with a gate failure: the owner may have asked for `enforce` in it.
+`config.json` may hold `mode`, `builtin` (`false` switches the built-in pack off), `disposable` (a list of directory patterns the built-in delete rules leave alone, added to the pack's own list), `shell_tools` (a map from a tool name or glob to `{"shell": ..., "field": ..., "cwd": ...}`: `shell` is `bash`, `powershell`, `cmd` or `native` (PowerShell on Windows, Bash elsewhere); `field` is the input field holding the command, `command` when left out; `cwd`, optional, names the field with the directory the command starts in) and `exceptions` (see Owner exceptions). Any other key, or a value of the wrong type, is an error. A UTF-8 byte order mark is accepted. A configuration file that cannot be read or decoded (for example one saved as UTF-16) is treated as `enforce` with a gate failure: the owner may have asked for `enforce` in it.
 
 ### Failure behaviour
 
 If the gate itself fails (unreadable ledger or configuration, unreadable hook input, internal error), then in `enforce` mode the decision is `ask` with the error as the reason, and in `observe` mode the call proceeds and the error is logged. The gate never turns its own failure into silent approval in `enforce` mode, and never into a hard block that would make the host unusable.
 
 Each ledger is loaded on its own. A ledger that cannot be loaded adds an `ask`; it never removes the rules of the others, so a `deny` from the built-in pack or the user ledger stands and `observe` mode still records it.
+
+A repository lookup that fails (see Scope) is such a failure too. The `repo_root` scope it was needed for counts as holding for a rule and as not holding for an exception, the rules are evaluated on that footing, and the error is added to the decision.
+
+### Owner exceptions
+
+A rule in the built-in pack is right almost everywhere and wrong in one place the owner knows about: a scheduled job that runs `git reset --hard` on its own checkout every night. Switching the rule off loses it everywhere. An exception drops it in that one place.
+
+`exceptions` in `config.json` is a list of objects:
+
+| Field | Meaning |
+|---|---|
+| `rule` | A rule id, or a glob over ids (`builtin.git.*`). Built-in and user rules alike. |
+| `cwd_under` | Directories. The command runs in one of them or below it. |
+| `repo_root` | Directories. The nearest enclosing git repository of the command's directory is one of them. |
+| `when` | A predicate. It holds for the command taken alone, with the paths that command touches. |
+| `tools` | Tool names or globs. Any tool when left out. |
+| `reason` | Why the exception exists. Required. Recorded with every use. |
+| `expires` | Optional ISO date after which the exception is ignored. |
+
+At least one of `cwd_under`, `repo_root` and `when` is required: an exception that holds everywhere is the rule switched off, and `"builtin": false` or removing the rule already says that. The directories are absolute, or start with `~` or a variable; the working directory of a call never decides where an exception holds. An exception cannot name `builtin.delete.protected`, `builtin.delete.git-dir` or any `builtin.gate.` rule, by id or through a glob that matches one (so `builtin.*` and `builtin.delete.*` are refused; name the rules meant). A malformed exception is a configuration error and is handled as one (see Failure behaviour): the gate enforces, asks, and takes no exception from that file.
+
+When a rule fires on a call and an exception names it, the commands the exception covers are taken out of what the rule sees, with the paths they touch. A command is covered when every field the exception has holds for it, judged for each command as in Scope. The rule is dropped when it does not fire on what is left, and always when nothing is left. So:
+
+- `git -C <workspace>/repo fetch origin && git -C <workspace>/repo reset --hard origin/main` with `builtin.git.reset-hard` excepted under `<workspace>` is not asked about, from whatever directory the call is made.
+- The same reset in any other directory is still asked about, and so is `cd <elsewhere> && git reset --hard` from inside `<workspace>`, and a call that resets in both places.
+- A directory the gate cannot read gains no exception (`cd $SOMEWHERE && git reset --hard`), and neither does a repository lookup that was not made or failed. This is the reverse of how a rule's scope treats them.
+- A rule that fired on something no single command owns (`dynamic_shell`, `assigns`, a structured argument, an obligation that is not met) is dropped only when every command the rule sees is covered. From another directory, the `cd` into the excepted directory is itself a command that runs outside it, so such a call is not covered; make the call in the directory.
+- For a tool that is not a shell, `cwd_under` looks at the working directory of the call, not at the file. `repo_root`, or a `when` with a `path` predicate, ties an exception to where the file is; of a call that touches several paths the covered ones are taken out.
+- Exceptions do not reach back: the history predicates of a rule see earlier calls whether or not an exception covered them.
+
+Only the owner's `config.json` holds exceptions. A ledger is `version` and `rules` and nothing else, so neither the user ledger, nor a project ledger, nor the file named by `EMBER_LEDGER` can carry one, and a `config.json` inside a repository is never read. The gate asks before an agent writes to the Ember home (`builtin.gate.files`, which takes no exception). Each use is recorded in the audit entry as `"excepted": [{"rule": ..., "reason": ...}]` and shown by `ember-gate check`; `ember-gate rules list` shows each exception under the rules it names.
 
 ## Lint (the solver's job)
 
@@ -100,9 +157,11 @@ For each scope it reports:
 
 Numeric arguments are solver variables, with the exact values the engine computes with. Command and path predicates become boolean atoms, with implications added where they are certain (a path under `a/b` is under `a`). A path below the working directory, the home directory or a variable is somewhere lint does not know; it is under `/` on POSIX and under no fixed directory on Windows.
 
+Scopes are atoms as well. A working directory under `a/b` is under `a`. A `repo_root` is an opaque atom: lint knows nothing about which directory lies in which repository. A scope that combines directories with `cwd_not_under` or with `repo_root` is an atom of its own that implies its parts and nothing more, because whether one command meets all of them is not something lint can know. A rule with a directory scope sees only the commands in scope, so its command and path atoms are its own: what such a rule finds, a rule that sees at least as much finds too, and nothing follows the other way round. A negated condition therefore does not carry from a narrow scope to a wide one (the narrow rule does not see the command next door). Contradictions are looked for per tool and per directory or repository root the deny rules name. Owner exceptions are not part of lint.
+
 ## Audit log
 
-Every evaluation appends one JSON line to `~/.ember/audit/YYYY-MM.jsonl`: time, session, tool, working directory, a redacted summary of the call, the decision, the rules that fired, the mode, and a hash that chains to the previous entry. The first entry chains to a fixed genesis value, and `~/.ember/audit/head` holds the hash of the last one. An empty marker file named `.last.<file>.<size>.<hash>` repeats what the last append left behind; its name is read from the directory listing, so the next append links to the hash without opening the file it has just written (Windows scans such a file on its next open). When the size no longer matches, the log is read. Appends are serialised with a file lock. After a line cut short by a crash, the next entry starts on a new line.
+Every evaluation appends one JSON line to `~/.ember/audit/YYYY-MM.jsonl`: time, session, tool, working directory, a redacted summary of the call, the decision, the rules that fired, the exceptions that were used (`excepted`, with rule and reason), the mode, and a hash that chains to the previous entry. In the summary a command, and a path it touches, carries the directory it runs in (`cwd`) when that is not the working directory of the call (`?` when it is unknown), so the history predicates of a scoped rule, and a later replay, judge the call as it was judged. The first entry chains to a fixed genesis value, and `~/.ember/audit/head` holds the hash of the last one. An empty marker file named `.last.<file>.<size>.<hash>` repeats what the last append left behind; its name is read from the directory listing, so the next append links to the hash without opening the file it has just written (Windows scans such a file on its next open). When the size no longer matches, the log is read. Appends are serialised with a file lock. After a line cut short by a crash, the next entry starts on a new line.
 
 Secret-shaped values in arguments are replaced before logging: values of secret-named flags, keys and assignments, bearer tokens, known key prefixes, credentials in URLs, long generated-looking or hexadecimal strings, and everything below a secret-named key of a structured input. Commands are stored as parsed argument vectors. Every field is capped in length.
 
@@ -128,9 +187,9 @@ A dry run or `--help` on the command itself is not asked about (`git push -n`, `
 
 ## Interfaces
 
-- **Command line**: `ember-gate check`, `rules list|add|confirm|remove`, `lint`, `log tail|verify|stats`, `replay` (run recorded tool calls from Claude Code transcripts through the gate and print aggregate counts), `hook`, and `install claude-code --print` (prints the settings snippet; it does not edit settings). `rules confirm --project` records the approval in the Ember home, not in the repository.
+- **Command line**: `ember-gate check`, `rules list|add|confirm|remove`, `lint`, `log tail|verify|stats`, `replay` (run recorded tool calls from Claude Code transcripts through the gate and print aggregate counts), `hook`, and `install claude-code --print` (prints the settings snippet; it does not edit settings). `rules confirm --project` records the approval in the Ember home, not in the repository. `rules add` takes `--tools`, `--cwd-under`, `--cwd-not-under` and `--repo-root` for the scope. `check` names the exceptions it used, and `rules list` shows each exception under the rules it names. Exceptions are edited in `config.json` by hand; no command writes them. `replay` applies the exceptions in force today and looks repositories up on the filesystem as it is today.
 - **Claude Code hook**: `ember-gate hook` reads the PreToolUse JSON on standard input. On `deny` or `ask` in `enforce` mode it prints `hookSpecificOutput` with `permissionDecision` and a reason that quotes the rule's `text` and `source` (capped in length; a rule from a project ledger is labelled as such). In every other case it prints nothing and exits 0, so the host's normal permission flow is untouched. It never prints `allow`.
-- **HTTP**: `POST /v1/ledger/check`, `GET /v1/ledger/rules`, `POST /v1/ledger/lint`, behind the existing bearer authentication. These replace the `/v1/anchor` stub routes. The server reads the ledger named by `EMBER_LEDGER_PATH`, else the user ledger; it never looks for a project ledger, and no file path is taken from a request. Load and gate failures are answered in fixed words; the details go to the server log.
+- **HTTP**: `POST /v1/ledger/check`, `GET /v1/ledger/rules`, `POST /v1/ledger/lint`, behind the existing bearer authentication. These replace the `/v1/anchor` stub routes. The server reads the ledger named by `EMBER_LEDGER_PATH`, else the user ledger; it never looks for a project ledger, and no file path is taken from a request. For the same reason it looks up no repository for a directory a request names: over HTTP a `repo_root` scope counts as holding and a `repo_root` exception as not holding. Load and gate failures are answered in fixed words; the details go to the server log.
 
 Ledger files: the user ledger at `~/.ember/ledger.json`, plus a project ledger at `.ember/ledger.json` found by walking up from the working directory (network and device paths are not searched). `EMBER_LEDGER` overrides both; the file it names must exist. Because rules can only restrict, a ledger shipped inside a repository cannot grant anything.
 
@@ -153,6 +212,11 @@ A project ledger travels with a repository, so it is not trusted as written:
 - A program with the same name as a guarded Windows tool (`scripts/format.cmd C:`) is asked about.
 - Destroying files by other means than the recognised delete commands (`git rm -rf`, truncating with `>`, `python -c "..."`, `[IO.File]::WriteAllText`) is not a delete or write to the gate; the same holds for its own files and the host's settings files. `git worktree remove --force` is not asked about: the corpus holds it as routine cleanup. `git clean -d` with `-c clean.requireForce=false` is not read as forced. A relative registry path after `cd HKLM:\...` is read as a file path. `reg import` is not read.
 - A disposable directory is judged against the working directory of the call, not against a directory the command `cd`s into: `cd /srv/build/other && rm -rf .git` from a project elsewhere is spared, as it was before.
+- The directory a command runs in is read from the command string, never checked. A `cd` is taken to succeed (`cd /no/such/dir; git commit` is judged in `/no/such/dir`, although the shell stays where it was), and a `cd` that runs in the background (`cd dir &`), or as one stage of a pipeline in `cmd.exe`, is followed although the shell does not move. Either can make a scoped rule miss a command, and either can make an owner exception cover a command that runs elsewhere. Symbolic links, junctions and Windows short names are not resolved.
+- Directory options are read for the programs listed under Scope and no others. `tar -C`, `go -C`, `terraform -chdir`, `docker --workdir`, `hg -R` and the like leave the command in the shell's directory as far as the gate knows, and so do `GIT_DIR` and `GIT_WORK_TREE` set in the environment, a `cd` inside a script file, and `[Environment]::CurrentDirectory`. The body of a shell function is judged where the function is defined, not where it is called. Where one of these matters to a rule, write the rule without a directory scope.
+- A directory with a wildcard character in its name (`app/[id]`) is unknown to the scope, because the shell may expand it. In `cmd.exe` a word that starts with a slash is read as a switch, so `cd /d /srv/x` leaves the directory unknown.
+- `repo_root` sees the filesystem as it is when the call is proposed: a repository the same command string creates (`git init x && cd x && ...`) is not there yet, a bare repository has no `.git` entry and is not found, and a directory inside WSL or on a network share is not looked up. Audit entries written before commands carried their directory are judged on the working directory of their call.
+- An owner exception with `cwd_under` covers a file tool by the working directory of the call, not by where the file is (see Owner exceptions).
 - Redaction is by name and shape. A secret with an unremarkable name and shape, passed where nothing marks it (`echo hunter2 | docker login --password-stdin`), reaches the audit log.
 - Lint does not model non-finite numbers (`1e999`), which the engine compares as infinity.
 - HTTP requests are parsed before they are authenticated, as on the other routes; only the size of `tool_input` is capped.

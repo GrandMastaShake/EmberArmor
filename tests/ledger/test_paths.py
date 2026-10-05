@@ -41,6 +41,11 @@ WINDOWS_CASES = [
     ("$HOME/.ssh/id_rsa", r"C:\work", "C:/Users/dev/.ssh/id_rsa"),
     ("${HOME}/x", r"C:\work", "C:/Users/dev/x"),
     ("$UNKNOWN/x", r"C:\work", "C:/work/$UNKNOWN/x"),
+    # ``..`` does not cancel a segment that was not resolved.
+    (r"$env:NOPE\..", r"C:\work", "C:/work/$env:NOPE/.."),
+    (r"%NOPE%\..\x", r"C:\work", "C:/work/%NOPE%/../x"),
+    (r"$PSScriptRoot\..\..", r"C:\work", "C:/work/$PSScriptRoot/../.."),
+    (r"$env:TEMP\..", r"C:\work", "C:/Users/dev/AppData/Local"),
 ]
 
 
@@ -69,6 +74,17 @@ POSIX_CASES = [
     ("/c/Users/x", "/work", "/c/Users/x"),
     (r"a\b", "/work", r"/work/a\b"),
     ("C:/x", "/work", "/work/C:/x"),
+    # ``..`` does not cancel a segment that was not resolved.
+    ("$UNSET/..", "/work", "/work/$UNSET/.."),
+    ("$UNSET/../x", "/work", "/work/$UNSET/../x"),
+    ("a/$UNSET/../../b", "/work", "/work/a/$UNSET/../../b"),
+    ("/a/${UNSET}/../b", "/work", "/a/${UNSET}/../b"),
+    ("$(pwd)/..", "/work", "/work/$(pwd)/.."),
+    ("`pwd`/../x", "/work", "/work/`pwd`/../x"),
+    ("%NAME%/..", "/work", "/work/%NAME%/.."),
+    ("$UNSET/x/..", "/work", "/work/$UNSET"),
+    ("$HOME/..", "/work", "/home"),
+    ("$HOME/../$UNSET/..", "/work", "/home/$UNSET/.."),
 ]
 
 

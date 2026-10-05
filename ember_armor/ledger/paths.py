@@ -43,6 +43,8 @@ _MOUNT_RE = re.compile(r"/(?:mnt|cygdrive)/([A-Za-z])(/.*)?", re.DOTALL)
 _VAR_RE = re.compile(
     r"\$\{env:(\w+)\}|\$env:(\w+)|%(\w+)%|\$\{(\w+)\}|\$(\w+)", re.IGNORECASE
 )
+#: A path segment that still holds a variable or a substitution.
+_OPEN_RE = re.compile(r"[$`]|%\w+%")
 _WILD_ROOT_RE = re.compile(r"(\*\*|[?*]:)")
 _CLASS_RE = re.compile(r"\[[^\]]*\]")
 _WILDCARDS = frozenset("*?[")
@@ -195,7 +197,11 @@ def normalize(
         if segment in ("", "."):
             continue
         if segment == "..":
-            if segments:
+            # What lies above a segment that was not resolved is not known:
+            # ``$DIR/..`` stays as written, it is not the directory before it.
+            if segments and (segments[-1] == ".." or _OPEN_RE.search(segments[-1])):
+                segments.append(segment)
+            elif segments:
                 segments.pop()
             continue
         segments.append(segment)

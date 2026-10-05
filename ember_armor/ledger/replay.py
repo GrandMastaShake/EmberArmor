@@ -113,7 +113,8 @@ def transcript_files(paths: Iterable[str]) -> list[Path]:
 
 def _epoch(value: Any) -> float | None:
     if isinstance(value, str):
-        with contextlib.suppress(ValueError):
+        # OSError and OverflowError: a time no clock of this platform holds.
+        with contextlib.suppress(ValueError, OSError, OverflowError):
             return datetime.fromisoformat(value).timestamp()
     return None
 
@@ -250,7 +251,7 @@ def replay(
         report.interval = remind_interval(env)
     except ConfigError as exc:
         raise LedgerError(str(exc)) from exc
-    reminded: dict[str, dict[str, float]] = {}
+    reminded: dict[str, dict[str, list[float]]] = {}
     lookup = _remembered(windows) if repo_root is None else repo_root
     rules_by_cwd: dict[str, list[Rule]] = {}
     histories: dict[str, MemoryHistory] = {}
@@ -288,10 +289,11 @@ def replay(
             report.decisions[decision.effect] += 1
             report.dynamic.update({reason.kind for reason in facts.dynamic})
             if decision.fired:
-                last = reminded.setdefault(call["session_id"], {})
-                report.reminders.update(
-                    limited(decision.fired, last, when, report.interval)
-                )
+                sent = reminded.setdefault(call["session_id"], {})
+                keys = limited(decision.fired, sent, when, report.interval)
+                # Counted by id, as the rules are: a key is an id, or
+                # "project:" and an id.
+                report.reminders.update(key.rpartition(":")[2] for key in keys)
             for fired in decision.fired:
                 report.rules[fired.id] += 1
                 report.effects[fired.id] = fired.effect

@@ -74,11 +74,23 @@ def _reason(decision: Decision) -> str:
     """The reason of a blocking decision, quoting confirmed rules only.
 
     A rule nobody confirmed can fire next to the rule that blocks.  Its
-    words are not the owner's, so they stay in the log.
+    words are not the owner's, so they stay in the log.  The words that are
+    quoted are put on one line each and stripped of what does not show, as
+    in a reminder: the reason is read by the agent too.
     """
-    if not all(rule.confirmed for rule in decision.fired):
-        vouched = tuple(rule for rule in decision.fired if rule.confirmed)
-        decision = replace(decision, fired=vouched)
+    from ember_armor.ledger.model import REASON_CHARS
+    from ember_armor.ledger.remind import clean
+
+    vouched = tuple(
+        replace(
+            rule,
+            text=clean(rule.text, REASON_CHARS),
+            source=clean(rule.source, REASON_CHARS),
+        )
+        for rule in decision.fired
+        if rule.confirmed
+    )
+    decision = replace(decision, fired=vouched)
     return decision.reason() or f"EmberArmor ledger decision: {decision.effect}"
 
 
@@ -124,16 +136,18 @@ def session_start(
     """Standard output and the error, if any, for one SessionStart invocation.
 
     The output is a ``hookSpecificOutput`` object with ``additionalContext``,
-    or nothing.  With an error it is always nothing.
+    or nothing.  A ledger that could not be loaded is an error next to the
+    summary of the others; with any other error the output is nothing.
     """
     try:
         from ember_armor.ledger.announce import announce
 
         start = json.loads(raw.decode("utf-8", errors="replace"))
-        text = announce(start, env=env).text
+        told = announce(start, env=env)
     except Exception as exc:
         return "", f"{type(exc).__name__}: {exc}"
-    return (_context_object("SessionStart", text) if text else ""), None
+    output = _context_object("SessionStart", told.text) if told.text else ""
+    return output, "; ".join(told.problems) or None
 
 
 def _passive() -> bool:

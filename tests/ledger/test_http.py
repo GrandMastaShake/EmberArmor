@@ -275,3 +275,52 @@ def test_lint_reports_a_broken_ledger(client, auth_headers, ledger) -> None:
     response = client.post("/v1/ledger/lint", headers=auth_headers)
     assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
     assert response.json() == {"detail": LOAD_FAILURE}
+
+
+# ---------------------------------------------------------------------------
+# The reminder the hook would send
+# ---------------------------------------------------------------------------
+def test_check_returns_the_reminder_it_would_send(
+    client, auth_headers, ledger, monkeypatch
+) -> None:
+    scope = {"tools": ["transfer"]}
+    write_ledger(
+        ledger,
+        rule("cap", effect="warn", when=CAP, applies=scope, text="Stay under the cap."),
+        rule("draft", when=CAP, applies=scope, text="DRAFT words.", confirmed=False),
+    )
+    call = {"tool_name": "transfer", "tool_input": {"amount": 6_000_000}}
+
+    def post() -> dict[str, Any]:
+        return client.post("/v1/ledger/check", json=call, headers=auth_headers).json()
+
+    data = post()
+    assert (data["mode"], data["reminder"]) == ("observe", None)
+    assert data["delivery"] == {
+        "cap": "logged only: observe mode",
+        "draft": "logged only: observe mode",
+    }
+    for mode in ("remind", "enforce"):
+        monkeypatch.setenv("EMBER_GATE_MODE", mode)
+        data = post()
+        assert data["mode"] == mode
+        assert data["reminder"] == (
+            'EmberArmor reminder, rule cap: "Stay under the cap." '
+            "(source: test suite).\n"
+            "No tool call was blocked: this is a reminder of standing "
+            "instructions, not a new request."
+        )
+        assert data["delivery"] == {
+            "cap": "reminded",
+            "draft": "logged only: not confirmed",
+        }
+    call["tool_input"]["amount"] = 5
+    data = post()
+    assert data["reminder"] is None
+    assert "delivery" not in data
+    # A blocking decision in enforce mode is no reminder.
+    blocked = client.post(
+        "/v1/ledger/check", json=bash("git push --force"), headers=auth_headers
+    ).json()
+    assert (blocked["decision"], blocked["reminder"]) == ("ask", None)
+    assert blocked["delivery"] == {"builtin.git.force-push": "quoted in the decision"}

@@ -345,3 +345,91 @@ def test_cli_json_and_example_limit(cli_env, capsys) -> None:
 def test_cli_reports_a_missing_transcript(cli_env, capsys) -> None:
     assert cli.main(["replay", "no-such-dir"]) == 1
     assert "no such transcript" in capsys.readouterr().err
+
+
+# ---------------------------------------------------------------------------
+# Reminders that remind mode would have sent
+# ---------------------------------------------------------------------------
+DEPLOY = {"type": "command", "program": "deploy-site"}
+
+
+def deploys(tmp_path: Path, *calls: tuple[str, str | None]) -> str:
+    """A transcript of ``deploy-site`` calls: (session, time of day or None)."""
+    lines = [
+        bash(
+            f"d{number}",
+            "deploy-site",
+            session=session,
+            at=None if clock is None else f"2026-09-30T{clock}:00Z",
+        )
+        for number, (session, clock) in enumerate(calls)
+    ]
+    return write_transcript(tmp_path / "deploys.jsonl", *lines)
+
+
+def test_reminders_are_counted_after_the_limit(gate_env, tmp_path) -> None:
+    write_ledger(
+        Path(gate_env["EMBER_LEDGER"]),
+        rule("standing", effect="warn", when=DEPLOY),
+        rule("draft", effect="deny", when=DEPLOY, confirmed=False),
+    )
+    transcript = deploys(
+        tmp_path,
+        ("a", "10:00"),
+        ("a", "10:05"),
+        ("a", "10:20"),
+        ("a", "10:21"),
+        ("b", "10:21"),
+    )
+    report = replay([transcript], env=gate_env, windows=False)
+    assert dict(report.rules) == {"standing": 5, "draft": 5}
+    # Session a at 10:00 and 10:20, session b once; a draft is never quoted.
+    assert dict(report.reminders) == {"standing": 3}
+    data = report.as_dict()
+    assert data["reminders"] == {"standing": 3, "draft": 0}
+    assert data["remind_interval_minutes"] == 15
+    text = render(report)
+    assert "one per rule and session every 15 minutes" in text
+    assert "        5  standing [warn]  reminders: 3" in text
+    assert "        5  draft [warn]  reminders: 0" in text
+
+    every_time = {**gate_env, "EMBER_GATE_REMIND_INTERVAL": "0"}
+    assert replay([transcript], env=every_time).reminders["standing"] == 5
+    half_hour = {**gate_env, "EMBER_GATE_REMIND_INTERVAL": "30"}
+    assert replay([transcript], env=half_hour).reminders["standing"] == 2
+    with pytest.raises(LedgerError, match="EMBER_GATE_REMIND_INTERVAL"):
+        replay([transcript], env={**gate_env, "EMBER_GATE_REMIND_INTERVAL": "x"})
+
+
+def test_a_transcript_without_times_counts_one_reminder_a_session(
+    gate_env, tmp_path
+) -> None:
+    write_ledger(
+        Path(gate_env["EMBER_LEDGER"]), rule("standing", effect="warn", when=DEPLOY)
+    )
+    transcript = deploys(tmp_path, ("a", None), ("a", None), ("b", None), ("a", None))
+    report = replay([transcript], env=gate_env, windows=False)
+    assert (report.rules["standing"], report.reminders["standing"]) == (4, 2)
+
+
+def test_built_in_rules_are_reminded_and_a_full_reminder_carries_over(
+    gate_env, tmp_path
+) -> None:
+    rules = [rule(f"rule-{n}", effect="warn", when=DEPLOY) for n in range(5)]
+    write_ledger(Path(gate_env["EMBER_LEDGER"]), *rules)
+    transcript = write_transcript(
+        tmp_path / "t.jsonl",
+        bash("c1", "git push --force", at="2026-09-30T10:00:00Z"),
+        bash("c2", "git push --force", at="2026-09-30T10:01:00Z"),
+        bash("c3", "deploy-site", at="2026-09-30T10:02:00Z"),
+        bash("c4", "deploy-site", at="2026-09-30T10:03:00Z"),
+        bash("c5", "deploy-site", at="2026-09-30T10:04:00Z"),
+    )
+    report = replay([transcript], env=gate_env, windows=False)
+    assert report.rules["builtin.git.force-push"] == 2
+    assert report.reminders["builtin.git.force-push"] == 1
+    # Three rules are quoted at 10:02 and the two left out at 10:03.
+    assert {f"rule-{n}": report.rules[f"rule-{n}"] for n in range(5)} == {
+        f"rule-{n}": 3 for n in range(5)
+    }
+    assert [report.reminders[f"rule-{n}"] for n in range(5)] == [1, 1, 1, 1, 1]

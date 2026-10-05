@@ -2346,5 +2346,110 @@
  {
   "tool": "PowerShell",
   "command": "Move-Item -Path build.log -Destination logs"
+ },
+ {
+  "tool": "Bash",
+  "command": "git -C /srv/repo status"
+ },
+ {
+  "tool": "Bash",
+  "command": "git -C /srv/repo commit -C HEAD~1"
+ },
+ {
+  "tool": "Bash",
+  "command": "git -C ../other log --oneline -5"
+ },
+ {
+  "tool": "Bash",
+  "command": "cd /srv/repo && git log --oneline -5; cd -"
+ },
+ {
+  "tool": "Bash",
+  "command": "pushd build && cmake .. && popd"
+ },
+ {
+  "tool": "Bash",
+  "command": "make -C build clean"
+ },
+ {
+  "tool": "Bash",
+  "command": "make --directory=docs html"
+ },
+ {
+  "tool": "Bash",
+  "command": "npm --prefix web run build"
+ },
+ {
+  "tool": "Bash",
+  "command": "npm -C web test"
+ },
+ {
+  "tool": "Bash",
+  "command": "pnpm -C web install"
+ },
+ {
+  "tool": "Bash",
+  "command": "pnpm --dir web exec tsc --noEmit"
+ },
+ {
+  "tool": "Bash",
+  "command": "yarn --cwd web test"
+ },
+ {
+  "tool": "Bash",
+  "command": "yarn --cwd web exec eslint ."
+ },
+ {
+  "tool": "Bash",
+  "command": "cargo -C crate build --release"
+ },
+ {
+  "tool": "Bash",
+  "command": "env -C /srv/app ls -la"
+ },
+ {
+  "tool": "Bash",
+  "command": "env -C /srv/app rm -rf node_modules"
+ },
+ {
+  "tool": "Bash",
+  "command": "pnpm -C web exec rm -rf dist"
+ },
+ {
+  "tool": "Bash",
+  "command": "sudo -D /srv/app git status"
+ },
+ {
+  "tool": "Bash",
+  "command": "uv run --directory tools pytest -q"
+ },
+ {
+  "tool": "Bash",
+  "command": "cd \"$(git rev-parse --show-toplevel)\" && git status"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Push-Location C:\\srv\\repo; git status; Pop-Location",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Set-Location -Path C:\\srv\\repo -ErrorAction Stop; git fetch",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "cmd /c \"cd /d C:\\srv\\repo && git status\"",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Start-Process npm -ArgumentList 'run','build' -WorkingDirectory C:\\srv\\web",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "wsl --cd /srv/repo git status",
+  "platform": "windows"
  }
 ]

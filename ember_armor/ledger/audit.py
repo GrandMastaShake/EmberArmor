@@ -53,10 +53,14 @@ else:
 
 try:
     # CPython's own SHA-2: the same digest as hashlib's, without loading
-    # OpenSSL on every hook call.
+    # OpenSSL on every hook call.  The module is ``_sha2`` from Python 3.12
+    # and ``_sha256`` before that.
     from _sha2 import sha256 as _sha256  # type: ignore[import-not-found]
-except ImportError:  # pragma: no cover - older interpreters
-    from hashlib import sha256 as _sha256
+except ImportError:  # pragma: no cover - Python 3.11
+    try:
+        from _sha256 import sha256 as _sha256  # type: ignore[import-not-found]
+    except ImportError:  # other interpreters
+        from hashlib import sha256 as _sha256
 
 GENESIS = "0" * 64
 HEAD_NAME = "head"

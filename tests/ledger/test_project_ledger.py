@@ -131,6 +131,34 @@ def test_a_malformed_confirmation_record_is_a_gate_failure(project, env) -> None
     assert "confirmation record" in result.decision.error
 
 
+def test_the_ledger_of_the_default_ember_home_is_no_project_ledger(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # With EMBER_HOME set elsewhere, ``~/.ember/ledger.json`` is still a user
+    # ledger: a call made below the home directory must not find it as the
+    # ledger of a project called "home".
+    home = tmp_path / "home" / "dev"
+    work = home / "work" / "app"
+    work.mkdir(parents=True)
+    write_ledger(home / ".ember" / "ledger.json", rule("mine", when=STATUS))
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+    elsewhere = {"EMBER_HOME": str(tmp_path / "scratch"), "EMBER_GATE_MODE": "enforce"}
+    assert store.find_project_ledger(str(work)) == home / ".ember" / "ledger.json"
+    assert [
+        r.id for r in store.load_all(str(work), elsewhere) if r.origin != "builtin"
+    ] == []
+    assert run("git status", elsewhere, work).decision.effect == "none"
+    # Where it is the Ember home, it is the user ledger, as before.
+    at_home = {"EMBER_HOME": str(home / ".ember"), "EMBER_GATE_MODE": "enforce"}
+    rules = [r for r in store.load_all(str(work), at_home) if r.origin != "builtin"]
+    assert [(r.id, r.origin) for r in rules] == [("mine", "user")]
+    assert run("git status", at_home, work).decision.effect == "deny"
+    # A real project ledger below the home directory is still found.
+    write_ledger(work / ".ember" / "ledger.json", rule("theirs", when=STATUS))
+    found = [r for r in store.load_all(str(work), elsewhere) if r.origin == "project"]
+    assert [r.id for r in found] == ["theirs"]
+
+
 def test_network_and_device_paths_are_never_searched(monkeypatch) -> None:
     def fail(self: Path) -> bool:
         raise AssertionError(f"looked at {self}")

@@ -504,3 +504,89 @@ def test_a_path_without_a_drive_letter_on_windows(
     tool: str, command: str, expected: str
 ) -> None:
     assert last(tool, command, "windows") == expected
+
+
+# ---------------------------------------------------------------------------
+# Limits the specification names
+# ---------------------------------------------------------------------------
+LIMITS = [
+    # A ``cd`` is taken to succeed, and is followed where the shell would
+    # not move: in the background.
+    ("cd /no/such/dir; git commit", "/no/such/dir"),
+    ("cd /srv/repo & git commit", "/srv/repo"),
+    # Directory options of other programs are not read.
+    ("go -C /srv/x build ./...", HERE),
+    ("terraform -chdir=/srv/x plan", HERE),
+    ("tar -C /srv/x -czf out.tgz .", HERE),
+    ("hg -R /srv/x status", HERE),
+    ("docker run --workdir /srv/x image make", HERE),
+    ("GIT_DIR=/srv/x/.git git commit", HERE),
+    ("GIT_WORK_TREE=/srv/x git commit", HERE),
+    # The body of a function is judged where it is defined, not where it
+    # is called.
+    ("f() { git commit; }; cd /srv/repo; f", HERE),
+]
+
+
+@pytest.mark.parametrize(("command", "expected"), LIMITS)
+def test_known_limits_of_the_directory_a_command_runs_in(
+    command: str, expected: str
+) -> None:
+    facts = facts_for("Bash", command)
+    programs = [c for c in facts.commands if c.argv[0] not in ("cd", "cat", "f")]
+    assert programs[-1].cwd == expected
+
+
+PIPED = [
+    # A stage of a Bash pipeline runs in a process of its own (or, with
+    # ``lastpipe``, does not): where the shell is afterwards is not known.
+    ("cd /srv/repo | cat; git commit", UNKNOWN_DIR),
+    ("echo x | cd /srv/repo; git commit", UNKNOWN_DIR),
+    ("cd /srv/repo | cat; cd /srv/other; git commit", "/srv/other"),
+    ("cd /srv/repo && ls | cat; git commit", "/srv/repo"),
+    ("cd /srv/repo; cd sub | cat; cd -; git commit", UNKNOWN_DIR),
+]
+
+
+@pytest.mark.parametrize(("command", "expected"), PIPED)
+def test_a_cd_inside_a_bash_pipeline_leaves_the_directory_unknown(
+    command: str, expected: str
+) -> None:
+    assert last("Bash", command) == expected
+
+
+DRIVES = [
+    # ``D:`` on its own goes to wherever the shell last was on that drive.
+    ("D:; git commit", UNKNOWN_DIR),
+    (r"D:; cd \srv\repo; git commit", UNKNOWN_DIR),
+    (r"D:; cd D:\srv\repo; git commit", "D:/srv/repo"),
+    (r'cmd /c "D: && cd \srv\repo && git commit"', UNKNOWN_DIR),
+    (r'cmd /c "D: && cd /d D:\srv\repo && git commit"', "D:/srv/repo"),
+]
+
+
+@pytest.mark.parametrize(("command", "expected"), DRIVES)
+def test_switching_drives_leaves_the_directory_unknown(
+    command: str, expected: str
+) -> None:
+    assert last("PowerShell", command, "windows") == expected
+
+
+def test_a_cd_inside_a_cmd_pipeline_is_followed() -> None:
+    # A limit: cmd.exe runs the stage in a process of its own and stays put.
+    command = r'cmd /c "cd /d C:\srv\repo | more & git commit"'
+    assert last("PowerShell", command, "windows") == "C:/srv/repo"
+
+
+def test_a_directory_with_a_wildcard_character_is_unknown() -> None:
+    assert last("Bash", 'cd "app/[id]" && git commit') == UNKNOWN_DIR
+
+
+def test_a_slash_word_in_cmd_is_a_switch() -> None:
+    command = 'cmd /c "cd /d /srv/x && git commit"'
+    assert last("PowerShell", command, "windows") == UNKNOWN_DIR
+
+
+def test_the_current_directory_of_dotnet_is_not_followed() -> None:
+    command = r"[Environment]::CurrentDirectory = 'C:\srv\x'; git commit"
+    assert last("PowerShell", command, "windows") == HERE

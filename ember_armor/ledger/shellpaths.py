@@ -742,6 +742,20 @@ def _move(
     where.previous, where.current = where.current, destination
 
 
+def _piped(commands: Sequence[SimpleCommand], index: int) -> bool:
+    """True when the command at *index* is one stage of a pipeline."""
+    command = commands[index]
+    feeds = index + 1 < len(commands) and commands[index + 1].upstream == command.argv
+    return bool(command.upstream) or feeds
+
+
+def _switches_drive(command: SimpleCommand) -> bool:
+    """True for ``D:`` on its own in PowerShell or ``cmd.exe``."""
+    word = command.argv[0]
+    alone = len(command.argv) == 1 and len(word) == 2 and word[1] == ":"
+    return alone and word[0].isalpha() and command.shell != "bash"
+
+
 def _directory_options(command: SimpleCommand, spec: _Chdir) -> list[str] | None:
     """Directories the command's own options move it to, in order.
 
@@ -880,7 +894,18 @@ def shell_facts(
         if program_name(command.argv[0]) in _CD | _PUSHD | _POPD:
             directories.append(here)
             _change_directory(command, place, resolve, home)
-            _move(command, where, places, home)
+            if command.shell == "bash" and _piped(parsed.commands, index):
+                # A stage of a pipeline runs in a process of its own, unless
+                # the shell is told otherwise: the gate takes neither as given,
+                # so neither where the shell is nor where it was is known.
+                where.previous = where.current = None
+            else:
+                _move(command, where, places, home)
+            continue
+        if _switches_drive(command):
+            # ``D:`` goes to wherever the shell last was on that drive.
+            directories.append(here)
+            where.previous, where.current = where.current, None
             continue
         started, runs = _run_directory(command, where.current, places)
         directory = label(runs)

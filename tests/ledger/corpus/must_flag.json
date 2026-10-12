@@ -19,6 +19,202 @@
  },
  {
   "tool": "Bash",
+  "command": "cat ~/.npmrc",
+  "effect": "ask",
+  "rule": "builtin.secrets.read"
+ },
+ {
+  "tool": "Bash",
+  "command": "cat ~/.cargo/credentials.toml",
+  "effect": "ask",
+  "rule": "builtin.secrets.read"
+ },
+ {
+  "tool": "Bash",
+  "command": "grep -n curl .dev.vars",
+  "effect": "ask",
+  "rule": "builtin.secrets.read"
+ },
+ {
+  "tool": "Bash",
+  "command": "cat ~/.config/gh/hosts.yml",
+  "effect": "ask",
+  "rule": "builtin.secrets.read"
+ },
+ {
+  "tool": "Bash",
+  "command": "cat ~/.claude/.credentials.json",
+  "effect": "ask",
+  "rule": "builtin.secrets.read"
+ },
+ {
+  "tool": "Bash",
+  "command": "cat .env.staging.secrets",
+  "effect": "ask",
+  "rule": "builtin.secrets.read"
+ },
+ {
+  "tool": "Bash",
+  "command": "cat infra/terraform.tfstate",
+  "effect": "ask",
+  "rule": "builtin.secrets.read"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Get-Content $env:USERPROFILE\\.npmrc",
+  "effect": "ask",
+  "rule": "builtin.secrets.read",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Get-Content \"$env:APPDATA\\gcloud\\application_default_credentials.json\"",
+  "effect": "ask",
+  "rule": "builtin.secrets.read",
+  "platform": "windows"
+ },
+ {
+  "tool": "Bash",
+  "command": "env | grep JIRA",
+  "effect": "ask",
+  "rule": "builtin.secrets.environment"
+ },
+ {
+  "tool": "Bash",
+  "command": "printenv",
+  "effect": "ask",
+  "rule": "builtin.secrets.environment"
+ },
+ {
+  "tool": "Bash",
+  "command": "printenv -0 | tr '\\0' '\\n'",
+  "effect": "ask",
+  "rule": "builtin.secrets.environment"
+ },
+ {
+  "tool": "Bash",
+  "command": "set | grep -i token",
+  "effect": "ask",
+  "rule": "builtin.secrets.environment"
+ },
+ {
+  "tool": "Bash",
+  "command": "export -p",
+  "effect": "ask",
+  "rule": "builtin.secrets.environment"
+ },
+ {
+  "tool": "Bash",
+  "command": "declare -x",
+  "effect": "ask",
+  "rule": "builtin.secrets.environment"
+ },
+ {
+  "tool": "Bash",
+  "command": "cmd //c set",
+  "effect": "ask",
+  "rule": "builtin.secrets.environment",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Get-ChildItem Env:",
+  "effect": "ask",
+  "rule": "builtin.secrets.environment"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "gci env: | Select-String TOKEN",
+  "effect": "ask",
+  "rule": "builtin.secrets.environment"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "dir Env:\\",
+  "effect": "ask",
+  "rule": "builtin.secrets.environment"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Get-Item Env:*",
+  "effect": "ask",
+  "rule": "builtin.secrets.environment"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "[Environment]::GetEnvironmentVariables() | Out-String",
+  "effect": "ask",
+  "rule": "builtin.secrets.environment"
+ },
+ {
+  "tool": "Bash",
+  "command": "echo $JIRA_TOKEN",
+  "effect": "ask",
+  "rule": "builtin.secrets.variable"
+ },
+ {
+  "tool": "Bash",
+  "command": "echo \"$AWS_SECRET_ACCESS_KEY\"",
+  "effect": "ask",
+  "rule": "builtin.secrets.variable"
+ },
+ {
+  "tool": "Bash",
+  "command": "echo \"key starts with ${API_KEY:0:4}\"",
+  "effect": "ask",
+  "rule": "builtin.secrets.variable"
+ },
+ {
+  "tool": "Bash",
+  "command": "printf '%s\\n' \"$GITHUB_TOKEN\" | gh auth login --with-token",
+  "effect": "ask",
+  "rule": "builtin.secrets.variable"
+ },
+ {
+  "tool": "Bash",
+  "command": "printenv JIRA_TOKEN",
+  "effect": "ask",
+  "rule": "builtin.secrets.variable"
+ },
+ {
+  "tool": "Bash",
+  "command": "cmd //c \"echo %DB_PASSWORD%\"",
+  "effect": "ask",
+  "rule": "builtin.secrets.variable",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Write-Host $env:JIRA_TOKEN",
+  "effect": "ask",
+  "rule": "builtin.secrets.variable"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "$env:JIRA_TOKEN",
+  "effect": "ask",
+  "rule": "builtin.secrets.variable"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Get-Item Env:OPENAI_API_KEY",
+  "effect": "ask",
+  "rule": "builtin.secrets.variable"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "gci env:*secret*",
+  "effect": "ask",
+  "rule": "builtin.secrets.variable"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "[Environment]::GetEnvironmentVariable('GITHUB_TOKEN')",
+  "effect": "ask",
+  "rule": "builtin.secrets.variable"
+ },
+ {
+  "tool": "Bash",
   "command": "rm -r ./lib",
   "effect": "ask",
   "rule": "builtin.delete.recursive"

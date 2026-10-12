@@ -72,7 +72,7 @@ def _within(inner: Sequence[str], outer: Sequence[str], fold: bool) -> bool:
 
 def command_implies(a: CommandPred, b: CommandPred) -> bool:
     """True when every simple command matching *a* certainly matches *b*."""
-    fold = a.shell == "powershell"
+    fold = a.shell in ("powershell", "cmd")
     if b.shell != "any" and a.shell != b.shell:
         return False
     if b.program and not (a.program and _within(a.program, b.program, fold)):

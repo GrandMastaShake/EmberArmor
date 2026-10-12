@@ -30,7 +30,7 @@ SEVERITY = {"none": 0, "warn": 1, "ask": 2, "deny": 3}
 PATH_OPS = ("read", "write", "delete", "any")
 ARG_OPS = ("<", "<=", ">", ">=", "==", "!=", "in", "matches")
 EXPR_OPS = ("<", "<=", ">", ">=", "==", "!=")
-SHELLS = ("bash", "powershell", "any")
+SHELLS = ("bash", "powershell", "cmd", "any")
 BUILTIN_PREFIX = "builtin."
 #: Rules no exception can drop: the deny rules of the built-in pack and the
 #: rules that guard the gate itself (also any later ``builtin.gate.`` rule).

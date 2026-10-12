@@ -35,6 +35,11 @@ def _any(*preds: Pred) -> Pred:
     return {"type": "any", "of": list(preds)}
 
 
+def _in_shell(pred: Pred, shell: str) -> Pred:
+    """*pred* for the commands of one shell only (``bash``, ``powershell``, ``cmd``)."""
+    return {**pred, "shell": shell}
+
+
 def _rule(rule_id: str, effect: str, text: str, when: Pred) -> dict[str, Any]:
     return {
         "id": f"builtin.{rule_id}",
@@ -84,20 +89,42 @@ PROTECTED = [
     "?:/Users", "?:/Users/*",
 ]  # fmt: skip
 SECRET_FILES = [
-    "**/.env", "**/.env.local", "**/.env.*.local", "**/.env.production",
-    "**/.env.prod", "**/.env.development", "**/.env.dev", "**/.env.staging",
-    "**/.env.test", "**/.envrc",
+    # environment files (the samples and templates are excepted below)
+    "**/.env", "**/.env.*", "**/.envrc", "**/.dev.vars", "**/.dev.vars.*",
+    # keys and certificates with private parts
     "**/id_rsa", "**/id_dsa", "**/id_ecdsa", "**/id_ed25519", "**/.ssh",
     "**/.ssh/*",
     "**/*.ppk", "**/*.p12", "**/*.pfx", "**/*.key", "**/*private*.pem",
-    "**/*key*.pem", "**/.aws/credentials", "**/.netrc", "**/_netrc",
-    "**/.pypirc", "**/.git-credentials", "**/.kube/config",
-    "**/.docker/config.json", "**/credentials.json",
+    "**/*key*.pem", "**/*.p8", "**/*.jks", "**/*.keystore", "**/secring.gpg",
+    "**/.gnupg/private-keys-v1.d", "**/.gnupg/private-keys-v1.d/*",
+    "~/.password-store", "~/.password-store/*",
+    # credential stores of tools, in the home directory
+    "**/.aws/credentials", "**/.netrc", "**/_netrc", "**/.pypirc",
+    "**/.git-credentials", "**/.kube/config", "**/.docker/config.json",
+    "~/.npmrc", "~/.yarnrc.yml", "~/.cargo/credentials",
+    "~/.cargo/credentials.toml", "~/.gem/credentials", "~/.config/gh/hosts.yml",
+    "**/GitHub CLI/hosts.yml", "~/.config/hub", "~/.composer/auth.json",
+    "**/.m2/settings.xml", "~/.gradle/gradle.properties", "~/.terraformrc",
+    "**/.terraform.d/credentials.tfrc.json", "**/credentials.tfrc.json",
+    "~/.vault-token", "~/.pgpass", "~/.my.cnf", "~/.boto", "~/.s3cfg",
+    "**/gcloud/application_default_credentials.json", "**/gcloud/credentials.db",
+    "**/gcloud/access_tokens.db", "**/gcloud/legacy_credentials",
+    "**/gcloud/legacy_credentials/*", "~/.azure/accessTokens.json",
+    "~/.azure/msal_token_cache.*", "~/.claude/.credentials.json",
+    "~/.codex/auth.json",
+    # credential files by name, anywhere
+    "**/credentials.json", "**/client_secret*.json", "**/*service-account*.json",
+    "**/*service_account*.json", "**/*serviceaccount*.json", "**/token.json",
+    "**/kubeconfig", "**/*.kubeconfig", "**/*.tfstate", "**/*.tfstate.backup",
+    "**/secrets.json", "**/secrets.yaml", "**/secrets.yml", "**/*.secrets",
+    "**/wp-config.php", "**/.htpasswd",
 ]  # fmt: skip
 #: Files the secret globs would catch that hold nothing secret.
 NOT_SECRET = [
     "**/*.pub", "**/*public*.pem", "**/*pubkey*.pem", "**/*public*.key",
     "**/.ssh/config", "**/.ssh/known_hosts*", "**/.ssh/authorized_keys*",
+    "**/.env.example", "**/.env.sample", "**/.env.template", "**/.env.dist",
+    "**/.env.defaults", "**/.env.*.example", "**/.env.example.*",
 ]  # fmt: skip
 SQL_CLIENTS = [
     "psql", "mysql", "mariadb", "sqlite3", "sqlcmd", "pgcli", "mycli", "duckdb",
@@ -182,6 +209,39 @@ _LOGIN_FILES = [
 _HOMES = ["~", "/home/*", "/root", "/Users/*", "?:/Users/*"]
 #: A wildcard in a home directory itself or in one of its top-level folders.
 _HOME_WILDCARDS = [f"{home}{folder}/*[*?]*" for home in _HOMES for folder in ("", "/*")]
+#: Words in a variable name that say it holds a secret.
+_MARKER_WORDS = (
+    r"(?:TOKEN|SECRET|PASSW(?:OR)?D|API_?KEY|PRIVATE_?KEY|ACCESS_?KEY|CREDENTIALS?)"
+)
+#: What is not the secret itself: its path, name, id or length.
+_MARKER_SUFFIXES = r"(?:_FILE|_PATH|_DIR|_NAME|_URL|_ID|_LEN|_LENGTH)"
+#: A name with a marker word (``$TOKEN_FILE`` and ``$API_KEY_ID`` are not).
+_SECRET_NAME = rf"\w*{_MARKER_WORDS}(?!\w*{_MARKER_SUFFIXES}\b)\w*"
+#: ``$TOKEN``, ``${TOKEN}``, ``$env:TOKEN`` or ``%TOKEN%`` where the value is
+#: printed.  The shape-only idioms are not: ``${#TOKEN}`` and
+#: ``$env:TOKEN.Length`` (its length), ``${TOKEN:+set}`` and
+#: ``[bool]$env:TOKEN`` (whether it is set).
+_PRINTS_SECRET = (
+    rf"(?i)(?<!\[bool\])(?:\$(?:env:)?(?!\{{#)\{{?|%){_SECRET_NAME}\b"
+    r"(?!:\+|\.(?:Length|Count)\b)"
+)
+#: A PowerShell statement that is only a secret-named environment variable:
+#: it prints the value.  A condition, ``if ($env:TOKEN)``, is not a statement.
+_BARE_SECRET_VARIABLE = (
+    rf'(?im)(?:^|[;{{|&])\s*"?\$env:{_SECRET_NAME}"?\s*(?=$|[;}}|&])'
+)
+_GET_SECRET_VARIABLE = rf"(?i)GetEnvironmentVariable\(\s*[\"']?{_SECRET_NAME}"
+_ALL_VARIABLES = r"(?i)\[(?:System\.)?Environment\]::GetEnvironmentVariables\("
+#: The same words as globs on a variable name given to a command.
+_SECRET_NAME_GLOBS = [
+    _either_case(f"*{word}*")
+    for word in ("TOKEN", "SECRET", "PASSWORD", "PASSWD", "API_KEY", "APIKEY",
+                 "PRIVATE_KEY", "ACCESS_KEY", "CREDENTIAL")
+]  # fmt: skip
+_PRINTERS = ["echo", "printf", "Write-Host", "Write-Output", "Write-Information",
+             "Write-Warning", "Write-Verbose", "Out-Host"]  # fmt: skip
+#: The whole environment as a PowerShell drive (``Env:``, ``Env:*``).
+_ENV_DRIVE = ["env:", "env:[*]", "env:\\", "env:/"]
 #: The gate's own files: the Ember home and any project ``.ember`` directory.
 _EMBER_FILES = ["~/.ember", "$EMBER_HOME", "**/.ember"]
 _GATE_VARIABLES = [
@@ -741,6 +801,52 @@ def _rules(disposable: Sequence[str]) -> list[dict[str, Any]]:
                 "not_glob": NOT_SECRET,
                 "not_under": ["**/node_modules"],
             },
+        ),
+        _rule(
+            "secrets.environment",
+            "ask",
+            "Ask before printing the whole environment: its variables hold "
+            "tokens and keys.",
+            _any(
+                _command(["env", "printenv"], args_none_glob=["[!-]*"]),
+                # a bare ``set`` prints every variable in Bash and in cmd.exe
+                _command("set", args_none_glob=["*"]),
+                _command("export", flags_all=["-p"], args_none_glob=["[!-]*"]),
+                _command("declare", flags_any=["-x", "-p"], args_none_glob=["[!-]*"]),
+                _command(["Get-ChildItem", "Get-Item"], args_any_glob=_ENV_DRIVE),
+                {"type": "text_regex", "field": "command", "pattern": _ALL_VARIABLES},
+            ),
+        ),
+        _rule(
+            "secrets.variable",
+            "ask",
+            "Ask before printing a variable whose name says it holds a secret "
+            "(TOKEN, SECRET, PASSWORD, API_KEY, PRIVATE_KEY, ACCESS_KEY, "
+            "CREDENTIALS); testing whether it is set or how long it is is fine.",
+            _any(
+                _command(_PRINTERS, args_regex=_PRINTS_SECRET),
+                _command(
+                    ["printenv", "Get-ChildItem", "Get-Item"],
+                    args_any_glob=_SECRET_NAME_GLOBS,
+                ),
+                # ``set JIRA`` in cmd.exe lists the variables that start so
+                _in_shell(
+                    _command(
+                        "set", args_any_glob=_SECRET_NAME_GLOBS, args_none_glob=["*=*"]
+                    ),
+                    "cmd",
+                ),
+                {
+                    "type": "text_regex",
+                    "field": "command",
+                    "pattern": _BARE_SECRET_VARIABLE,
+                },
+                {
+                    "type": "text_regex",
+                    "field": "command",
+                    "pattern": _GET_SECRET_VARIABLE,
+                },
+            ),
         ),
         _rule(
             "system.login-files",

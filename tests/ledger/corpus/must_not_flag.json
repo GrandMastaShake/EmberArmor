@@ -1219,6 +1219,102 @@
   "command": "rm -rf bin obj"
  },
  {
+  "tool": "Bash",
+  "command": "cat .env.example"
+ },
+ {
+  "tool": "Bash",
+  "command": "cat .env.sample .env.template"
+ },
+ {
+  "tool": "Bash",
+  "command": "cat .npmrc"
+ },
+ {
+  "tool": "Bash",
+  "command": "cat packages/api/.npmrc"
+ },
+ {
+  "tool": "Bash",
+  "command": "env -i PATH=/usr/bin make"
+ },
+ {
+  "tool": "Bash",
+  "command": "env FOO=bar ./run.sh"
+ },
+ {
+  "tool": "Bash",
+  "command": "set -e; set -o pipefail; npm test"
+ },
+ {
+  "tool": "Bash",
+  "command": "declare -a items=(a b c); printf '%s\\n' \"${items[@]}\""
+ },
+ {
+  "tool": "Bash",
+  "command": "printenv HOME"
+ },
+ {
+  "tool": "Bash",
+  "command": "printenv PATH | tr ':' '\\n'"
+ },
+ {
+  "tool": "Bash",
+  "command": "echo \"token set: ${JIRA_TOKEN:+yes}\""
+ },
+ {
+  "tool": "Bash",
+  "command": "echo \"token length: ${#JIRA_TOKEN}\""
+ },
+ {
+  "tool": "Bash",
+  "command": "[ -n \"$GITHUB_TOKEN\" ] && echo \"GITHUB_TOKEN is set\""
+ },
+ {
+  "tool": "Bash",
+  "command": "test -z \"$API_KEY\" && echo \"set API_KEY in your environment\""
+ },
+ {
+  "tool": "Bash",
+  "command": "echo \"reading $TOKEN_FILE\"; echo \"key id $API_KEY_ID\""
+ },
+ {
+  "tool": "Bash",
+  "command": "curl -sS -H \"Authorization: Bearer $GITHUB_TOKEN\" https://api.github.com/user"
+ },
+ {
+  "tool": "Bash",
+  "command": "export GITHUB_TOKEN=\"$(gh auth token)\"; gh pr list"
+ },
+ {
+  "tool": "Bash",
+  "command": "grep -rn TOKEN src/"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Get-ChildItem Env:PATH"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Get-ChildItem ."
+ },
+ {
+  "tool": "PowerShell",
+  "command": "$x = $env:JIRA_TOKEN; Invoke-Thing -Token $x"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "if ($env:GITHUB_TOKEN) { Write-Host 'GITHUB_TOKEN is set' }"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Write-Host \"token length: $($env:JIRA_TOKEN.Length)\""
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Get-Content .\\.env.example"
+ },
+ {
   "tool": "PowerShell",
   "command": "Remove-Item -Recurse -Force \"$env:LOCALAPPDATA\\pip\\cache\"",
   "platform": "windows"

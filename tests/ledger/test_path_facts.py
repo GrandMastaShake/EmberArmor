@@ -254,6 +254,10 @@ PIPED = [
         [("/home/dev", "delete", True), ("/home/dev", "delete", False)],
     ),
     ("find . -name '*.tmp' -exec rm -f {} +", [("/work/app/*.tmp", "delete", False)]),
+    (
+        "find . \\( -name bin -o -name obj \\) | xargs rm -rf",
+        [("/work/app/bin", "delete", True), ("/work/app/obj", "delete", True)],
+    ),
 ]
 
 

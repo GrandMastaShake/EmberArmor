@@ -77,6 +77,8 @@ POSIX = [
     ("/work/app", "rm -rf bin/Debug obj", "none"),
     ("/work/app", "rm -rf src/bin src/obj", "none"),
     ("/work/app", "rm -rf bin; rm -rf obj", "none"),
+    ("/work/app", "find . \\( -name bin -o -name obj \\) -exec rm -rf {} +", "none"),
+    ("/work/app", "find . -name bin -exec rm -rf {} +", "ask"),
     ("/work/app", "rm -rf bin", "ask"),
     ("/work/app", "rm -rf obj", "none"),
     ("/work/app", "rm -rf bin src", "ask"),

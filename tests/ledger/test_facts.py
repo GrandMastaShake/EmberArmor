@@ -65,6 +65,20 @@ POSIX_PATHS = [
     ("find . -name '*.pyc' -delete", [("/work/app/*.pyc", "delete", False)]),
     ("find build -delete", [("/work/app/build", "delete", True)]),
     ("find /srv -name old -exec rm -rf {} +", [("/srv/old", "delete", True)]),
+    (
+        "find . \\( -name bin -o -name obj \\) -exec rm -rf {} +",
+        [("/work/app/bin", "delete", True), ("/work/app/obj", "delete", True)],
+    ),
+    (
+        "find . \\( -name '*.log' -o -name '*.tmp' \\) -delete",
+        [("/work/app/*.log", "delete", False), ("/work/app/*.tmp", "delete", False)],
+    ),
+    ("find . ! -name '*.md' -delete", [("/work/app", "delete", True)]),
+    (
+        # a negated filter is no filter: the whole tree, as with ``find ~`` above
+        "find src -not -name '*.py' -exec rm -f {} +",
+        [("/work/app/src", "delete", True), ("/work/app/src", "delete", False)],
+    ),
     ("ls | xargs rm -rf", [("/work/app", "delete", True)]),
     ("sudo rm -rf /opt/x", [("/opt/x", "delete", True)]),
     ("bash -c 'rm -rf x'", [("/work/app/x", "delete", True)]),

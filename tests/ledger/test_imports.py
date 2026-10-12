@@ -89,7 +89,8 @@ def test_unknown_attribute_raises() -> None:
 
 
 LAZY = (
-    "typing",
+    # Python 3.13's inspect, which dataclasses needs, imports typing itself.
+    *(("typing",) if sys.version_info < (3, 13) else ()),
     "fractions",
     "hashlib",
     "argparse",

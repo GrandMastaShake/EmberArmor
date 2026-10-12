@@ -329,7 +329,12 @@ def test_install_prints_a_snippet_and_edits_nothing(
     assert entry["matcher"] == "*"
     (command,) = entry["hooks"]
     assert command["type"] == "command"
-    assert command["args"] == ["-I", "-m", "ember_armor.ledger.hook"]
+    assert command["args"] == [
+        "-I",
+        "-c",
+        "import sys; from ember_armor.ledger.hook import main; "
+        "raise SystemExit(main(sys.argv[1:]))",
+    ]
     assert "\\" not in command["command"]
     assert " " not in command["command"] or Path(command["command"]).exists()
     assert sorted(p.name for p in tmp_path.iterdir()) == before

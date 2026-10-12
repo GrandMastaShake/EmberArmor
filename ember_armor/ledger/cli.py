@@ -135,6 +135,11 @@ def _cmd_check(args: argparse.Namespace) -> int:
         print(f"  {rule.id} [{rule.effect}] {rule.text} (source: {rule.source})")
     for dropped in decision.excepted:
         print(f"  excepted: {dropped.rule} (reason: {dropped.reason})")
+    if decision.possible:
+        print(
+            "  could apply where the directory is not known: "
+            + ", ".join(decision.possible)
+        )
     if decision.error:
         print(f"  gate failure: {decision.error}")
     if result.facts and result.facts.dynamic:

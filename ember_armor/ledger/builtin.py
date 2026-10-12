@@ -277,7 +277,7 @@ def _rules(disposable: Sequence[str]) -> list[dict[str, Any]]:
             _any(
                 _git(
                     "push",
-                    flags_any=["-f", "--force", "--force-with-lease"],
+                    flags_any=["-f", "--force"],
                     flags_none=["-n", "--dry-run", *_HELP],
                 ),
                 _git(
@@ -285,6 +285,17 @@ def _rules(disposable: Sequence[str]) -> list[dict[str, Any]]:
                     args_any_glob=["+*"],
                     flags_none=["-n", "--dry-run", *_HELP],
                 ),
+            ),
+        ),
+        _rule(
+            "git.force-push-lease",
+            "warn",
+            "A forced push with a lease still rewrites the remote branch; "
+            "make sure nobody has built on it.",
+            _git(
+                "push",
+                flags_any=["--force-with-lease", "--force-if-includes"],
+                flags_none=["-f", "--force", "-n", "--dry-run", *_HELP],
             ),
         ),
         _rule(
@@ -786,6 +797,14 @@ def _rules(disposable: Sequence[str]) -> list[dict[str, Any]]:
             "Ask before running a shell command the gate could not read in "
             "full: the other rules could not be checked against it.",
             {"type": "dynamic_shell", "reason": ["parse_error", "encoded_command"]},
+        ),
+        _rule(
+            "shell.unknown-directory",
+            "ask",
+            "Ask before running a command in a directory the gate could not "
+            "work out from the command string: a rule scoped to a directory "
+            "could apply there.",
+            {"type": "unknown_directory"},
         ),
     ]
 

@@ -224,7 +224,7 @@ def test_builtin_pack_is_plain_ledger_data() -> None:
     assert [r.id for r in rules] == [r.id for r in builtin_rules()]
     assert all(r.id.startswith("builtin.") for r in rules)
     assert all(r.confirmed for r in rules)
-    assert {r.effect for r in rules} == {"ask", "deny"}
+    assert {r.effect for r in rules} == {"ask", "deny", "warn"}
     assert all(r.source and r.text for r in rules)
 
 

@@ -18,7 +18,7 @@ import pytest
 
 from ember_armor.ledger.builtin import builtin_rules
 from ember_armor.ledger.engine import evaluate
-from ember_armor.ledger.model import Decision
+from ember_armor.ledger.model import Decision, parse_rule
 from tests.ledger.helpers import facts_for
 
 CORPUS = Path(__file__).parent / "corpus"
@@ -44,7 +44,12 @@ def _cases(entries: list[dict[str, Any]]) -> list[Any]:
 
 def _decide(entry: dict[str, Any], platform: str) -> Decision:
     payload = entry.get("command", entry.get("input"))
-    return evaluate(builtin_rules(), facts_for(entry["tool"], payload, platform))
+    # An entry may bring the user rules a built-in rule needs to fire (the
+    # rule for unknown directories asks only when a scoped rule could apply).
+    extra = [parse_rule(item) for item in entry.get("rules", [])]
+    return evaluate(
+        [*builtin_rules(), *extra], facts_for(entry["tool"], payload, platform)
+    )
 
 
 def test_corpus_sizes() -> None:

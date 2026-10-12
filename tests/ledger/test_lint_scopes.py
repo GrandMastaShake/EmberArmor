@@ -104,13 +104,15 @@ def test_an_exception_makes_a_scope_narrower_not_wider() -> None:
 
 def test_a_scope_that_only_an_unreadable_directory_meets_is_not_called_dead() -> None:
     # Under a directory and outside a directory around it: no known directory
-    # is both, but a command in a directory the gate cannot read is in scope.
+    # is both, but a command in a directory the gate cannot read might be,
+    # and the rule is then reported as one that could apply.
     odd = {"cwd_under": ["/srv/repo/src"], "cwd_not_under": ["/srv/repo"]}
     item = make("odd", PUBLISH, applies=odd)
     assert lint([item], windows=False) == []
     call = make_call("Bash", "cd $WHERE && npm publish", cwd="/tmp")
     facts = extract(call, windows=False, env=POSIX_ENV)
-    assert evaluate([item], facts).effect == "deny"
+    decision = evaluate([item], facts)
+    assert (decision.effect, decision.possible) == ("none", ("odd",))
 
 
 def test_a_negated_condition_does_not_carry_from_a_narrow_scope_to_a_wide_one() -> None:

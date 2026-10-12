@@ -4,7 +4,9 @@ A rule scoped to a directory fires on a command that runs there however the
 command got there (the working directory of the call, ``cd``, ``git -C``,
 ``pushd``, ``Set-Location``, a nested ``cmd /c``), and not on one that left
 it first.  The rule sees only the commands in scope and the paths they
-touch.  A directory the gate cannot read counts as in scope.
+touch.  A command in a directory the gate cannot read is not attributed to
+the rule: the rule is reported as one that might apply, and the built-in
+rule ``builtin.shell.unknown-directory`` asks in its place.
 
 The command strings below are data for the parsers.  Nothing runs them.
 """
@@ -17,6 +19,7 @@ from typing import Any
 import pytest
 
 from ember_armor.ledger.audit import AuditLog, restore, summarise
+from ember_armor.ledger.builtin import builtin_rules
 from ember_armor.ledger.engine import MemoryHistory, evaluate
 from ember_armor.ledger.facts import Facts, extract
 from ember_armor.ledger.gate import check
@@ -44,6 +47,25 @@ def facts(tool: str, command: Any, cwd: str, platform: str = "posix") -> Facts:
 
 def fires(item: Rule, tool: str, command: Any, cwd: str, platform: str = "posix"):
     return evaluate([item], facts(tool, command, cwd, platform)).effect != "none"
+
+
+UNKNOWN_RULE = "builtin.shell.unknown-directory"
+
+
+def uncertain(item: Rule, tool: str, command: Any, cwd: str, platform: str = "posix"):
+    """True when the command's directory is not known to the gate.
+
+    The scoped rule does not fire and is reported as one that might apply;
+    with the built-in pack present, the rule for unknown directories asks.
+    """
+    found = facts(tool, command, cwd, platform)
+    alone = evaluate([item], found)
+    if alone.effect != "none" or alone.possible != (item.id,):
+        return False
+    with_pack = evaluate([item, *builtin_rules()], found)
+    return with_pack.effect == "ask" and UNKNOWN_RULE in [
+        fired.id for fired in with_pack.fired
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -156,7 +178,7 @@ SEEN = [
     ("/work", "env -C /srv/repo git commit", True),
     ("/srv/repo", "env -C /tmp git commit", False),
     ("/work", "pnpm -C /srv/repo exec git commit", True),
-    ("/srv/repo", "git --git-dir=/tmp/x/.git commit", True),  # unknown
+    ("/srv/repo", "git --git-dir=/tmp/x/.git commit", False),  # unknown: below
     ("/work", "git -C /srv/repo/../other commit", False),
     ("/work", "git -C /srv/repo/sub/.. commit", True),
     ("/work", "cd /srv && git -C repo commit", True),
@@ -184,15 +206,46 @@ UNKNOWN = [
 
 
 @pytest.mark.parametrize("command", UNKNOWN)
-def test_an_unknown_directory_counts_as_in_scope(command: str) -> None:
-    # From a directory outside the scope: the rule must not be escaped (or,
-    # here, missed) through a move the gate cannot read.
-    assert fires(scoped(cwd_under=["/srv/repo"]), "Bash", command, "/work")
+def test_an_unknown_directory_is_not_attributed_to_the_rule(command: str) -> None:
+    # From a directory outside the scope: a move the gate cannot read neither
+    # escapes the rule nor pins it on the command.  The rule might apply, and
+    # the built-in rule asks about that.
+    assert uncertain(scoped(cwd_under=["/srv/repo"]), "Bash", command, "/work")
 
 
-def test_an_unknown_directory_is_in_scope_only_until_a_known_one() -> None:
+def test_the_option_that_names_another_repository_is_unknown() -> None:
     item = scoped(cwd_under=["/srv/repo"])
-    assert not fires(item, "Bash", "cd $WHERE; cd /tmp; git commit", "/work")
+    found = facts("Bash", "git --git-dir=/tmp/x/.git commit", "/srv/repo")
+    assert evaluate([item], found).possible == ("scoped",)
+
+
+def test_an_unknown_directory_is_unknown_only_until_a_known_one() -> None:
+    item = scoped(cwd_under=["/srv/repo"])
+    found = facts("Bash", "cd $WHERE; cd /tmp; git commit", "/work")
+    decision = evaluate([item, *builtin_rules()], found)
+    assert (decision.effect, decision.possible) == ("none", ())
+
+
+def test_nothing_asks_when_no_scoped_rule_could_apply() -> None:
+    # The built-in pack alone: an unknown directory is no reason to ask.
+    found = facts("Bash", "cd $WHERE && git commit", "/work")
+    decision = evaluate(builtin_rules(), found)
+    assert (decision.effect, decision.possible) == ("none", ())
+    # A rule that would not fire there is not reported either.
+    item = scoped({"type": "command", "program": "npm"}, cwd_under=["/srv/repo"])
+    assert evaluate([item, *builtin_rules()], found).possible == ()
+
+
+def test_the_unknown_directory_rule_asks_not_denies() -> None:
+    # A deny rule scoped to a directory: where the gate cannot see, a human
+    # decides.
+    item = scoped(cwd_under=["/srv/repo"])
+    assert item.effect == "deny"
+    found = facts("Bash", "cd $WHERE && git commit", "/work")
+    decision = evaluate([item, *builtin_rules()], found)
+    assert decision.effect == "ask"
+    assert [f.id for f in decision.fired] == [UNKNOWN_RULE]
+    assert decision.possible == ("scoped",)
 
 
 NOT_CERTAIN = [
@@ -225,7 +278,7 @@ NOT_CERTAIN = [
 def test_a_move_the_gate_cannot_be_sure_of_does_not_lead_out_of_a_rule(
     tool: str, cwd: str, command: str
 ) -> None:
-    assert fires(scoped(cwd_under=["C:/srv/repo"]), tool, command, cwd, "windows")
+    assert uncertain(scoped(cwd_under=["C:/srv/repo"]), tool, command, cwd, "windows")
 
 
 STILL_THERE = [
@@ -268,36 +321,40 @@ def test_more_ways_to_run_in_the_scoped_directory(
 
 
 @pytest.mark.parametrize("cwd", [None, "", "some/where"])
-def test_a_call_that_names_no_directory_is_in_scope(cwd: str | None) -> None:
+def test_a_call_that_names_no_directory_is_an_unknown_one(cwd: str | None) -> None:
     item = scoped(cwd_under=["/srv/repo"])
     call = {"tool_name": "Bash", "tool_input": {"command": "git commit -m x"}}
     if cwd is not None:
         call["cwd"] = cwd
     found = extract(call, windows=False, env=POSIX_ENV)
-    assert evaluate([item], found).effect == "deny"
-    # It is not in a directory the rule leaves out, either.
+    decision = evaluate([item, *builtin_rules()], found)
+    assert (decision.effect, decision.possible) == ("ask", ("scoped",))
+    assert [f.id for f in decision.fired] == [UNKNOWN_RULE]
+    # Nor is it known to be in a directory the rule leaves out.
     spared = scoped(cwd_not_under=["/"])
-    assert evaluate([spared], found).effect == "deny"
+    assert evaluate([spared], found).possible == ("scoped",)
     # A known directory places it again.
     moved = {**call, "tool_input": {"command": "cd /tmp && git commit"}}
     found = extract(moved, windows=False, env=POSIX_ENV)
-    assert evaluate([item], found).effect == "none"
+    decision = evaluate([item, *builtin_rules()], found)
+    assert (decision.effect, decision.possible) == ("none", ())
 
 
-def test_another_tool_without_a_directory_is_in_scope() -> None:
+def test_another_tool_without_a_directory_is_in_an_unknown_one() -> None:
     writes = scoped({"type": "path", "op": "write"}, cwd_under=["/srv/repo"])
     call = {"tool_name": "Write", "tool_input": {"file_path": "/etc/hosts"}}
     found = extract(call, windows=False, env=POSIX_ENV)
-    assert evaluate([writes], found).effect == "deny"
+    decision = evaluate([writes, *builtin_rules()], found)
+    assert (decision.effect, decision.possible) == ("ask", ("scoped",))
     placed = extract({**call, "cwd": "/work"}, windows=False, env=POSIX_ENV)
-    assert evaluate([writes], placed).effect == "none"
+    assert evaluate([writes, *builtin_rules()], placed).effect == "none"
 
 
-def test_the_tool_cwd_field_with_a_variable_is_in_scope() -> None:
+def test_the_tool_cwd_field_with_a_variable_is_unknown() -> None:
     payload = {"command": "git commit -m x", "cwd": "$env:NOPE"}
     tool = "mcp__terminal__run_in_terminal"
     item = scoped(cwd_under=["C:/srv/repo"])
-    assert fires(item, tool, payload, "C:/srv/other", "windows")
+    assert uncertain(item, tool, payload, "C:/srv/other", "windows")
     payload = {"command": "git commit -m x", "cwd": r"C:\srv\elsewhere"}
     assert not fires(item, tool, payload, "C:/srv/other", "windows")
 
@@ -378,9 +435,10 @@ NOT_UNDER = [
     ("/srv/repo/vendor", "git -C /srv/repo commit", True),
     ("/srv/repo", "git -C vendor status; git commit", True),
     ("/work", "git commit", False),
-    # An exception is not gained through a move the gate cannot read.
-    ("/srv/repo/vendor", "cd $WHERE && git commit", True),
-    ("/srv/repo/vendor", "git -C $X commit", True),
+    # An exception is not gained through a move the gate cannot read: the
+    # rule does not fire, and is reported as one that might apply (below).
+    ("/srv/repo/vendor", "cd $WHERE && git commit", False),
+    ("/srv/repo/vendor", "git -C $X commit", False),
 ]
 
 
@@ -390,6 +448,14 @@ def test_cwd_not_under_leaves_directories_out(
 ) -> None:
     item = scoped(cwd_under=["/srv/repo"], cwd_not_under=["/srv/repo/vendor"])
     assert fires(item, "Bash", command, cwd) is expected
+
+
+@pytest.mark.parametrize("command", ["cd $WHERE && git commit", "git -C $X commit"])
+def test_a_move_out_of_an_excepted_directory_is_not_taken_on_trust(
+    command: str,
+) -> None:
+    item = scoped(cwd_under=["/srv/repo"], cwd_not_under=["/srv/repo/vendor"])
+    assert uncertain(item, "Bash", command, "/srv/repo/vendor")
 
 
 def test_cwd_not_under_works_without_cwd_under() -> None:

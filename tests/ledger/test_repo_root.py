@@ -238,8 +238,8 @@ SCOPE = [
     ("/srv/repo", "pushd vendor/lib; git status; popd; git commit", True),
     ("/srv/repo", "cd new/dir/not/made/yet && git commit", True),
     # A directory the gate cannot read counts as in scope.
-    ("/work", "cd $WHERE && git commit", True),
-    ("/srv/repo/vendor/lib", "git -C $X commit", True),
+    ("/work", "cd $WHERE && git commit", False),
+    ("/srv/repo/vendor/lib", "git -C $X commit", False),
 ]
 
 
@@ -334,8 +334,9 @@ FILE_TOOLS = [
     ("Write", {"file_path": "src/a.py"}, "/srv/repo", True),
     ("Write", {"file_path": "/tmp/a.py"}, "/srv/repo", False),
     ("Edit", {"file_path": "/srv/repo/.git/config"}, "/work", True),
-    # A path with a variable nobody set is somewhere the gate does not know.
-    ("Write", {"file_path": "$NOWHERE/a.py"}, "/work", True),
+    # A path with a variable nobody set is somewhere the gate does not know:
+    # the rule might apply (see below), and does not fire.
+    ("Write", {"file_path": "$NOWHERE/a.py"}, "/work", False),
 ]
 
 
@@ -345,6 +346,26 @@ def test_for_a_file_tool_repo_root_looks_at_the_file(
 ) -> None:
     item = rooted({"type": "path", "op": "write"})
     assert fires(item, tool, payload, cwd) is expected
+
+
+@pytest.mark.parametrize(
+    ("tool", "payload", "cwd"),
+    [
+        ("Bash", "cd $WHERE && git commit", "/work"),
+        ("Bash", "git -C $X commit", "/srv/repo/vendor/lib"),
+        ("Write", {"file_path": "$NOWHERE/a.py"}, "/work"),
+    ],
+)
+def test_where_the_repository_cannot_be_known_the_rule_might_apply(
+    tool: str, payload: Any, cwd: str
+) -> None:
+    item = rooted({"type": "path", "op": "write"} if tool == "Write" else None)
+    found = facts(tool, payload, cwd)
+    alone = evaluate([item], found, repo_root=table)
+    assert (alone.effect, alone.possible) == ("none", ("rooted",))
+    with_pack = evaluate([item, *builtin_rules()], found, repo_root=table)
+    assert with_pack.effect == "ask"
+    assert "builtin.shell.unknown-directory" in [f.id for f in with_pack.fired]
 
 
 def test_a_directory_given_to_a_file_tool_is_asked_about_itself() -> None:
@@ -444,8 +465,9 @@ def test_whatever_a_lookup_raises_the_other_rules_are_still_judged(
     found = facts("Bash", "git commit && rm -rf /", "/srv/repo")
     asking = rule("rooted", when=COMMIT, effect="ask", applies={"repo_root": ["/x"]})
     decision = evaluate([parse_rule(asking), *protected], found, repo_root=lookup)
-    # The scope counts as holding, and the deny of the other rule stands.
-    assert [f.id for f in decision.fired] == ["builtin.delete.protected", "rooted"]
+    # The scoped rule might apply; the deny of the other rule stands.
+    assert [f.id for f in decision.fired] == ["builtin.delete.protected"]
+    assert decision.possible == ("rooted",)
     assert decision.effect == "deny"
     assert "repository lookup failed for /srv/repo" in (decision.error or "")
 
@@ -557,11 +579,11 @@ def refused(directory: str) -> str | None:
     return table(directory)
 
 
-def test_a_failed_lookup_counts_as_in_scope_and_is_reported() -> None:
+def test_a_failed_lookup_is_reported_and_the_rule_might_apply() -> None:
     decision = evaluate(
         [rooted()], facts("Bash", "git commit", "/locked/x"), repo_root=refused
     )
-    assert decision.effect == "deny"
+    assert (decision.effect, decision.possible) == ("none", ("rooted",))
     assert decision.error is not None
     assert "repository lookup failed for /locked/x" in decision.error
     assert "Permission denied" in decision.error
@@ -571,17 +593,18 @@ def test_a_failed_lookup_counts_as_in_scope_and_is_reported() -> None:
         [rooted(), again], facts("Bash", "git commit", "/locked/x"), repo_root=refused
     )
     assert twice.error == decision.error
-    assert [f.id for f in twice.fired] == ["rooted", "again"]
+    assert twice.possible == ("rooted", "again")
     # A lookup that worked reports nothing.
     fine = evaluate([rooted()], facts("Bash", "git commit", "/srv"), repo_root=refused)
     assert (fine.effect, fine.error) == ("none", None)
 
 
 GATE_FAILURE = [
-    # mode, command, decision, blocking
-    ("enforce", "git commit", "deny", True),
+    # mode, command, decision, blocking.  The scoped rule cannot be judged
+    # where the lookup failed; the failure asks in enforce mode.
+    ("enforce", "git commit", "ask", True),
     ("enforce", "git status", "ask", True),  # no rule fired: the failure asks
-    ("observe", "git commit", "deny", False),
+    ("observe", "git commit", "ask", False),  # the built-in rule for unknown places
     ("observe", "git status", "none", False),
 ]
 

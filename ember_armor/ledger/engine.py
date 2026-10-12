@@ -313,6 +313,23 @@ def _under_any(path: str, directories: Iterable[str], windows: bool) -> bool:
     return any(is_under(path, directory, windows=windows) for directory in directories)
 
 
+def _beyond(path: str, cwd: str, windows: bool) -> tuple[list[str], int]:
+    """The segments of *path* and how many of them it shares with *cwd*.
+
+    An exception judged from where the call is made never looks at the
+    shared part: a directory there is the working directory or above it.
+    """
+    parts, base = path.split("/"), cwd.split("/")
+    if windows:
+        base = [segment.lower() for segment in base]
+    shared = 0
+    for mine, theirs in zip(parts, base, strict=False):
+        if (mine.lower() if windows else mine) != theirs:
+            break
+        shared += 1
+    return parts, shared
+
+
 def _within(path: str, cwd: str, directories: list[str], windows: bool) -> bool:
     """True when *path* is, or is inside, one of *directories* seen from *cwd*.
 
@@ -324,18 +341,46 @@ def _within(path: str, cwd: str, directories: list[str], windows: bool) -> bool:
     """
     if not directories:
         return False
-    parts, base = path.split("/"), cwd.split("/")
-    if windows:
-        base = [segment.lower() for segment in base]
-    shared = 0
-    for mine, theirs in zip(parts, base, strict=False):
-        if (mine.lower() if windows else mine) != theirs:
-            break
-        shared += 1
+    parts, shared = _beyond(path, cwd, windows)
     for end in range(shared + 1, len(parts) + 1):
         candidate = "/".join(parts[:end])
         if any(matches_glob(candidate, d, windows=windows) for d in directories):
             return True
+    return False
+
+
+def _spared_beside(
+    path: PathFact,
+    facts: Facts,
+    pairs: tuple[tuple[str, tuple[str, ...]], ...],
+    windows: bool,
+) -> bool:
+    """True when *path* lies in a directory *pairs* names, next to a sibling
+    the call touches the same way.
+
+    Judged like ``not_within``: the directory must not be the working
+    directory or above it.  ``{"bin": ["obj"]}`` spares ``./bin`` and
+    ``./bin/Debug`` when the call also deletes ``./obj``.
+    """
+
+    def fold(text: str) -> str:
+        return text.lower() if windows else text
+
+    others = {
+        fold(other.path.rstrip("/"))
+        for other in facts.paths
+        if other.op == path.op and other.path != path.path
+    }
+    if not others:
+        return False
+    table = {fold(name): [fold(s) for s in siblings] for name, siblings in pairs}
+    parts, shared = _beyond(path.path, facts.cwd, windows)
+    for end in range(shared + 1, len(parts) + 1):
+        siblings = table.get(fold(parts[end - 1]))
+        if siblings:
+            parent = "/".join(parts[: end - 1])
+            if any(fold(f"{parent}/{sibling}") in others for sibling in siblings):
+                return True
     return False
 
 
@@ -366,6 +411,10 @@ def _path_holds(pred: PathPred, base: str | None, facts: Facts) -> bool:
             return False
         local = [d for d in not_within if located or _anywhere(d)]
         if _within(path.path, facts.cwd, local, windows):
+            return False
+        if pred.spared_beside and _spared_beside(
+            path, facts, pred.spared_beside, windows
+        ):
             return False
         if any(
             matches_glob(path.path, glob, windows=windows)

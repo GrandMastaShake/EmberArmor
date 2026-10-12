@@ -71,6 +71,19 @@ POSIX = [
     ("/work/app", "rm -rf /tmp/clone/.git", "none"),
     ("/work/app/src", "rm -rf ../.git", "deny"),
     ("/work/app/src", "rm -rf ../node_modules", "none"),
+    # bin says nothing alone; beside obj it is .NET build output
+    ("/work/app", "rm -rf bin obj", "none"),
+    ("/work/app", "rm -rf ./bin/ ./obj/", "none"),
+    ("/work/app", "rm -rf bin/Debug obj", "none"),
+    ("/work/app", "rm -rf src/bin src/obj", "none"),
+    ("/work/app", "rm -rf bin; rm -rf obj", "none"),
+    ("/work/app", "rm -rf bin", "ask"),
+    ("/work/app", "rm -rf obj", "none"),
+    ("/work/app", "rm -rf bin src", "ask"),
+    ("/work/app", "rm -rf bin lib/obj", "ask"),
+    ("/work/app", "rm -rf src obj", "ask"),
+    ("/work/app", "rm -rf ~/bin obj", "ask"),
+    ("/work/app/bin", "rm -rf . ../obj", "ask"),
 ]
 
 
@@ -94,6 +107,20 @@ WINDOWS = [
     ("C:\\dev\\TEMP\\proj", 'cmd /c "rd /s /q src"', "ask"),
     ("C:\\work\\app", "Remove-Item -Recurse $env:TEMP\\x", "none"),
     ("C:\\work\\app", "Remove-Item -Recurse C:\\Build\\proj\\out", "none"),
+    # the .NET idioms for cleaning a build
+    ("C:\\src\\WebApp", "Remove-Item -Recurse -Force .\\bin, .\\obj", "none"),
+    ("C:\\src\\WebApp", "Remove-Item -Recurse -Force .\\BIN, .\\Obj", "none"),
+    ("C:\\src\\WebApp", "Remove-Item -Recurse -Force .\\bin", "ask"),
+    ("C:\\src\\WebApp", "Remove-Item -Recurse -Force .\\bin, .\\src", "ask"),
+    (
+        "C:\\src\\WebApp",
+        "Get-ChildItem -Path . -Include bin,obj -Recurse -Directory"
+        " | Remove-Item -Recurse -Force",
+        "none",
+    ),
+    ("C:\\src\\WebApp", "gci -Include bin,obj -Recurse | rm -Recurse -Force", "none"),
+    ("C:\\src\\WebApp", "gci -Include bin -Recurse | rm -Recurse -Force", "ask"),
+    ("C:\\src\\WebApp", "gci -Include obj -Recurse | rm -Recurse -Force", "none"),
 ]
 
 
@@ -145,6 +172,36 @@ def test_not_within_in_a_user_rule() -> None:
     assert effect("/work") == "deny"
     # /work/gen is beside the working directory /work/app, not above it.
     assert effect("/work/gen/a.py") == "none"
+
+
+def test_spared_beside_in_a_user_rule() -> None:
+    rule = {
+        "id": "r",
+        "text": "t",
+        "source": "s",
+        "effect": "ask",
+        "confirmed": True,
+        "when": {
+            "type": "path",
+            "op": "delete",
+            "recursive": True,
+            "not_within": ["**/obj"],
+            "spared_beside": {"out": ["obj"]},
+        },
+    }
+    rules = parse_ledger({"version": 1, "rules": [rule]})
+
+    def effect(command: str) -> str:
+        call = make_call("Bash", command, cwd="/work/app")
+        return evaluate(rules, extract(call, windows=False, env=POSIX_ENV)).effect
+
+    assert effect("rm -rf out") == "ask"
+    assert effect("rm -rf out obj") == "none"
+    assert effect("rm -rf out lib") == "ask"
+    assert effect("rm -rf x/out x/obj") == "none"
+    assert effect("rm -rf out other/obj") == "ask"
+    # the sibling must be deleted too, not only read
+    assert effect("ls obj; rm -rf out") == "ask"
 
 
 def test_not_within_never_looks_at_the_shared_part_of_the_path() -> None:

@@ -120,6 +120,18 @@ _ARGUMENT_RE = re.compile(r"""(?:"[^"]*"?|[^\s"])+""")
 #: Statement keywords that are followed by a pipeline, not by a block.
 _LEADERS = frozenset({"return", "throw", "exit"})
 _SHELL_HOSTS = frozenset({"powershell", "pwsh", "cmd", "bash", "sh", "wsl"})
+#: Switch parameters of the cmdlets the gate reads.  A comma list after one
+#: of them is positional (``Remove-Item -Force .\bin, .\obj``); after any
+#: other parameter of a cmdlet it is that parameter's array
+#: (``Get-ChildItem -Include bin,obj``).
+_SWITCHES = frozenset({
+    "recurse", "force", "whatif", "confirm", "verbose", "debug", "directory",
+    "file", "hidden", "system", "readonly", "passthru", "wait", "raw", "quiet",
+    "nonewline", "append", "noclobber", "asbytestream", "update",
+    "followsymlink", "usebasicparsing", "allowclobber", "acceptlicense",
+    "skippublishercheck", "asjob", "nonewwindow", "loaduserprofile",
+    "usenewenvironment",
+})  # fmt: skip
 #: Start-Process parameters; the ones in the second tuple take a value.
 _START_SWITCHES = ("wait", "passthru", "nonewwindow", "loaduserprofile",
                    "usenewenvironment")  # fmt: skip
@@ -134,13 +146,15 @@ class _Word:
     """One PowerShell token: ``kind`` is bare, string, var, group, block, expr or call.
 
     ``literal`` is false when the text contains an expansion; ``spans`` are
-    index ranges of commands parsed out of nested groups and blocks.
+    index ranges of commands parsed out of nested groups and blocks;
+    ``after_comma`` is true for the second and later elements of a comma list.
     """
 
     text: str
     kind: str = "bare"
     literal: bool = True
     spans: list[tuple[int, int]] = field(default_factory=list)
+    after_comma: bool = False
 
 
 @dataclass(frozen=True, eq=False, repr=False)
@@ -177,6 +191,52 @@ def _entry_value(words: list[_Word]) -> list[_Word]:
         rest = words[1].text[1:]
         return ([_Word(rest)] if rest else []) + words[2:]
     return words
+
+
+def _is_parameter(word: _Word) -> bool:
+    """True for a literal ``-Name`` or ``-Name:value`` word."""
+    text = word.text
+    return (
+        word.kind == "bare"
+        and word.literal
+        and len(text) > 1
+        and text[0] == "-"
+        and text[1].isalpha()
+    )
+
+
+def _is_switch(name: str) -> bool:
+    """True when ``-Name``, possibly abbreviated, is a known switch parameter."""
+    lowered = name.lstrip("-").lower()
+    return bool(lowered) and any(s.startswith(lowered) for s in _SWITCHES)
+
+
+def _bind_lists(words: list[_Word]) -> list[_Word]:
+    """Give each element of a comma list after ``-Parameter`` that parameter.
+
+    A cmdlet binds ``-Include bin,obj`` to one parameter, so the list becomes
+    ``-Include bin -Include obj`` and every element reaches it.  After a
+    switch (``-Force .\\bin, .\\obj``) and at the front of the arguments a
+    list is positional and its elements stay as they are.
+    """
+    out: list[_Word] = []
+    expect: str | None = None  # a parameter whose first value comes next
+    binding: str | None = None  # the parameter the current list binds to
+    for word in words:
+        if _is_parameter(word):
+            name, attached, _ = word.text.partition(":")
+            switch = _is_switch(name)
+            expect = None if switch or attached else name
+            binding = name if attached and not switch else None
+        elif word.after_comma:
+            if binding is not None:
+                out.append(_Word(binding))
+        elif expect is not None:
+            binding, expect = expect, None
+        else:
+            binding = None
+        out.append(word)
+    return out
 
 
 def _after_param(words: list[_Word]) -> list[_Word]:
@@ -229,11 +289,14 @@ class _PowerShell:
         self.at_key = False
 
     # -- lexer --------------------------------------------------------------
-    def _skip_space(self) -> None:
+    def _skip_space(self) -> bool:
+        """Skip blanks, commas and comments; True when a comma was among them."""
         s, n = self.s, self.n
+        comma = False
         while self.i < n:
             char = s[self.i]
             if char in " \t\r,":
+                comma = comma or char == ","
                 self.i += 1
             elif s.startswith(("`\n", "`\r\n"), self.i):
                 self.i = s.index("\n", self.i) + 1
@@ -244,10 +307,11 @@ class _PowerShell:
                 end = s.find("\n", self.i)
                 self.i = n if end < 0 else end
             else:
-                return
+                break
+        return comma
 
     def _token(self) -> tuple[str, str | bool | _Word]:
-        self._skip_space()
+        comma = self._skip_space()
         s = self.s
         if self.i >= self.n:
             return "eof", ""
@@ -268,7 +332,9 @@ class _PowerShell:
         if match := _REDIRECT_RE.match(s, self.i):
             self.i = match.end()
             return "redirect", match.group(1) is None
-        return "word", self._word()
+        word = self._word()
+        word.after_comma = comma
+        return "word", word
 
     def _nested(self, closer: str, *, table: bool = False) -> tuple[int, int]:
         low = len(self.out.commands)
@@ -755,6 +821,10 @@ class _PowerShell:
             program = "Set-Location"
             words = [first, _Word(_CD_FUNCTIONS[name.lower()], "string"), *words[1:]]
         cmdlet = _CMDLET_RE.fullmatch(program) is not None
+        if cmdlet:
+            # ``-Include bin,obj`` is one array for one parameter; a native
+            # program gets the elements of a list as separate arguments.
+            words = [first, *_bind_lists(words[1:])]
         for index, word in enumerate(words[1:], start=1):
             value = self._known(word)
             # A cmdlet never takes a parameter name from a variable.

@@ -56,7 +56,56 @@ ARGV_CASES = [
     ("iex 'ls'", [["Invoke-Expression", "ls"], ["Get-ChildItem"]]),
     # parameters, lists, attached values
     ("Remove-Item a, b ,c -Recurse", [["Remove-Item", "a", "b", "c", "-Recurse"]]),
-    ("Remove-Item -Path a,b", [["Remove-Item", "-Path", "a", "b"]]),
+    ("Remove-Item -Path a,b", [["Remove-Item", "-Path", "a", "-Path", "b"]]),
+    # a comma list after a cmdlet parameter is that parameter's array; after
+    # a switch, at the front, and for a native program its elements stand alone
+    (
+        "Get-ChildItem -Path . -Include bin,obj -Recurse -Directory",
+        [
+            [
+                "Get-ChildItem",
+                "-Path",
+                ".",
+                "-Include",
+                "bin",
+                "-Include",
+                "obj",
+                "-Recurse",
+                "-Directory",
+            ]
+        ],
+    ),
+    (
+        "Get-ChildItem -Include bin, obj ,lib -Recurse",
+        [
+            [
+                "Get-ChildItem",
+                "-Include",
+                "bin",
+                "-Include",
+                "obj",
+                "-Include",
+                "lib",
+                "-Recurse",
+            ]
+        ],
+    ),
+    (
+        "Remove-Item -Recurse -Force .\\bin, .\\obj",
+        [["Remove-Item", "-Recurse", "-Force", ".\\bin", ".\\obj"]],
+    ),
+    ("rm -r -fo .\\bin, .\\obj", [["Remove-Item", "-r", "-fo", ".\\bin", ".\\obj"]]),
+    ("Remove-Item -Include bin obj", [["Remove-Item", "-Include", "bin", "obj"]]),
+    (
+        "Remove-Item -Include:bin, obj",
+        [["Remove-Item", "-Include:bin", "-Include", "obj"]],
+    ),
+    (
+        "Remove-Item -Confirm:$false a, b",
+        [["Remove-Item", "-Confirm:$false", "a", "b"]],
+    ),
+    ("Get-ChildItem -Include 'a,b'", [["Get-ChildItem", "-Include", "a,b"]]),
+    ("tool -x a, b", [["tool", "-x", "a", "b"]]),
     ("Remove-Item x -Confirm:$false", [["Remove-Item", "x", "-Confirm:$false"]]),
     (
         "git push --force-with-lease=origin/main",

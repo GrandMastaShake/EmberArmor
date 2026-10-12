@@ -159,6 +159,21 @@ POWERSHELL_PATHS = [
     ("Remove-Item ~ -Recurse", [("C:/Users/dev", "delete", True)]),
     (r"Remove-Item dist\* -Recurse", [("C:/work/app/dist", "delete", True)]),
     ("ls | Remove-Item -Recurse", [("C:/work/app", "delete", True)]),
+    (
+        "Get-ChildItem -Path . -Include bin,obj -Recurse -Directory"
+        " | Remove-Item -Recurse -Force",
+        [
+            ("C:/work/app/**/bin", "delete", True),
+            ("C:/work/app/**/obj", "delete", True),
+        ],
+    ),
+    (
+        "gci -Include *.log, *.tmp | rm",
+        [
+            ("C:/work/app/*.log", "delete", False),
+            ("C:/work/app/*.tmp", "delete", False),
+        ],
+    ),
     (r"Remove-Item HKLM:\Software\X -Recurse", []),
     (r"Remove-Item Env:\FOO", []),
     ("Get-Content a.txt", [("C:/work/app/a.txt", "read", False)]),

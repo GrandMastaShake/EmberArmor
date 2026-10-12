@@ -220,3 +220,13 @@ def test_path_implies_respects_the_rule_base() -> None:
     assert path_implies(inner, "/work/app", outer, "/work/app", windows=False)
     assert not path_implies(inner, "/work/app", outer, "/work/lib", windows=False)
     assert not path_implies(inner, "/work/app", outer, None, windows=False)
+
+
+def test_path_implies_spared_beside() -> None:
+    bare = path(op="delete")
+    beside = path(op="delete", spared_beside={"bin": ["obj"]})
+    more = path(op="delete", spared_beside={"bin": ["obj", "lib"]})
+    assert path_implies(beside, None, bare, None, windows=False)
+    assert not path_implies(bare, None, beside, None, windows=False)
+    assert path_implies(more, None, beside, None, windows=False)
+    assert not path_implies(beside, None, more, None, windows=False)

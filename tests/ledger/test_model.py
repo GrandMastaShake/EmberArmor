@@ -71,6 +71,18 @@ def _without(key: str) -> dict[str, Any]:
 RULE_ERRORS = [
     (rule(when={"type": "comand"}), "unknown predicate type 'comand'"),
     (
+        rule(when={"type": "path", "spared_beside": ["bin"]}),
+        "spared_beside: expected a map",
+    ),
+    (
+        rule(when={"type": "path", "spared_beside": {"bin": "src/obj"}}),
+        "'src/obj' is not a directory name",
+    ),
+    (
+        rule(when={"type": "path", "spared_beside": {"..": ["obj"]}}),
+        "is not a directory name",
+    ),
+    (
         rule(require=COMMAND),
         "exactly one of 'when' and 'require' is needed, found both",
     ),

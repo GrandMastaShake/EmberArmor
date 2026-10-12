@@ -151,6 +151,12 @@ def path_implies(
         for n in texts(b.not_within, base_b)
     ):
         return False
+    # ``spared_beside`` spares too: *a* must spare at least what *b* spares.
+    a_beside = {name: set(siblings) for name, siblings in a.spared_beside}
+    if not all(
+        set(siblings) <= a_beside.get(name, set()) for name, siblings in b.spared_beside
+    ):
+        return False
     a_spared = texts(a.not_glob, base_a, True)
     b_spared = texts(b.not_glob, base_b, True)
     if not all(g is not None and g in a_spared for g in b_spared):

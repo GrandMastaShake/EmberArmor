@@ -1206,6 +1206,20 @@
  },
  {
   "tool": "PowerShell",
+  "command": "Remove-Item -Recurse -Force .\\bin, .\\obj",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Get-ChildItem -Path . -Include bin,obj -Recurse -Directory | Remove-Item -Recurse -Force",
+  "platform": "windows"
+ },
+ {
+  "tool": "Bash",
+  "command": "rm -rf bin obj"
+ },
+ {
+  "tool": "PowerShell",
   "command": "Remove-Item -Recurse -Force \"$env:LOCALAPPDATA\\pip\\cache\"",
   "platform": "windows"
  },

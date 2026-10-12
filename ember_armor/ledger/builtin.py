@@ -53,7 +53,8 @@ def _either_case(text: str) -> str:
 
 #: Build, cache and temporary directories whose contents are disposable, and
 #: files a tool regenerates.  Only names that mean one thing: ``out``,
-#: ``bin`` or ``vendor`` are left to the user's ``disposable`` setting.
+#: ``vendor`` and ``bin`` on its own are left to the user's ``disposable``
+#: setting (for ``bin`` beside ``obj`` see :data:`SPARED_BESIDE`).
 DISPOSABLE = [
     "**/node_modules", "**/dist", "**/build", "**/.venv", "**/venv",
     "**/__pycache__", "**/.pytest_cache", "**/target", "**/.mypy_cache",
@@ -72,6 +73,11 @@ DISPOSABLE = [
     "**/*.tsbuildinfo", "**/.eslintcache", "**/.coverage", "**/.DS_Store",
     "**/*.pyc", "**/*.map", "**/*.tgz",
 ]  # fmt: skip
+#: Directory names that say nothing alone and everything in company: a
+#: ``bin`` deleted together with its sibling ``obj`` is .NET build output
+#: (``rm -rf bin obj``, ``Remove-Item .\bin, .\obj``,
+#: ``Get-ChildItem -Include bin,obj -Recurse | Remove-Item -Recurse``).
+SPARED_BESIDE = {"bin": ["obj"]}
 #: Filesystem roots, home directories and users directories.
 PROTECTED = [
     "/", "?:/", "~", "/root", "/home", "/home/*", "/Users", "/Users/*",
@@ -209,6 +215,7 @@ def _rules(disposable: Sequence[str]) -> list[dict[str, Any]]:
         "op": "delete",
         "recursive": True,
         "not_within": [*DISPOSABLE, *disposable],
+        "spared_beside": SPARED_BESIDE,
     }
     return [
         # -- recursive deletion ----------------------------------------------

@@ -89,6 +89,11 @@ class PathPred:
     deletions; ``None`` accepts both.  ``not_within`` is an exception like
     ``not_under``, judged from where the call is made: the directory that
     matches must not be the working directory or a directory above it.
+    ``spared_beside`` maps a directory name to sibling names: a path at or
+    below a directory of that name is spared, as ``not_within`` would spare
+    it, when the call does the same operation on a sibling of one of those
+    names (``{"bin": ["obj"]}``: the ``bin`` of a .NET project beside its
+    ``obj``).
     """
 
     op: str = "any"
@@ -98,6 +103,7 @@ class PathPred:
     glob: tuple[str, ...] = ()
     not_glob: tuple[str, ...] = ()
     recursive: bool | None = None
+    spared_beside: tuple[tuple[str, tuple[str, ...]], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -405,13 +411,34 @@ def _parse_command(obj: Mapping[str, Any], where: str) -> CommandPred:
 
 def _parse_path(obj: Mapping[str, Any], where: str) -> PathPred:
     lists = ("under", "not_under", "not_within", "glob", "not_glob")
-    _check_keys(obj, where, ("type",), (*lists, "op", "recursive"))
+    _check_keys(obj, where, ("type",), (*lists, "op", "recursive", "spared_beside"))
     values = {k: _strings(obj[k], f"{where}.{k}") for k in lists if k in obj}
     recursive = obj.get("recursive")
     if recursive is not None and not isinstance(recursive, bool):
         raise LedgerError(f"{where}.recursive: expected true or false")
     op = _one_of(obj.get("op", "any"), PATH_OPS, f"{where}.op")
-    return PathPred(op=op, recursive=recursive, **values)
+    beside = _parse_beside(obj.get("spared_beside", {}), f"{where}.spared_beside")
+    return PathPred(op=op, recursive=recursive, spared_beside=beside, **values)
+
+
+def _parse_beside(value: Any, where: str) -> tuple[tuple[str, tuple[str, ...]], ...]:
+    """``spared_beside``: a map from a directory name to sibling names."""
+    if not isinstance(value, Mapping):
+        raise LedgerError(f"{where}: expected a map of directory name to sibling names")
+    pairs = []
+    for name, siblings in value.items():
+        here = f"{where}.{name}"
+        names = tuple(_segment(s, here) for s in _strings(siblings, here))
+        pairs.append((_segment(name, where), names))
+    return tuple(pairs)
+
+
+def _segment(value: Any, where: str) -> str:
+    """One directory name: no separators, wildcards or dot entries."""
+    text = _string(value, where)
+    if any(c in text for c in "/\\*?[") or text in (".", ".."):
+        raise LedgerError(f"{where}: {text!r} is not a directory name")
+    return text
 
 
 def _parse_arg(obj: Mapping[str, Any], where: str) -> ArgPred:

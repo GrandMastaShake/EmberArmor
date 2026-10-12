@@ -64,6 +64,7 @@ from ember_armor.ledger.model import (
     Predicate,
     Rule,
     TextRegexPred,
+    UnknownDirectoryPred,
 )
 from ember_armor.ledger.shell.core import DYNAMIC_KINDS
 
@@ -258,6 +259,8 @@ class _Model:
             return self._atom(self.opaque, repr(pred), "text")
         if isinstance(pred, AssignsPred):
             return self._atom(self.opaque, repr(pred), "assigns")
+        if isinstance(pred, UnknownDirectoryPred):
+            return self._atom(self.opaque, repr(pred), "unknown_directory")
         return self._atom(self.opaque, (repr(pred), base, view), "history")
 
     def scope(self, scope: Applies, base: str | None) -> Any:

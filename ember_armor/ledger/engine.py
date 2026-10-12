@@ -33,6 +33,7 @@ from ember_armor.ledger.model import (
     Predicate,
     Rule,
     TextRegexPred,
+    UnknownDirectoryPred,
     exceptable,
 )
 from ember_armor.ledger.paths import (
@@ -41,10 +42,11 @@ from ember_armor.ledger.paths import (
     is_under,
     matches_glob,
     may_match,
+    normalize,
     resolve_pattern,
 )
 from ember_armor.ledger.shell import SimpleCommand, program_name
-from ember_armor.ledger.shell.argv import has_flag, operand_positions
+from ember_armor.ledger.shell.argv import has_flag, operand_positions, operands
 
 TYPE_CHECKING = False
 if TYPE_CHECKING:
@@ -159,18 +161,30 @@ class _Roots:
     define.)
     """
 
-    __slots__ = ("errors", "find", "found", "windows")
+    __slots__ = ("created", "errors", "find", "found", "windows")
 
-    def __init__(self, find: RepoFinder | None, windows: bool) -> None:
+    def __init__(
+        self,
+        find: RepoFinder | None,
+        windows: bool,
+        created: tuple[str, ...] = (),
+    ) -> None:
         self.find = find
         self.windows = windows
         self.found: dict[str, str | None] = {}
         self.errors: list[str] = []
+        # Repositories the command string itself creates (``git clone``,
+        # ``git worktree add``, ``git init``): roots the filesystem does not
+        # hold yet when the call is judged, deepest first.
+        self.created = tuple(sorted(created, key=len, reverse=True))
 
     def root(self, directory: str) -> str | None:
         """Repository root of *directory*; ``UNKNOWN_DIR`` when not known."""
         if directory == UNKNOWN_DIR or "$" in directory:
             return UNKNOWN_DIR
+        for made in self.created:
+            if directory == made or is_under(directory, made, windows=self.windows):
+                return made
         if directory not in self.found:
             if self.find is None:
                 from ember_armor.ledger.repo import finder
@@ -224,6 +238,7 @@ class _Context:
     now: float
     roots: _Roots
     area: _Area | None = None
+    possible: tuple[str, ...] = ()
 
 
 # ---------------------------------------------------------------------------
@@ -490,7 +505,7 @@ def _past_matches(pred: Predicate, facts: Facts, ctx: _Context) -> list[PastCall
         now = replace(
             past, windows=facts.windows, home=facts.home, variables=facts.variables
         )
-        return _view(now, ctx.area, ctx.roots)
+        return _view(now, ctx.area, ctx.roots)[0]
 
     return [
         past
@@ -521,6 +536,8 @@ def _holds(pred: Predicate, facts: Facts, ctx: _Context) -> bool:
         return any(reason.kind in pred.reason for reason in facts.dynamic)
     if isinstance(pred, AssignsPred):
         return _assigns(pred, facts)
+    if isinstance(pred, UnknownDirectoryPred):
+        return bool(ctx.possible)
     if isinstance(pred, AllPred):
         return all(_holds(inner, facts, ctx) for inner in _cheapest_first(pred.of))
     if isinstance(pred, AnyPred):
@@ -572,11 +589,17 @@ def _placed(directory: str, area: _Area, facts: Facts) -> bool:
     return not _under_any(directory, area.not_under, facts.windows)
 
 
-def _rooted(path: str, area: _Area, facts: Facts, roots: _Roots) -> bool:
-    """True when the nearest repository around *path* is one the area names."""
+def _rooted(path: str, area: _Area, facts: Facts, roots: _Roots) -> bool | None:
+    """Whether the nearest repository around *path* is one the area names.
+
+    ``None`` when that cannot be known (the path is unknown, or the lookup
+    failed) and the area is a rule's: the rule does not fire on it, and the
+    built-in rule for unknown directories asks instead.  For an exception
+    (``lenient`` false) the answer is then simply no.
+    """
     root = roots.root(path)
     if root == UNKNOWN_DIR:
-        return area.lenient
+        return None if area.lenient else False
     return root is not None and any(
         matches_glob(root, wanted, windows=facts.windows) for wanted in area.roots
     )
@@ -584,59 +607,147 @@ def _rooted(path: str, area: _Area, facts: Facts, roots: _Roots) -> bool:
 
 def _inside(
     directory: str, where: str, area: _Area, facts: Facts, roots: _Roots
-) -> bool:
-    """True when something done in *directory* is in *area*.
+) -> bool | None:
+    """Whether something done in *directory* is in *area*.
 
     *where* is what ``repo_root`` is asked about: the same directory for a
-    command, the file for a file tool.
+    command, the file for a file tool.  ``None`` means the directory is not
+    known (see :func:`_rooted`).
     """
     if directory == UNKNOWN_DIR:
-        return area.lenient
+        return None if area.lenient else False
     if not _placed(directory, area, facts):
         return False
-    return not area.roots or _rooted(where, area, facts, roots)
+    return True if not area.roots else _rooted(where, area, facts, roots)
 
 
-def _view(facts: Facts, area: _Area | None, roots: _Roots) -> Facts | None:
-    """The part of a call that lies in *area*; ``None`` when nothing does.
+def _view(
+    facts: Facts, area: _Area | None, roots: _Roots
+) -> tuple[Facts | None, Facts | None]:
+    """The part of a call that lies in *area*, and the part that might.
 
-    Of a shell call that is the commands that run in the area and the paths
-    they touch.  A call without commands is judged as a whole on its working
-    directory, and ``repo_root`` on each path it touches.
+    The first is what the rule is judged on: of a shell call the commands
+    that run in the area and the paths they touch; a call without commands
+    as a whole, on its working directory and ``repo_root`` on each path it
+    touches.  The second holds what runs in a directory the gate could not
+    work out: the rule is not judged on it, but if it would have fired
+    there, the call is reported as one a scoped rule might apply to.
+    Either is ``None`` when it is empty.
     """
     if area is None:
-        return facts
-    paths: tuple[PathFact, ...]
+        return facts, None
     if facts.commands:
-        verdicts: dict[str, bool] = {}
+        verdicts: dict[str, bool | None] = {}
 
-        def inside(cwd: str) -> bool:
+        def inside(cwd: str) -> bool | None:
             if cwd not in verdicts:
                 here = cwd or _made_in(facts)
                 verdicts[cwd] = _inside(here, here, area, facts, roots)
             return verdicts[cwd]
 
-        commands = tuple(c for c in facts.commands if inside(c.cwd))
-        paths = tuple(path for path in facts.paths if inside(path.cwd))
-        if not commands and not paths:
-            return None
-        if len(commands) == len(facts.commands) and len(paths) == len(facts.paths):
-            return facts
-        return replace(facts, commands=commands, paths=paths)
+        return _split(facts, inside)
     here = _made_in(facts)
-    if here == UNKNOWN_DIR:
-        if not area.lenient:
-            return None
-    elif not _placed(here, area, facts):
-        return None
+    if here == UNKNOWN_DIR and (area.under or area.not_under):
+        return None, facts
+    if here != UNKNOWN_DIR and not _placed(here, area, facts):
+        return None, None
     if not area.roots:
-        return facts
+        return facts, None
     if not facts.paths:
-        return facts if _rooted(here, area, facts, roots) else None
-    paths = tuple(p for p in facts.paths if _rooted(p.path, area, facts, roots))
-    if len(paths) == len(facts.paths):
-        return facts
-    return replace(facts, paths=paths) if paths else None
+        verdict = _rooted(here, area, facts, roots)
+        if verdict:
+            return facts, None
+        return None, (facts if verdict is None else None)
+    return _split_paths(facts, lambda p: _rooted(p.path, area, facts, roots))
+
+
+def _split(
+    facts: Facts, inside: Callable[[str], bool | None]
+) -> tuple[Facts | None, Facts | None]:
+    """A shell call divided by where its commands run: in, and maybe in."""
+    sure = tuple(c for c in facts.commands if inside(c.cwd))
+    unsure = tuple(c for c in facts.commands if inside(c.cwd) is None)
+    sure_paths = tuple(p for p in facts.paths if inside(p.cwd))
+    unsure_paths = tuple(p for p in facts.paths if inside(p.cwd) is None)
+    view: Facts | None
+    if len(sure) == len(facts.commands) and len(sure_paths) == len(facts.paths):
+        view = facts
+    elif sure or sure_paths:
+        view = replace(facts, commands=sure, paths=sure_paths)
+    else:
+        view = None
+    maybe = (
+        replace(facts, commands=unsure, paths=unsure_paths)
+        if unsure or unsure_paths
+        else None
+    )
+    return view, maybe
+
+
+def _split_paths(
+    facts: Facts, rooted: Callable[[PathFact], bool | None]
+) -> tuple[Facts | None, Facts | None]:
+    """A call without commands divided by the repository of each path."""
+    sure = tuple(p for p in facts.paths if rooted(p))
+    unsure = tuple(p for p in facts.paths if rooted(p) is None)
+    view: Facts | None
+    if len(sure) == len(facts.paths):
+        view = facts
+    else:
+        view = replace(facts, paths=sure) if sure else None
+    return view, (replace(facts, paths=unsure) if unsure else None)
+
+
+#: Options of ``git`` in front of the subcommand that take a value.
+_GIT_GLOBAL_VALUES = frozenset(
+    {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path",
+     "--super-prefix", "--config-env", "--attr-source"}
+)  # fmt: skip
+#: Options of ``git worktree add`` that take a value.
+_WORKTREE_ADD_VALUES = frozenset({"-b", "-B", "--orphan", "--reason"})
+
+
+def _created_repositories(facts: Facts) -> tuple[str, ...]:
+    """Directories the command string makes into repositories.
+
+    ``git clone <url> [dir]``, ``git worktree add <path> [commit]`` and
+    ``git init [dir]`` each give a repository root the filesystem does not
+    hold when the call is judged, so a command that then runs there would
+    be placed in the enclosing repository instead.  Each is resolved against
+    the directory the command runs in; a command in an unknown directory,
+    or a target the gate cannot resolve, gives nothing.
+    """
+    made: list[str] = []
+    for command in facts.commands:
+        if not command.argv or program_name(command.argv[0]) != "git":
+            continue
+        here = command.cwd or facts.cwd
+        if here == UNKNOWN_DIR or command.cwd == UNKNOWN_DIR:
+            continue
+        words = operands(command, _GIT_GLOBAL_VALUES)
+        if not words:
+            continue
+        target: str | None = None
+        if words[0] == "init":
+            target = words[1] if len(words) > 1 else "."
+        elif words[0] == "clone" and len(words) > 1:
+            if len(words) > 2:
+                target = words[2]
+            else:
+                name = words[1].rstrip("/").rsplit("/", 1)[-1].rsplit(":", 1)[-1]
+                target = name[:-4] if name.endswith(".git") else name
+        elif words[:2] == ["worktree", "add"]:
+            rest = operands(command, _GIT_GLOBAL_VALUES | _WORKTREE_ADD_VALUES)[2:]
+            target = rest[0] if rest else None
+        if not target or "$" in target or any(c in target for c in "*?["):
+            continue
+        resolved = normalize(
+            target, here, windows=facts.windows, home=facts.home,
+            variables=facts.variables,
+        )  # fmt: skip
+        if "$" not in resolved and resolved != UNKNOWN_DIR:
+            made.append(resolved)
+    return tuple(dict.fromkeys(made))
 
 
 def _below(pattern: str, directory: str, windows: bool) -> bool:
@@ -696,7 +807,8 @@ def scope_reaches(
         return False
     if not area.roots or any(_below(root, here, windows) for root in area.roots):
         return True
-    return _rooted(here, area, facts, _Roots(repo_root, windows))
+    verdict = _rooted(here, area, facts, _Roots(repo_root, windows))
+    return verdict is None or verdict
 
 
 # ---------------------------------------------------------------------------
@@ -916,12 +1028,17 @@ def evaluate(
     """
     moment = time.time() if now is None else now
     past = None if history is None else _Session(history)
-    roots = _Roots(repo_root, facts.windows)
+    roots = _Roots(repo_root, facts.windows, _created_repositories(facts))
     exceptions = tuple(exceptions)
     fired: list[FiredRule] = []
     excepted: list[ExceptedRule] = []
     failures: list[tuple[str, str]] = []
-    for rule in rules:
+    possible: list[str] = []
+    # The rule for unknown directories is judged after the others: it asks
+    # when one of them would have fired where the gate could not see.
+    deferred: list[Rule] = []
+
+    def judge(rule: Rule, facts: Facts, ctx_possible: tuple[str, ...]) -> None:
         # Each rule is judged on its own: one that cannot be judged is a
         # failure of the gate, and the rules after it are still judged.
         try:
@@ -929,7 +1046,7 @@ def evaluate(
             if applies.tools and not any(
                 fnmatchcase(facts.tool, tool) for tool in applies.tools
             ):
-                continue
+                return
             area = None
             if applies.directories:
                 area = _area(
@@ -940,15 +1057,19 @@ def evaluate(
                     facts,
                     lenient=True,
                 )
-            view = _view(facts, area, roots)
-            if view is None:
-                continue
-            ctx = _Context(rule.base, past, moment, roots, area)
-            if _holds(rule.predicate, view, ctx) == rule.obligation:
-                continue
+            view, maybe = _view(facts, area, roots)
+            ctx = _Context(rule.base, past, moment, roots, area, ctx_possible)
+            if view is None or _holds(rule.predicate, view, ctx) == rule.obligation:
+                # Not fired on what is in scope.  Would it have, where the
+                # directory is not known?
+                if maybe is not None and (
+                    _holds(rule.predicate, maybe, ctx) != rule.obligation
+                ):
+                    possible.append(rule.id)
+                return
         except Exception as exc:
             failures.append(_unjudged(rule, exc))
-            continue
+            return
         reasons: tuple[str, ...] = ()
         try:
             if exceptions:
@@ -959,8 +1080,8 @@ def evaluate(
         if reasons:
             from ember_armor.ledger.exceptions import ExceptedRule
 
-            excepted += [ExceptedRule(rule.id, reason) for reason in reasons]
-            continue
+            excepted.extend(ExceptedRule(rule.id, reason) for reason in reasons)
+            return
         fired.append(
             FiredRule(
                 rule.id,
@@ -971,6 +1092,19 @@ def evaluate(
                 rule.confirmed,
             )
         )
+
+    for rule in rules:
+        if isinstance(rule.predicate, UnknownDirectoryPred):
+            deferred.append(rule)
+        else:
+            judge(rule, facts, ())
+    if deferred:
+        # For the owner's exceptions, what ran in an unknown directory is
+        # taken to have run where the call was made: that is the place the
+        # owner can name.
+        at_home = _at_home(facts)
+        for rule in deferred:
+            judge(rule, at_home, tuple(dict.fromkeys(possible)))
     full = [*roots.errors, *(failure[0] for failure in failures)]
     words = [*roots.errors, *(failure[1] for failure in failures)]
     error = "; ".join(dict.fromkeys(full)) or None
@@ -978,5 +1112,27 @@ def evaluate(
     fired.sort(key=lambda rule: -SEVERITY[rule.effect])
     effect = fired[0].effect if fired else "none"
     return Decision(
-        effect, tuple(fired), error, tuple(excepted), None if said == error else said
+        effect,
+        tuple(fired),
+        error,
+        tuple(excepted),
+        None if said == error else said,
+        tuple(dict.fromkeys(possible)),
     )
+
+
+def _at_home(facts: Facts) -> Facts:
+    """The call with every unknown directory read as the call's own."""
+    commands = tuple(
+        replace(c, cwd="") if c.cwd == UNKNOWN_DIR else c for c in facts.commands
+    )
+    paths = tuple(
+        replace(p, cwd="") if p.cwd == UNKNOWN_DIR else p for p in facts.paths
+    )
+    # (``cwd`` is not part of a command's or a path's identity, so the
+    # tuples are not compared.)
+    if UNKNOWN_DIR not in {c.cwd for c in facts.commands} | {
+        p.cwd for p in facts.paths
+    }:
+        return facts
+    return replace(facts, commands=commands, paths=paths)

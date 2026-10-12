@@ -59,7 +59,7 @@ def test_a_directory_scope_is_judged_for_each_command(
         assert data["decision"] == expected, (cwd, command)
 
 
-def test_a_request_that_names_no_directory_is_in_scope(
+def test_a_request_that_names_no_directory_is_an_unknown_one(
     client, auth_headers, ledger
 ) -> None:
     write_ledger(
@@ -69,16 +69,19 @@ def test_a_request_that_names_no_directory_is_in_scope(
     response = client.post("/v1/ledger/check", json=call, headers=auth_headers)
     assert response.status_code == 200
     data = response.json()
-    assert data["decision"] == "deny"
+    # The scoped rule is not attributed; the built-in rule asks in its place.
+    assert data["decision"] == "ask"
+    assert [r["id"] for r in data["rules"]] == ["builtin.shell.unknown-directory"]
+    assert data["possible"] == ["here"]
     assert data["call"]["located"] is False
     assert data["call"]["commands"][0]["cwd"] == "?"
-    assert decide(client, auth_headers, "git commit", "")["decision"] == "deny"
-    assert (
-        decide(client, auth_headers, "git commit", "some/where")["decision"] == "deny"
-    )
+    for cwd in ("", "some/where"):
+        data = decide(client, auth_headers, "git commit", cwd)
+        assert (data["decision"], data["possible"]) == ("ask", ["here"]), cwd
     # A command that names its directory is placed again.
     data = decide(client, auth_headers, "cd /work && git commit", "")
     assert data["decision"] == "none"
+    assert "possible" not in data
 
 
 def test_no_repository_is_looked_up_for_a_request(
@@ -93,10 +96,13 @@ def test_no_repository_is_looked_up_for_a_request(
     top = tmp_path / "top"
     (top / ".git").mkdir(parents=True)
     write_ledger(ledger, rule("top", when=COMMIT, applies={"repo_root": [str(top)]}))
-    # Not known, so in scope: the rule fires wherever the request says it is.
+    # Not known, so the rule might apply wherever the request says it is:
+    # the built-in rule asks, and the scoped rule is named as possible.
     for cwd in (str(top), str(tmp_path), "/nowhere/at/all"):
         data = decide(client, auth_headers, "git commit", cwd)
-        assert data["decision"] == "deny", cwd
+        assert data["decision"] == "ask", cwd
+        assert [r["id"] for r in data["rules"]] == ["builtin.shell.unknown-directory"]
+        assert data["possible"] == ["top"]
         assert data["error"] is None
     assert decide(client, auth_headers, "git status", str(top))["decision"] == "none"
 

@@ -119,6 +119,16 @@ class ExprPred:
 
 
 @dataclass(frozen=True)
+class UnknownDirectoryPred:
+    """True when a directory-scoped rule could apply to a command whose
+    directory the gate could not work out from the command string.
+
+    The engine evaluates it after the other rules: it holds when at least
+    one of them would have fired on the commands in an unknown directory.
+    """
+
+
+@dataclass(frozen=True)
 class TextRegexPred:
     """Regular-expression search on one (truncated) text field."""
 
@@ -193,6 +203,7 @@ Predicate = (
     | ExprPred
     | TextRegexPred
     | DynamicShellPred
+    | UnknownDirectoryPred
     | AssignsPred
     | AllPred
     | AnyPred
@@ -302,7 +313,10 @@ class Decision:
     call, with the reason the owner gave.  ``said`` is the failure in the
     words the gate may print where an agent reads them, when those differ
     from ``error``: the reason a project ledger could not be loaded can
-    quote the file, and is replaced by fixed words there.
+    quote the file, and is replaced by fixed words there.  ``possible``
+    names the directory-scoped rules that would have fired on the commands
+    whose directory the gate could not work out; they did not fire, and the
+    built-in rule ``builtin.shell.unknown-directory`` asks in their place.
     """
 
     effect: str = "none"
@@ -310,6 +324,7 @@ class Decision:
     error: str | None = None
     excepted: tuple[ExceptedRule, ...] = ()
     said: str | None = None
+    possible: tuple[str, ...] = ()
 
     def reason(self) -> str:
         """Human-readable reason quoting each fired rule's text and source.
@@ -451,6 +466,13 @@ def _parse_dynamic(obj: Mapping[str, Any], where: str) -> DynamicShellPred:
     return DynamicShellPred(reason=reason)
 
 
+def _parse_unknown_directory(
+    obj: Mapping[str, Any], where: str
+) -> UnknownDirectoryPred:
+    _check_keys(obj, where, ("type",), ())
+    return UnknownDirectoryPred()
+
+
 def _parse_assigns(obj: Mapping[str, Any], where: str) -> AssignsPred:
     _check_keys(obj, where, ("type", "name"), ())
     names = _strings(obj["name"], f"{where}.name")
@@ -499,6 +521,7 @@ _LEAF_PARSERS: dict[str, Callable[[Mapping[str, Any], str], Predicate]] = {
     "expr": _parse_expr,
     "text_regex": _parse_text_regex,
     "dynamic_shell": _parse_dynamic,
+    "unknown_directory": _parse_unknown_directory,
     "assigns": _parse_assigns,
 }
 PREDICATE_TYPES = (

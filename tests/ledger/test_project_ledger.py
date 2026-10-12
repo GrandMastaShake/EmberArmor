@@ -99,8 +99,10 @@ def test_an_unconfirmed_project_rule_never_runs_a_regular_expression(
     started = time.monotonic()
     result = run("git push origin main --force-with-lease --tags", env, project)
     assert time.monotonic() - started < 5
-    assert result.decision.effect == "ask"
-    assert [fired.id for fired in result.decision.fired] == ["builtin.git.force-push"]
+    assert result.decision.effect == "warn"
+    assert [fired.id for fired in result.decision.fired] == [
+        "builtin.git.force-push-lease"
+    ]
 
 
 @pytest.mark.parametrize(

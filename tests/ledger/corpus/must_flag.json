@@ -596,14 +596,14 @@
  {
   "tool": "Bash",
   "command": "git push --force-with-lease",
-  "effect": "ask",
-  "rule": "builtin.git.force-push"
+  "effect": "warn",
+  "rule": "builtin.git.force-push-lease"
  },
  {
   "tool": "Bash",
   "command": "git push --force-with-lease=origin/main",
-  "effect": "ask",
-  "rule": "builtin.git.force-push"
+  "effect": "warn",
+  "rule": "builtin.git.force-push-lease"
  },
  {
   "tool": "Bash",
@@ -4060,5 +4060,61 @@
   "command": "for d in */; do git -C \"$d\" reset --hard; done",
   "effect": "ask",
   "rule": "builtin.git.reset-hard"
+ },
+ {
+  "tool": "Bash",
+  "command": "cd $WT && git push origin main",
+  "effect": "ask",
+  "rule": "builtin.shell.unknown-directory",
+  "rules": [
+   {
+    "id": "scoped-to-a-directory",
+    "text": "Never push from the site checkout.",
+    "source": "corpus",
+    "effect": "deny",
+    "applies": {
+     "cwd_under": [
+      "/srv/site",
+      "C:/srv/site"
+     ]
+    },
+    "when": {
+     "type": "command",
+     "program": "git",
+     "subcommand": [
+      "push"
+     ]
+    },
+    "confirmed": true
+   }
+  ]
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Set-Location $env:WT; git push origin main",
+  "effect": "ask",
+  "rule": "builtin.shell.unknown-directory",
+  "rules": [
+   {
+    "id": "scoped-to-a-directory",
+    "text": "Never push from the site checkout.",
+    "source": "corpus",
+    "effect": "deny",
+    "applies": {
+     "cwd_under": [
+      "/srv/site",
+      "C:/srv/site"
+     ]
+    },
+    "when": {
+     "type": "command",
+     "program": "git",
+     "subcommand": [
+      "push"
+     ]
+    },
+    "confirmed": true
+   }
+  ]
  }
 ]

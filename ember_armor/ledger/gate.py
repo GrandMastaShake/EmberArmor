@@ -108,7 +108,7 @@ class GateResult:
         how it reaches the agent.  ``excepted`` is present when an owner's
         exception dropped a rule.
         """
-        report = {
+        report: dict[str, Any] = {
             "decision": self.decision.effect,
             "mode": self.mode,
             "rules": [_fired(rule) for rule in self.decision.fired],
@@ -120,6 +120,8 @@ class GateResult:
             report["delivery"] = self.delivery()
         if self.decision.excepted:
             report["excepted"] = _excepted(self.decision)
+        if self.decision.possible:
+            report["possible"] = list(self.decision.possible)
         return report
 
 
@@ -245,6 +247,8 @@ def _record(
         record["call"] = summarise(facts)
     if decision.excepted:
         record["excepted"] = _excepted(decision)
+    if decision.possible:
+        record["possible"] = list(decision.possible)
     if reminder is not None:
         # What the reminder quoted, by rule key: nothing when no confirmed
         # rule was due.

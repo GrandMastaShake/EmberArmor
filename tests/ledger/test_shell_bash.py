@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from ember_armor.ledger.shell import parse_shell
+from ember_armor.ledger.shell.core import find_runs, find_targets
 
 
 def argvs(command: str) -> list[list[str]]:
@@ -106,6 +107,28 @@ ARGV_CASES = [
         [
             ["find", ".", "-name", "x", "-exec", "rm", "-rf", "{}", ";"],
             ["rm", "-rf", "./x"],
+        ],
+    ),
+    (
+        "find . \\( -name bin -o -name obj \\) -exec rm -rf {} +",
+        [
+            [
+                "find",
+                ".",
+                "(",
+                "-name",
+                "bin",
+                "-o",
+                "-name",
+                "obj",
+                ")",
+                "-exec",
+                "rm",
+                "-rf",
+                "{}",
+                "+",
+            ],
+            ["rm", "-rf", "./bin", "./obj"],
         ],
     ),
 ]
@@ -310,3 +333,18 @@ def test_very_long_words_parse_quickly() -> None:
     for command in ("echo x" + "=" * 150_000, "echo " + "\\" * 150_000, "'a'" * 60_000):
         result = parse_shell(command, "bash")
         assert len(result.commands) == 1
+
+
+def test_find_names_every_filter_and_reads_a_negated_one_as_none() -> None:
+    both = find_targets([".", "-name", "a", "-o", "-name", "b"])
+    assert both == (["./a", "./b"], True)
+    assert find_targets([".", "!", "-name", "*.md"]) == (["."], False)
+    # argv arrives as a tuple
+    assert find_targets(("src", "-not", "-name", "*.py")) == (["src"], False)
+    assert find_targets(["src", "-not", "-name", "*.py", "-name", "*.pyc"]) == (
+        ["src/*.pyc"],
+        True,
+    )
+    args = [".", "(", "-name", "bin", "-o", "-name", "obj", ")"]
+    args += ["-exec", "rm", "-rf", "{}", "+"]
+    assert find_runs(args) == [(("rm", "-rf", "./bin", "./obj"), False)]

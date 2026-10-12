@@ -399,8 +399,10 @@ def find_targets(args: Sequence[str]) -> tuple[list[str], bool]:
     Returns
     -------
     tuple[list[str], bool]
-        The start directories, each extended by the ``-name`` pattern when
-        there is one, and whether such a name filter was present.
+        The start directories, each extended by every ``-name`` pattern when
+        there is one, and whether such a name filter was present.  A negated
+        name (``! -name x``, ``-not -name x``) keeps the gate from naming
+        anything, so it counts as no filter: the whole tree.
     """
     roots: list[str] = []
     for arg in args:
@@ -408,10 +410,14 @@ def find_targets(args: Sequence[str]) -> tuple[list[str], bool]:
             break
         roots.append(arg)
     roots = roots or ["."]
-    names = [args[i + 1] for i, a in enumerate(args[:-1]) if a in ("-name", "-iname")]
+    names = [
+        args[i + 1]
+        for i, a in enumerate(args[:-1])
+        if a in ("-name", "-iname") and not (i and args[i - 1] in ("!", "-not"))
+    ]
     if not names:
         return roots, False
-    return [f"{root.rstrip('/')}/{names[0]}" for root in roots], True
+    return [f"{root.rstrip('/')}/{name}" for root in roots for name in names], True
 
 
 def lister_targets(argv: Sequence[str]) -> tuple[list[str], bool] | None:
@@ -489,6 +495,10 @@ def find_runs(
             rest = args[i + 1 :]
             ends = [j for j, a in enumerate(rest) if a in (";", "+")]
             inner = rest[: ends[0]] if ends else rest
-            command = tuple(targets[0] if filled and a == "{}" else a for a in inner)
+            command = tuple(
+                part
+                for a in inner
+                for part in (targets if filled and a == "{}" else (a,))
+            )
             commands.append((command, arg.endswith("dir")))
     return [(command, moved) for command, moved in commands if command]

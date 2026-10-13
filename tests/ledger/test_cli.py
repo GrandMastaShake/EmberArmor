@@ -299,6 +299,26 @@ def test_log_tail_verify_stats(cli_env, capsys) -> None:
     assert "entries: 4" in out
 
 
+def test_log_stats_since_counts_entries_from_a_moment_on(cli_env, capsys) -> None:
+    _seed_log(cli_env)
+    code, out, _ = run_cli(capsys, "log", "stats", "--since", "2000-01-01", "--json")
+    stats = json.loads(out)
+    assert (code, stats["since"], stats["entries"]) == (
+        0,
+        "2000-01-01T00:00:00+00:00",
+        4,
+    )
+    code, out, _ = run_cli(
+        capsys, "log", "stats", "--since", "2999-01-01T00:00:00+02:00"
+    )
+    assert code == 0
+    assert "since: 2998-12-31T22:00:00+00:00" in out
+    assert "entries: 0" in out
+    with pytest.raises(SystemExit) as stopped:
+        cli.main(["log", "stats", "--since", "last tuesday"])
+    assert stopped.value.code == 2
+
+
 def test_log_verify_fails_on_a_tampered_log(cli_env, capsys) -> None:
     _seed_log(cli_env)
     path = AuditLog(Path(cli_env["EMBER_HOME"]) / "audit").files()[0]

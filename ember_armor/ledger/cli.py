@@ -13,8 +13,8 @@ import json
 import os
 import sys
 from collections import Counter
-from collections.abc import Sequence
-from datetime import date
+from collections.abc import Mapping, Sequence
+from datetime import UTC, date, datetime
 from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import Any
@@ -306,24 +306,45 @@ def _cmd_rules_remove(args: argparse.Namespace) -> int:
 # lint
 # ---------------------------------------------------------------------------
 def _cmd_lint(args: argparse.Namespace) -> int:
-    """Check the ledger itself: 0 when clean, 1 with findings, 3 without Z3."""
-    from ember_armor.ledger.lint import SolverUnavailableError, finding_data, lint
+    """Check the ledger itself: 0 when clean, 1 with findings, 3 without Z3.
+
+    Stale directory scopes are looked for on the filesystem first; they are
+    printed even when the solver is missing, and the exit code is then
+    still 3 because the ledger was not fully checked.
+    """
+    from ember_armor.ledger.lint import (
+        SolverUnavailableError,
+        finding_data,
+        lint,
+        stale_scopes,
+    )
 
     rules = store.load_all(args.cwd or os.getcwd(), os.environ)
+    findings = stale_scopes(rules, env=os.environ)
+    solver = True
     try:
-        findings = lint(rules, shell_tools=configured_shell_tools(os.environ))
+        findings += lint(rules, shell_tools=configured_shell_tools(os.environ))
     except SolverUnavailableError as exc:
+        solver = False
         print(f"ember-gate: {exc}", file=sys.stderr)
-        return EXIT_NO_SOLVER
     if args.json:
         _print_json(
-            {"rules": len(rules), "findings": [finding_data(f) for f in findings]}
+            {
+                "rules": len(rules),
+                "solver": solver,
+                "findings": [finding_data(f) for f in findings],
+            }
         )
     else:
         for finding in findings:
             print(f"{finding.kind}: {finding.message}")
-        result = f"{len(findings)} finding(s)" if findings else "no findings"
-        print(f"{len(rules)} rules checked: {result}")
+        count = f"{len(findings)} finding(s)"
+        if solver:
+            print(f"{len(rules)} rules checked: {count if findings else 'no findings'}")
+        else:
+            print(f"{len(rules)} rules checked for stale scopes only: {count}")
+    if not solver:
+        return EXIT_NO_SOLVER
     return EXIT_ERROR if findings else EXIT_OK
 
 
@@ -364,7 +385,34 @@ def _cmd_log_verify(args: argparse.Namespace) -> int:
     return EXIT_OK if result.ok else EXIT_ERROR
 
 
+def _since(text: str) -> datetime:
+    """A ``--since`` value as an aware UTC datetime: a date or an ISO 8601 timestamp."""
+    try:
+        when = datetime.fromisoformat(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"not a date or an ISO 8601 timestamp: {text!r}"
+        ) from None
+    return when.replace(tzinfo=UTC) if when.tzinfo is None else when.astimezone(UTC)
+
+
+def _at_or_after(entry: Mapping[str, Any], since: datetime) -> bool:
+    """True when the entry's timestamp is *since* or later.
+
+    An entry without a timestamp that can be read is left out of a filtered
+    count.
+    """
+    try:
+        when = datetime.fromisoformat(str(entry["ts"]))
+    except (KeyError, ValueError):
+        return False
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=UTC)
+    return when >= since
+
+
 def _cmd_log_stats(args: argparse.Namespace) -> int:
+    since: datetime | None = args.since
     counters: dict[str, Counter[str]] = {
         "decision": Counter(),
         "mode": Counter(),
@@ -375,6 +423,8 @@ def _cmd_log_stats(args: argparse.Namespace) -> int:
     }
     total = 0
     for entry in audit_log(os.environ).entries():
+        if since is not None and not _at_or_after(entry, since):
+            continue
         total += 1
         if "event" in entry:
             counters["event"][str(entry["event"])] += 1
@@ -383,9 +433,14 @@ def _cmd_log_stats(args: argparse.Namespace) -> int:
             counters[key][str(entry.get(key, "?"))] += 1
         counters["rule"].update(entry.get("rules", []))
         counters["reminded"].update(entry.get("reminded", []))
+    window = {} if since is None else {"since": since.isoformat()}
     if args.json:
-        _print_json({"entries": total, **{k: dict(v) for k, v in counters.items()}})
+        _print_json(
+            {**window, "entries": total, **{k: dict(v) for k, v in counters.items()}}
+        )
         return EXIT_OK
+    if since is not None:
+        print(f"since: {since.isoformat()}")
     print(f"entries: {total}")
     for key, counter in counters.items():
         for name, count in counter.most_common(20):
@@ -532,6 +587,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_verify.set_defaults(func=_cmd_log_verify)
     p_stats = log_commands.add_parser("stats", help="count decisions, tools and rules")
     p_stats.add_argument("--json", action="store_true", help="print JSON")
+    p_stats.add_argument(
+        "--since",
+        type=_since,
+        metavar="WHEN",
+        help="count only entries from this date or ISO 8601 timestamp on (UTC "
+        "unless an offset is given)",
+    )
     p_stats.set_defaults(func=_cmd_log_stats)
 
     p_replay = commands.add_parser(

@@ -25,6 +25,11 @@ modelled.
 
 Z3 is imported lazily inside :func:`lint`; it comes with the optional
 ``smt`` extra.
+
+:func:`stale_scopes` is the one check that needs no solver.  A directory
+scope encodes a fact about the machine (a directory exists, a directory is
+the root of a repository), and that fact can drift after the rule is
+written.  It asks the filesystem of the machine lint runs on.
 """
 
 from __future__ import annotations
@@ -34,7 +39,7 @@ import json
 import math
 import operator
 import os
-from collections.abc import Hashable, Iterable
+from collections.abc import Callable, Hashable, Iterable, Mapping
 from dataclasses import asdict, dataclass, replace
 from datetime import date
 from fnmatch import fnmatchcase
@@ -42,7 +47,8 @@ from fractions import Fraction
 from itertools import permutations
 from typing import Any, TypeVar
 
-from ember_armor.ledger.facts import FILE_TOOLS, SHELL_TOOLS
+from ember_armor.ledger import repo
+from ember_armor.ledger.facts import FILE_TOOLS, SHELL_TOOLS, path_variables
 from ember_armor.ledger.implies import (
     command_implies,
     directory_inside,
@@ -66,6 +72,7 @@ from ember_armor.ledger.model import (
     TextRegexPred,
     UnknownDirectoryPred,
 )
+from ember_armor.ledger.paths import UNKNOWN_DIR, normalize, resolve_pattern
 from ember_armor.ledger.shell.core import DYNAMIC_KINDS
 
 TIMEOUT_MS = 10_000
@@ -91,10 +98,10 @@ class SolverUnavailableError(RuntimeError):
 class Finding:
     """One problem lint found in the ledger.
 
-    ``kind`` is ``dead``, ``blanket``, ``shadowed`` or ``contradiction``.
-    ``rules`` holds the rule ids involved, the rule the finding is about
-    first.  A contradiction also names the ``scope`` in which every call is
-    denied.
+    ``kind`` is ``dead``, ``blanket``, ``shadowed``, ``contradiction`` or
+    ``stale``.  ``rules`` holds the rule ids involved, the rule the finding
+    is about first.  A contradiction also names the ``scope`` in which every
+    call is denied; a stale finding names the scope of its rule.
     """
 
     kind: str
@@ -630,3 +637,133 @@ def lint(
     live = [rule for rule in rules if rule.expires is None or day <= rule.expires]
     flavour = os.name == "nt" if windows is None else windows
     return _Linter(z3, live, flavour, tuple(shell_tools)).run()
+
+
+# ---------------------------------------------------------------------------
+# Stale scopes (the filesystem's job)
+# ---------------------------------------------------------------------------
+_GLOB_CHARS = frozenset("*?[")
+#: Base for a rule without one.  A relative pattern then resolves to a path
+#: that carries the marker, which says it depends on the call's directory.
+_NO_BASE = "/\x00/base"
+_SCOPES = ("cwd_under", "cwd_not_under", "repo_root")
+
+
+def _named_directory(
+    pattern: str,
+    base: str | None,
+    *,
+    windows: bool,
+    home: str | None,
+    variables: Mapping[str, str],
+) -> str | None:
+    """The one directory *pattern* names on this machine, or ``None``.
+
+    ``None`` when lint cannot place the pattern: a relative pattern in a
+    rule without a base is resolved against the working directory of each
+    call; a pattern with a ``..`` segment, a glob, an unset variable or a
+    network path names no directory to ask about; and with the Windows
+    flavour neither does a path on no drive.
+    """
+    text = pattern.replace("\\", "/") if windows else pattern
+    if ".." in text.split("/"):
+        return None
+    directory = resolve_pattern(
+        pattern, base or _NO_BASE, windows=windows, home=home, variables=variables
+    )
+    if "\x00" in directory or _GLOB_CHARS & set(directory):
+        return None
+    if directory.startswith("//"):
+        return None
+    on_drive = directory[1:3] == ":/" and directory[:1].isalpha()
+    if windows and not on_drive:
+        return None
+    return directory
+
+
+def _drift(
+    field: str,
+    directory: str,
+    exists: Callable[[str], bool],
+    find_root: repo.Finder,
+) -> str | None:
+    """What is wrong with *directory* as a *field* scope, or ``None``."""
+    if not exists(directory):
+        return "does not exist"
+    if field != "repo_root":
+        return None
+    try:
+        root = find_root(directory)
+    except OSError:
+        return None  # The filesystem would not say; the engine asks instead.
+    if root in (UNKNOWN_DIR, directory):
+        return None
+    if root is None:
+        return "is not a repository and lies in none"
+    return f"is not a repository; the nearest one around it is {root}"
+
+
+def stale_scopes(
+    rules: Iterable[Rule],
+    *,
+    windows: bool | None = None,
+    today: date | None = None,
+    env: Mapping[str, str] | None = None,
+    exists: Callable[[str], bool] = os.path.isdir,
+    find_root: repo.Finder | None = None,
+) -> list[Finding]:
+    """Directory scopes that no longer match the filesystem.
+
+    A ``cwd_under`` or ``cwd_not_under`` directory that does not exist, and
+    a ``repo_root`` directory that does not exist or is not the root of a
+    repository, are each reported as a ``stale`` finding: the fact about
+    this machine that the rule encodes has drifted.  The check needs no
+    solver.  It asks the filesystem of the machine it runs on, so it is for
+    the gate's own machine.  A pattern lint cannot place (a relative one in
+    a rule without a base, a glob, an unset variable, a network path) is
+    passed over.
+
+    Parameters
+    ----------
+    rules:
+        The rules as written (:func:`ember_armor.ledger.store.load_all`).
+        Expired rules are ignored.
+    windows:
+        Path flavour; defaults to the platform.
+    today:
+        Rules that expired before this date are ignored; defaults to today.
+    env:
+        Environment that ``~`` and variables in patterns expand from;
+        defaults to the process environment.
+    exists:
+        ``exists(directory)`` saying whether a normalised directory exists.
+    find_root:
+        The repository lookup (see :func:`ember_armor.ledger.repo.finder`);
+        defaults to the real filesystem's for the flavour.
+    """
+    flavour = os.name == "nt" if windows is None else windows
+    day = today or date.today()
+    variables = path_variables(os.environ if env is None else env)
+    raw_home = variables.get("HOME")
+    home = normalize(raw_home, "/", windows=flavour) if raw_home else None
+    find = repo.finder(flavour) if find_root is None else find_root
+    findings: list[Finding] = []
+    for rule in rules:
+        if rule.expires is not None and day > rule.expires:
+            continue
+        name = f"{rule.id} ({rule.effect}{'' if rule.confirmed else ', unconfirmed'})"
+        for field in _SCOPES:
+            patterns: tuple[str, ...] = getattr(rule.applies, field)
+            for pattern in patterns:
+                directory = _named_directory(
+                    pattern, rule.base, windows=flavour, home=home, variables=variables
+                )
+                if directory is None:
+                    continue
+                drift = _drift(field, directory, exists, find)
+                if drift is None:
+                    continue
+                shown = pattern if directory == pattern else f"{pattern} ({directory})"
+                message = f"{name}: {field} {shown} {drift}"
+                findings.append(Finding("stale", (rule.id,), message, rule.applies))
+    return findings

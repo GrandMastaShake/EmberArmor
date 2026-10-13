@@ -251,8 +251,9 @@ def test_install_prints_the_session_start_entry_next_to_the_other(capsys) -> Non
     assert command["command"] == pre["hooks"][0]["command"]
     assert command["args"] == [
         "-I",
-        "-m",
-        "ember_armor.ledger.hook",
+        "-c",
+        "import sys; from ember_armor.ledger.hook import main; "
+        "raise SystemExit(main(sys.argv[1:]))",
         "--event",
         "session-start",
     ]

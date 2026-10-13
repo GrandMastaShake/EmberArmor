@@ -179,7 +179,6 @@ def test_patterns_lint_cannot_place_are_passed_over(tmp_path: Path) -> None:
         make("dots", base=normal(tmp_path), cwd_under=["../elsewhere"]),
         make("glob", repo_root=[str(tmp_path / "*" / "repo")]),
         make("variable", cwd_under=["$TMPDIR/dir"]),
-        make("network", cwd_under=["//host/share/dir"]),
     ]
     assert stale_scopes(rules, env={}) == []
 
@@ -191,7 +190,12 @@ def test_with_the_windows_flavour_only_drives_are_asked_about() -> None:
         asked.append(directory)
         return False
 
-    rules = [make("posix", cwd_under=["/srv/app"]), make("drive", cwd_under=["D:/x"])]
+    rules = [
+        make("posix", cwd_under=["/srv/app"]),
+        # A network path names no directory this machine's filesystem holds.
+        make("network", cwd_under=["//host/share/dir"]),
+        make("drive", cwd_under=["D:/x"]),
+    ]
     findings = stale_scopes(rules, windows=True, env={}, exists=exists)
     assert asked == ["D:/x"]
     assert kinds(findings) == [("stale", ("drive",))]

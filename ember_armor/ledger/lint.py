@@ -661,9 +661,10 @@ def _named_directory(
 
     ``None`` when lint cannot place the pattern: a relative pattern in a
     rule without a base is resolved against the working directory of each
-    call; a pattern with a ``..`` segment, a glob, an unset variable or a
-    network path names no directory to ask about; and with the Windows
-    flavour neither does a path on no drive.
+    call; a pattern with a ``..`` segment, a glob or an unset variable names
+    no directory to ask about; and with the Windows flavour neither does a
+    network path or a path on no drive (on POSIX ``//host/share`` is a plain
+    path, and is asked about as one).
     """
     text = pattern.replace("\\", "/") if windows else pattern
     if ".." in text.split("/"):
@@ -720,8 +721,8 @@ def stale_scopes(
     this machine that the rule encodes has drifted.  The check needs no
     solver.  It asks the filesystem of the machine it runs on, so it is for
     the gate's own machine.  A pattern lint cannot place (a relative one in
-    a rule without a base, a glob, an unset variable, a network path) is
-    passed over.
+    a rule without a base, a glob, an unset variable, on Windows a network
+    path) is passed over.
 
     Parameters
     ----------

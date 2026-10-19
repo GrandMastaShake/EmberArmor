@@ -487,7 +487,7 @@ def _cmd_draft(args: argparse.Namespace) -> int:
     if args.write:
         target = _target_ledger(args)
         for proposal in result.proposals:
-            if proposal.rule is None or proposal.covered:
+            if proposal.rule is None or proposal.covered or proposal.duplicate_of:
                 continue
             store.add_rule(target, proposal.rule)
             added.append(str(proposal.rule["id"]))

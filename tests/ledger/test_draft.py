@@ -488,7 +488,9 @@ def test_render_lists_drafts_then_the_rest(tmp_path: Path) -> None:
     )
     text = render(draft([path]))
     assert text.startswith("1 transcript(s), 1 session(s) with an order: 2 standing")
-    assert "drafted 1 (command 1), not formalised 1, already in the ledger 0" in text
+    assert (
+        "drafted 1 (command 1), not formalised 1, already there or said twice 0" in text
+    )
     assert "draft.git-push-force  [ask, command]  said 2026-10-01 in session s1" in text
     assert "## said, not drafted" in text
     assert "Stop walking the app room by room." in text
@@ -739,3 +741,25 @@ def test_bare_paths_in_prose_need_a_file_word() -> None:
     )
     proposal = propose(said("Never route a request through issue/comment tools."))
     assert proposal.rule is None
+
+
+def test_an_always_clause_inside_a_never_sentence_is_not_the_rule() -> None:
+    made = drafted(
+        "Never run a bare git command; always pass `git -C x`, and never"
+        " `git add -A` / `git add .`."
+    )
+    assert made["when"]["subcommand"] == ["add"]
+    assert made["when"]["flags_any"] == ["--all", "-A"]
+
+
+def test_two_orders_with_one_meaning_are_drafted_once(tmp_path: Path) -> None:
+    path = transcript(
+        tmp_path / "t.jsonl",
+        user("Never edit a committed file under data/."),
+        user("Do not touch anything under `data/`.", at="2026-10-02T10:00:00Z"),
+    )
+    result = draft([path])
+    first, second = result.proposals
+    assert first.rule is not None and second.rule is not None
+    assert (first.duplicate_of, second.duplicate_of) == ("", first.rule["id"])
+    assert "same as draft.write-data above" in render(result)

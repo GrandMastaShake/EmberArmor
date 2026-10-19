@@ -601,6 +601,7 @@ class Proposal:
     shape: str  #: command, path, stage, order, instead, or none
     note: str = ""
     covered: str = ""  #: Id of a rule already in effect that says the same.
+    duplicate_of: str = ""  #: Id of an earlier proposal that says the same.
 
 
 def _text(statement: Statement) -> str:
@@ -663,9 +664,12 @@ def _clauses(statement: Statement) -> list[str]:
     text = statement.text
     if statement.cue in ("stop", "do", "don't", "dont"):
         return [text]
-    found = [
-        _CLAUSE_END.split(text[match.start() :], 1)[0] for match in _CUE.finditer(text)
-    ]
+    # An "always" clause inside a "never" sentence says what to do instead;
+    # it is not what the rule is about.
+    found = []
+    for match in _CUE.finditer(text):
+        if match.group(1).lower() in _NEVER_CUES:
+            found.append(_CLAUSE_END.split(text[match.start() :], 1)[0])
     return found or [text]
 
 
@@ -765,6 +769,7 @@ class Draft:
                     "shape": p.shape,
                     "note": p.note,
                     "covered": p.covered,
+                    "duplicate_of": p.duplicate_of,
                     "statement": {
                         "text": p.statement.text,
                         "kind": p.statement.kind,
@@ -835,6 +840,7 @@ def draft(
     """
     others = list(existing)
     taken = {rule.id for rule in others}
+    accepted: list[Rule] = []
     result = collect(paths, since=since)
     for statement in result.statements:
         proposal = propose(statement)
@@ -851,7 +857,13 @@ def draft(
                 candidate, n = f"{base}-{n}", n + 1
             taken.add(candidate)
             rule = {**proposal.rule, "id": candidate}
-            proposal = replace(proposal, rule=rule, covered=_same(rule, others))
+            covered = _same(rule, others)
+            duplicate = "" if covered else _same(rule, accepted)
+            proposal = replace(
+                proposal, rule=rule, covered=covered, duplicate_of=duplicate
+            )
+            if not covered and not duplicate:
+                accepted.append(parse_rule(rule))
         result.proposals.append(proposal)
     return result
 
@@ -867,14 +879,14 @@ def render(result: Draft) -> str:
     by_shape = ", ".join(
         f"{shape} {sum(1 for p in drafted if p.shape == shape)}" for shape in shapes
     )
-    covered = sum(1 for p in drafted if p.covered)
+    covered = sum(1 for p in drafted if p.covered or p.duplicate_of)
     lines = [
         f"{result.transcripts} transcript(s), {result.sessions} session(s) with an "
         f"order: {len(result.statements)} standing order(s) "
         f"({kinds['never']} never, {kinds['always']} always)",
         f"  drafted {len(drafted)}"
         + (f" ({by_shape})" if by_shape else "")
-        + f", not formalised {len(rest)}, already in the ledger {covered}",
+        + f", not formalised {len(rest)}, already there or said twice {covered}",
     ]
     if drafted:
         lines += ["", "## drafted (unconfirmed until you confirm them)"]
@@ -890,6 +902,8 @@ def render(result: Draft) -> str:
                 lines.append(f"    applies: {scope}")
             if p.covered:
                 lines.append(f"    already in the ledger as {p.covered}")
+            if p.duplicate_of:
+                lines.append(f"    same as {p.duplicate_of} above")
     if rest:
         lines += [
             "",

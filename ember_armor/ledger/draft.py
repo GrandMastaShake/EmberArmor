@@ -5,10 +5,11 @@ orders a person typed into a conversation ("never force-push", "don't touch
 ``data/market_state.json``", "always run pytest before git push") and
 proposes each as an unconfirmed rule, with the sentence as the rule's text
 and the session it was said in as its source.  Only typed user turns are
-read: tool results, pasted content, system reminders, compaction summaries,
-sub-agent conversations and the assistant's own words are skipped.  Nothing
-is written unless asked, and a drafted rule is stored unconfirmed, so it
-can do no more than warn until the owner confirms it.
+read: tool results, pasted content, host-inserted blocks and turns,
+compaction summaries, sub-agent conversations and the assistant's own
+words are skipped.  Nothing is written unless asked, and a drafted rule is
+stored unconfirmed, so it can do no more than warn until the owner
+confirms it.
 
 A sentence becomes a rule only through a small set of shapes the gate can
 check: a command (``git push --force``), a path and what is done to it
@@ -43,6 +44,8 @@ DEFAULT_TRANSCRIPTS = ("~", ".claude", "projects")
 _TAGGED = re.compile(r"<([a-z][a-z0-9_:-]*)\b[^>]*>.*?</\1[^>]*>", re.S | re.I)
 _FENCE = re.compile(r"```.*?```", re.S)
 _SPLIT = re.compile(r"(?<=[.!?])\s+|\n+")
+#: A list marker or emphasis in front of a sentence.
+_MARKER = re.compile(r"^(?:[-*•+]+|\d+[.)])\s+|^[*_]+")
 _LEAD = re.compile(
     r"^(?:(?:please|also|and|ok|okay|btw|oh|so|but|again|now|yes|yeah|alright|right)"
     r"[,.:\s]+)+",
@@ -50,7 +53,7 @@ _LEAD = re.compile(
 )
 _CUE = re.compile(
     r"\b(never|don'?t ever|do not ever|not ever|no more|always|from now on|"
-    r"going forward|in (?:the )?future|every time)\b",
+    r"going forward)\b",
     re.I,
 )
 _NEVER_CUES = frozenset(
@@ -71,13 +74,16 @@ ACTION_VERBS = (
 _DONT = re.compile(
     r"^(?:don'?t|do not)\s+(?:ever\s+)?(?:" + "|".join(ACTION_VERBS) + r")\b", re.I
 )
-#: A word in front of the cue that makes the sentence a report, not an order.
-_REPORT_BEFORE = frozenset((
-    "i", "i've", "i'd", "we", "we've", "it", "it's", "that", "that's", "this",
-    "they", "he", "she", "there", "there's", "which", "who", "has", "have", "had",
-    "was", "were", "is", "are", "you", "you've", "you'd", "u", "almost", "nearly",
-    "like", "basically", "probably", "should've", "would've", "could've",
+#: Words that may stand right in front of the cue of an order.  Anything
+#: else there is a subject ("the note never reaches", "Pip never draws",
+#: "it has always been"), which makes the sentence a report.
+_ALLOWED_BEFORE = frozenset((
+    "and", "also", "but", "so", "then", "please", "you", "must", "should", "shall",
+    "can", "may", "will", "to", "or", "just", "now",
 ))  # fmt: skip
+#: What ends a clause: a cue right after one starts afresh ("fetch it fresh;
+#: never trust a remembered one").
+_CLAUSE = (";", ":", ",", "—", "–", "(", "-")
 #: A word after the cue that makes the sentence a report, not an order.
 _REPORT_AFTER = frozenset((
     "been", "seen", "worked", "happened", "had", "has", "did", "got", "was", "were",
@@ -98,12 +104,17 @@ def order_kind(sentence: str) -> tuple[str, str, str] | None:
     """``(kind, cue, text)`` when *sentence* reads as a standing order.
 
     ``kind`` is ``never`` or ``always``; ``cue`` the words that say so;
-    ``text`` the sentence without its lead-in ("please", "also").  A
-    question, a report ("you never ran the tests", "it has always been
-    slow"), "never mind" and anything very short or very long is not an
-    order.
+    ``text`` the sentence without its lead-in ("please", "also", a list
+    marker).  A question, a quotation (a line starting with ``>``), a report
+    ("you never ran the tests", "the note never reaches the file", "it has
+    always been slow"), "never mind" and anything very short or very long
+    is not an order.
     """
-    text = _LEAD.sub("", sentence.strip().strip('"“”'))
+    text = sentence.strip()
+    if text.startswith(">"):
+        return None
+    text = _LEAD.sub("", _MARKER.sub("", text).strip().strip('"“”'))
+    text = text.rstrip("*_")
     if not 8 <= len(text) <= 300 or "?" in text:
         return None
     lower = text.lower()
@@ -116,9 +127,11 @@ def order_kind(sentence: str) -> tuple[str, str, str] | None:
     match = _CUE.search(lower)
     if match is None:
         return None
-    before = lower[: match.start()].split()
-    if before and before[-1].strip(",;:") in _REPORT_BEFORE:
-        return None
+    head = lower[: match.start()].rstrip()
+    if head and not head.endswith(_CLAUSE):
+        last = head.split()[-1].strip(",;:")
+        if last not in _ALLOWED_BEFORE and any(c.isalnum() for c in last):
+            return None
     after = lower[match.end() :].split()
     if not after or after[0].strip(",.;:") in _REPORT_AFTER:
         return None
@@ -147,12 +160,16 @@ class Statement:
 def typed_text(entry: Mapping[str, Any]) -> str | None:
     """The text a person typed in a transcript line, or ``None``.
 
-    Tool results, meta lines, compaction summaries and sub-agent turns are
-    not typed text.  Host-inserted blocks and fenced code are removed.
+    Tool results, meta lines, compaction summaries, sub-agent turns and
+    turns the host inserted (a notification, a continuation summary, the
+    output of a slash command: ``promptSource`` other than ``sdk``) are not
+    typed text.  Host-inserted blocks and fenced code are removed.
     """
     if entry.get("type") != "user":
         return None
     if entry.get("isMeta") or entry.get("isCompactSummary") or entry.get("isSidechain"):
+        return None
+    if "promptSource" in entry and entry.get("promptSource") != "sdk":
         return None
     message = entry.get("message")
     content = message.get("content") if isinstance(message, Mapping) else None
@@ -216,6 +233,11 @@ PROGRAMS = frozenset((
     "systemctl", "service", "brew", "apt", "apt-get", "choco", "winget", "pytest",
     "ruff", "mypy", "tsc", "eslint", "prettier",
 ))  # fmt: skip
+#: Programs that are also English words: named in prose they mean nothing.
+_ENGLISH = frozenset((
+    "make", "go", "service", "kill", "time", "env", "exec", "cp", "mv", "rd", "del",
+    "node", "python", "python3",
+))  # fmt: skip
 #: Programs whose first argument is a subcommand (``git push``).
 SUBCOMMAND_PROGRAMS = frozenset((
     "git", "gh", "npm", "pnpm", "npx", "yarn", "pip", "pip3", "uv", "docker",
@@ -223,6 +245,59 @@ SUBCOMMAND_PROGRAMS = frozenset((
     "heroku", "flyctl", "brew", "apt", "apt-get", "choco", "winget", "systemctl",
     "make",
 ))  # fmt: skip
+_NPM = frozenset((
+    "install", "i", "ci", "run", "publish", "uninstall", "update", "exec", "test",
+    "build", "start", "audit", "link", "unpublish", "version",
+))  # fmt: skip
+_PACKAGES = frozenset(("install", "uninstall", "remove", "upgrade", "update", "purge"))
+#: Subcommands a program is known to have, for a command written in prose.
+#: ``None`` means any word may follow (``aws s3 rm``).
+_KNOWN_SUB: Mapping[str, frozenset[str] | None] = {
+    "git": frozenset((
+        "add", "commit", "push", "pull", "fetch", "merge", "rebase", "reset",
+        "checkout", "switch", "restore", "clean", "stash", "tag", "branch", "remote",
+        "worktree", "submodule", "cherry-pick", "revert", "rm", "mv", "log",
+        "status", "diff", "init", "clone", "am", "apply", "bisect", "config", "gc",
+        "prune", "reflog", "notes", "filter-branch",
+    )),
+    "gh": frozenset((
+        "pr", "issue", "repo", "release", "run", "workflow", "secret", "auth", "api",
+        "gist",
+    )),
+    "npm": _NPM,
+    "pnpm": _NPM,
+    "yarn": _NPM,
+    "npx": None,
+    "pip": frozenset(("install", "uninstall", "freeze", "download")),
+    "pip3": frozenset(("install", "uninstall", "freeze", "download")),
+    "uv": frozenset(("pip", "run", "tool", "sync", "add", "remove", "lock", "venv")),
+    "docker": frozenset((
+        "run", "build", "push", "pull", "rm", "rmi", "exec", "compose", "system",
+        "volume", "container", "image", "network", "stop", "kill", "prune",
+    )),
+    "kubectl": frozenset((
+        "delete", "apply", "exec", "get", "drain", "scale", "rollout",
+    )),
+    "terraform": frozenset((
+        "destroy", "apply", "plan", "init", "state", "taint", "import",
+    )),
+    "cargo": frozenset(("publish", "build", "run", "test", "install")),
+    "go": frozenset(("run", "build", "test", "install", "get", "mod")),
+    "dotnet": frozenset(("run", "build", "test", "publish", "tool")),
+    "brew": _PACKAGES,
+    "apt": _PACKAGES,
+    "apt-get": _PACKAGES,
+    "choco": _PACKAGES,
+    "winget": _PACKAGES,
+    "systemctl": frozenset(("stop", "start", "restart", "disable", "enable", "mask")),
+    "vercel": frozenset(("deploy", "rm", "remove", "env")),
+    "heroku": None,
+    "flyctl": None,
+    "aws": None,
+    "az": None,
+    "gcloud": None,
+    "make": frozenset(),
+}  # fmt: skip
 #: Subcommands that take a second word (``git remote remove``, ``npm run x``).
 #: ``None`` means every subcommand of the program does (``aws s3 rm``).
 TWO_LEVEL: Mapping[str, frozenset[str] | None] = {
@@ -264,11 +339,12 @@ _PHRASES: Sequence[tuple[re.Pattern[str], Sequence[str]]] = (
     (re.compile(r"\bhard[- ]reset\b|\breset --hard\b"), ("git", "reset", "--hard")),
     (re.compile(r"\bamend(?:ing|ed)?\b"), ("git", "commit", "--amend")),
     (re.compile(r"\brebas(?:e|ing|ed)\b"), ("git", "rebase")),
+    (re.compile(r"\bmerge\b(?!\s+conflict)"), ("gh", "pr", "merge")),
 )
 _GERUNDS: Mapping[str, Sequence[str]] = {
     "pushing": ("git", "push"),
     "committing": ("git", "commit"),
-    "merging": ("git", "merge"),
+    "merging": ("gh", "pr", "merge"),
     "rebasing": ("git", "rebase"),
     "publishing": ("npm", "publish"),
 }
@@ -283,7 +359,7 @@ _PROSE_STOP = frozenset((
 ))  # fmt: skip
 _PATHLIKE = re.compile(
     r"(?<![\w@])("
-    r"(?:~|[A-Za-z]:)?[\w.~-]*[\\/][\w.*?~\\/-]+"  # has a separator
+    r"(?:~|[A-Za-z]:)?[\w.~-]*[\\/][\w.*?~\\/-]*"  # has a separator
     r"|\.?[\w-]+\.(?:json|ya?ml|md|txt|env|pem|key|js|ts|tsx|py|toml|ini|cfg|lock"
     r"|csv|html|sh|ps1|sql|db|sqlite|log)\b"  # a file name with an extension
     r"|\*\.\w+"  # a glob
@@ -335,8 +411,14 @@ def _tokens(text: str) -> list[str]:
     return _TOKEN.findall(text.strip().strip("`"))
 
 
-def command_of(tokens: Sequence[str]) -> dict[str, Any] | None:
-    """A ``command`` predicate for the command *tokens* spell, or ``None``."""
+def command_of(tokens: Sequence[str], *, strict: bool = False) -> dict[str, Any] | None:
+    """A ``command`` predicate for the command *tokens* spell, or ``None``.
+
+    With *strict*, for a command found in prose rather than in backticks: a
+    program that is also an English word, a subcommand the program is not
+    known to have, and a bare program with nothing after it are not
+    commands.
+    """
     words = list(tokens)
     while words and words[0].lower() in _WRAPPERS:
         words.pop(0)
@@ -344,12 +426,15 @@ def command_of(tokens: Sequence[str]) -> dict[str, Any] | None:
         return None
     program = words[0].lower().rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
     program = program[:-4] if program.endswith(".exe") else program
-    if program not in PROGRAMS:
+    if program not in PROGRAMS or (strict and program in _ENGLISH):
         return None
     rest = words[1:]
     subcommand: list[str] = []
     if program in SUBCOMMAND_PROGRAMS and rest and not rest[0].startswith("-"):
         subcommand.append(rest.pop(0).lower())
+        known = _KNOWN_SUB.get(program, None)
+        if strict and known is not None and subcommand[0] not in known:
+            return None
         second = TWO_LEVEL.get(program, frozenset())
         takes_second = second is None or subcommand[0] in second
         if takes_second and rest and not rest[0].startswith("-"):
@@ -363,6 +448,10 @@ def command_of(tokens: Sequence[str]) -> dict[str, Any] | None:
             flags += [f"-{c}" for c in word[1:]] if word[1] != "-" else [word]
         else:
             args.append(word)
+    if strict and not (subcommand or flags or args):
+        return None
+    if strict and program in SUBCOMMAND_PROGRAMS and not subcommand:
+        return None
     pred: dict[str, Any] = {"type": "command", "program": program}
     if subcommand:
         pred["subcommand"] = subcommand
@@ -395,7 +484,7 @@ def _command_in(text: str) -> dict[str, Any] | None:
                 if later.lower() in _PROSE_STOP and run:
                     break
                 run.append(later.rstrip(",.;:"))
-            found = command_of(run)
+            found = command_of(run, strict=True)
             if found is not None:
                 return found
     lower = text.lower()
@@ -421,7 +510,9 @@ def _paths_in(text: str, *, except_for: str | None = None) -> list[tuple[str, in
 
     def keep(token: str, at: int) -> None:
         token = token.rstrip(".,;:")
-        if token in seen or token in _NOT_PATHS or re.fullmatch(r"\d+/\d+", token):
+        if len(token.strip("/\\")) < 2 or token in seen or token in _NOT_PATHS:
+            return
+        if re.fullmatch(r"\d+/\d+", token):
             return
         if except_for is not None and token.strip("`") == except_for:
             return
@@ -726,8 +817,8 @@ def render(result: Draft) -> str:
     )
     covered = sum(1 for p in drafted if p.covered)
     lines = [
-        f"{result.transcripts} transcript(s), {result.sessions} session(s) with "
-        f"typed text: {len(result.statements)} standing order(s) "
+        f"{result.transcripts} transcript(s), {result.sessions} session(s) with an "
+        f"order: {len(result.statements)} standing order(s) "
         f"({kinds['never']} never, {kinds['always']} always)",
         f"  drafted {len(drafted)}"
         + (f" ({by_shape})" if by_shape else "")

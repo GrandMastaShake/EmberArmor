@@ -487,7 +487,7 @@ def test_render_lists_drafts_then_the_rest(tmp_path: Path) -> None:
         user("Stop walking the app room by room."),
     )
     text = render(draft([path]))
-    assert text.startswith("1 transcript(s), 1 session(s) with typed text: 2 standing")
+    assert text.startswith("1 transcript(s), 1 session(s) with an order: 2 standing")
     assert "drafted 1 (command 1), not formalised 1, already in the ledger 0" in text
     assert "draft.git-push-force  [ask, command]  said 2026-10-01 in session s1" in text
     assert "## said, not drafted" in text
@@ -588,3 +588,104 @@ def test_cli_default_directory_must_exist(
     monkeypatch.setenv("USERPROFILE", str(tmp_path))
     assert cli.main(["draft"]) == 1
     assert "no such transcript" in capsys.readouterr().err
+
+
+# ---------------------------------------------------------------------------
+# What the first run over real transcripts taught
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        "Pip never draws a branching web, she draws a ladder.",
+        "The note never reaches the committed file.",
+        "Martha never mentions her own birthday.",
+        "Every time I got close, he went somewhere else.",
+        "> Why me, why always me",
+        "In future releases it never crashes.",
+        "He always looks at you like that.",
+    ],
+)
+def test_a_sentence_with_a_subject_before_the_cue_is_a_report(sentence: str) -> None:
+    assert order_kind(sentence) is None
+
+
+@pytest.mark.parametrize(
+    ("sentence", "text"),
+    [
+        ("* never invent a component id", "never invent a component id"),
+        ("- Never commit secrets.", "Never commit secrets."),
+        ("**NEVER use double quotes in JSON.**", "NEVER use double quotes in JSON."),
+        ("3. Always run pytest before git push.", "Always run pytest before git push."),
+        (
+            "Fetch it fresh; never trust a remembered one.",
+            "Fetch it fresh; never trust a remembered one.",
+        ),
+        ("You should never push to main.", "You should never push to main."),
+    ],
+)
+def test_list_markers_and_emphasis_are_dropped_and_connectors_allowed(
+    sentence: str, text: str
+) -> None:
+    found = order_kind(sentence)
+    assert found is not None
+    assert found[2] == text
+
+
+def test_turns_the_host_inserted_are_not_read(tmp_path: Path) -> None:
+    path = transcript(
+        tmp_path / "t.jsonl",
+        user("Never force-push.", promptSource="sdk"),
+        user("Never hard reset.", promptSource="system"),
+        user("Never amend.", promptSource=None),
+        user("Never rebase onto main.", at="2026-10-02T10:00:00Z"),  # no field: old
+    )
+    assert [s.text for s in collect([path]).statements] == [
+        "Never force-push.",
+        "Never rebase onto main.",
+    ]
+
+
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        "Don't make it too strict but outline the theme of each book.",
+        "Never run a bare git command.",
+        "Never run bare git there.",
+        "All repo writes go through the plugin tools only; never use the REST API.",
+        "Write every file from inside Python, never shell redirection.",
+    ],
+)
+def test_english_words_in_prose_are_not_commands(sentence: str) -> None:
+    proposal = propose(said(sentence))
+    assert proposal.rule is None, proposal.rule
+
+
+def test_a_program_in_backticks_still_counts() -> None:
+    made = drafted("Never run `make clean` here.")
+    assert made["when"] == {
+        "type": "command",
+        "program": "make",
+        "subcommand": ["clean"],
+    }
+
+
+def test_a_directory_with_a_trailing_slash_is_a_path() -> None:
+    made = drafted("Do not touch anything under `data/`.")
+    assert made["when"] == {
+        "type": "path",
+        "op": "write",
+        "glob": ["**/data", "**/data/**"],
+    }
+    assert fires(made, "Write", {"file_path": "/work/app/data/x.json", "content": ""})
+    assert not fires(made, "Write", {"file_path": "/work/app/README.md", "content": ""})
+
+
+def test_do_not_merge_is_the_pull_request_merge() -> None:
+    made = drafted("Do NOT merge; the owner merges.")
+    assert made["when"] == {
+        "type": "command",
+        "program": "gh",
+        "subcommand": ["pr", "merge"],
+    }
+    assert fires(made, "Bash", "gh pr merge 12 --squash")
+    assert not fires(made, "Bash", "gh pr view 12")

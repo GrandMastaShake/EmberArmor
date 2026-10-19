@@ -403,6 +403,14 @@ _INSTEAD = re.compile(
     re.I,
 )
 _RUN = re.compile(r"^(?:run|running|use|using|call|calling|a|the)\s+", re.I)
+#: Where the clause that follows a cue ends: the rule is made from that clause.
+_CLAUSE_END = re.compile(r"[;)]|\s[\u2014\u2013]\s")
+#: A word that says a bare ``a/b`` in prose is a path and not "issue/comment".
+_FILE_WORDS = re.compile(
+    r"\b(file|files|folder|folders|director(?:y|ies)|dir|path|paths|under|inside"
+    r"|within|tree)\b",
+    re.I,
+)
 _GIT_VERBS = ("add", "commit", "push")
 _GIT_ADD: dict[str, Any] = {"type": "command", "program": "git", "subcommand": ["add"]}
 
@@ -504,11 +512,17 @@ def _command_phrase(text: str) -> dict[str, Any] | None:
 
 
 def _paths_in(text: str, *, except_for: str | None = None) -> list[tuple[str, int]]:
-    """Every path-like token in *text* with where it starts, first first."""
+    """Every path-like token in *text* with where it starts, first first.
+
+    In prose, ``a/b`` with no extension, no trailing slash and no anchor
+    (``/``, ``~``, ``./``, a drive) is a path only when the sentence talks
+    of a file, a folder, a directory or a path; in backticks it always is.
+    """
     found: list[tuple[str, int]] = []
     seen: set[str] = set()
+    spoken = _FILE_WORDS.search(text) is not None
 
-    def keep(token: str, at: int) -> None:
+    def keep(token: str, at: int, *, literal: bool) -> None:
         token = token.rstrip(".,;:")
         if len(token.strip("/\\")) < 2 or token in seen or token in _NOT_PATHS:
             return
@@ -516,16 +530,22 @@ def _paths_in(text: str, *, except_for: str | None = None) -> list[tuple[str, in
             return
         if except_for is not None and token.strip("`") == except_for:
             return
+        if not literal and not spoken:
+            bare = token.replace("\\", "/")
+            anchored = bare.startswith(("/", "~", "./")) or re.match("[A-Za-z]:/", bare)
+            plain = "/" in bare and not bare.endswith("/") and not anchored
+            if plain and "." not in bare.rsplit("/", 1)[-1]:
+                return
         seen.add(token)
         found.append((token, at))
 
     for match in _SPAN.finditer(text):
         inner = match.group(1).strip()
         if " " not in inner and _PATHLIKE.search(inner):
-            keep(inner, match.start())
+            keep(inner, match.start(), literal=True)
     blanked = _SPAN.sub(lambda m: " " * len(m.group(0)), text)
     for match in _PATHLIKE.finditer(blanked):
-        keep(match.group(1), match.start())
+        keep(match.group(1), match.start(), literal=False)
     return sorted(found, key=lambda pair: pair[1])
 
 
@@ -595,7 +615,11 @@ def _source(statement: Statement) -> str:
 
 
 def _rule(
-    statement: Statement, slug: str, effect: str, when: Mapping[str, Any]
+    statement: Statement,
+    slug: str,
+    effect: str,
+    when: Mapping[str, Any],
+    scope: str | None = None,
 ) -> dict[str, Any]:
     rule: dict[str, Any] = {
         "id": f"draft.{slug}",
@@ -604,7 +628,6 @@ def _rule(
         "effect": effect,
         "when": dict(when),
     }
-    scope = _scope_dir(statement.text)
     if scope is not None:
         rule["applies"] = {"cwd_under": [scope]}
     return rule
@@ -627,6 +650,59 @@ def _touching(op: str, paths: Sequence[tuple[str, int]]) -> dict[str, Any]:
     for token, _ in paths:
         globs += [g for g in path_globs(token) if g not in globs]
     return {"type": "path", "op": op, "glob": globs}
+
+
+def _clauses(statement: Statement) -> list[str]:
+    """The words a rule is made from: from each cue to the end of its clause.
+
+    "Fetch it with get_file_contents (fresh SHA; never trust a remembered
+    one)" is about trusting, not about fetching: what stands before the cue
+    is context.  An order that starts with ``don't`` or ``stop`` is one
+    clause, whole.
+    """
+    text = statement.text
+    if statement.cue in ("stop", "do", "don't", "dont"):
+        return [text]
+    found = [
+        _CLAUSE_END.split(text[match.start() :], 1)[0] for match in _CUE.finditer(text)
+    ]
+    return found or [text]
+
+
+def _from_clause(statement: Statement, clause: str, effect: str) -> Proposal | None:
+    """A rule from one clause, or ``None`` when it names nothing checkable."""
+    command = _command_in(clause)
+    scope = _scope_dir(clause)
+    paths = _paths_in(clause, except_for=scope)
+    if command is not None:
+        slug = _slug(_describe(command))
+        when: dict[str, Any] = command
+        if paths and not command.get("args_any_glob"):
+            when = {"type": "all", "of": [command, _touching("any", paths)]}
+            slug = _slug(_describe(command), _name(paths[0][0]))
+        rule = _rule(statement, slug, effect, when, scope)
+        return Proposal(statement, rule, "command")
+    if paths:
+        token, at = paths[0]
+        verb = _verb_class(clause, at) or "write"
+        if verb == "stage":
+            staged: dict[str, Any] = {
+                "type": "all",
+                "of": [dict(_GIT_ADD), _touching("any", paths)],
+            }
+            rule = _rule(
+                statement, _slug("commit", _name(token)), effect, staged, scope
+            )
+            return Proposal(statement, rule, "stage")
+        touched = _touching(verb, paths)
+        rule = _rule(statement, _slug(verb, _name(token)), effect, touched, scope)
+        return Proposal(statement, rule, "path")
+    if scope is not None and _VERBS["stage"].search(clause):
+        rule = _rule(
+            statement, _slug("git", _name(scope)), effect, _git(*_GIT_VERBS), scope
+        )
+        return Proposal(statement, rule, "stage")
+    return None
 
 
 def propose(statement: Statement) -> Proposal:
@@ -658,34 +734,10 @@ def propose(statement: Statement) -> Proposal:
         note = "says what to do, not what to stop; add 'instead of ...' or 'before ...'"
         return Proposal(statement, None, "none", note)
 
-    command = _command_in(text)
-    scope = _scope_dir(text)
-    paths = _paths_in(text, except_for=scope)
-    if command is not None:
-        slug = _slug(_describe(command))
-        if paths and not command.get("args_any_glob"):
-            touched = _touching("any", paths)
-            when = {"type": "all", "of": [command, touched]}
-            slug = _slug(_describe(command), _name(paths[0][0]))
-            return Proposal(statement, _rule(statement, slug, effect, when), "command")
-        return Proposal(statement, _rule(statement, slug, effect, command), "command")
-    if paths:
-        token, at = paths[0]
-        verb = _verb_class(text, at) or "write"
-        if verb == "stage":
-            staged: dict[str, Any] = {
-                "type": "all",
-                "of": [dict(_GIT_ADD), _touching("any", paths)],
-            }
-            slug = _slug("commit", _name(token))
-            return Proposal(statement, _rule(statement, slug, effect, staged), "stage")
-        touched = _touching(verb, paths)
-        slug = _slug(verb, _name(token))
-        return Proposal(statement, _rule(statement, slug, effect, touched), "path")
-    if scope is not None and _VERBS["stage"].search(text):
-        when = _git(*_GIT_VERBS)
-        slug = _slug("git", _name(scope))
-        return Proposal(statement, _rule(statement, slug, effect, when), "stage")
+    for clause in _clauses(statement):
+        made = _from_clause(statement, clause, effect)
+        if made is not None:
+            return made
     note = "names no command or path the gate can check"
     return Proposal(statement, None, "none", note)
 

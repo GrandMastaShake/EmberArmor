@@ -651,7 +651,8 @@ def test_turns_the_host_inserted_are_not_read(tmp_path: Path) -> None:
         "Don't make it too strict but outline the theme of each book.",
         "Never run a bare git command.",
         "Never run bare git there.",
-        "All repo writes go through the plugin tools only; never use the REST API.",
+        "All repo writes go through the plugin tools only (push_files, issue/comment"
+        " tools); NEVER use the REST API.",
         "Write every file from inside Python, never shell redirection.",
     ],
 )
@@ -689,3 +690,52 @@ def test_do_not_merge_is_the_pull_request_merge() -> None:
     }
     assert fires(made, "Bash", "gh pr merge 12 --squash")
     assert not fires(made, "Bash", "gh pr view 12")
+
+
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        "Read CLAUDE.md first; weekly files are append-only"
+        " (never `--force` with `--only`).",
+        "Regenerate it with `python scripts/render_tape.py` (never hand-edit the TAPE"
+        " block); `scripts/preflight.py` checks drift.",
+        "Fetch README.md with get_file_contents"
+        " (fresh SHA; never trust a remembered one).",
+        "Every number must come from facts.json or a fresh fetch; never invent one.",
+        "The copy lives in C:/work/runner (never run bare git there);"
+        " data/weekly lags.",
+    ],
+)
+def test_the_rule_is_made_from_the_clause_after_the_cue(sentence: str) -> None:
+    proposal = propose(said(sentence))
+    assert proposal.rule is None, proposal.rule
+
+
+def test_a_later_clause_can_carry_the_rule() -> None:
+    made = drafted(
+        "Never run a bare git command; always pass -C"
+        " and never `git add -A` / `git add .`."
+    )
+    assert made["when"] == {
+        "type": "command",
+        "program": "git",
+        "subcommand": ["add"],
+        "flags_any": ["--all", "-A"],
+    }
+
+
+def test_bare_paths_in_prose_need_a_file_word() -> None:
+    made = drafted("Do not edit any committed data/daily or data/weekly file.")
+    assert made["when"]["glob"] == [
+        "**/data/daily",
+        "**/data/daily/**",
+        "**/data/weekly",
+        "**/data/weekly/**",
+    ]
+    assert fires(
+        made,
+        "Write",
+        {"file_path": "/work/app/data/weekly/2026-10-05.json", "content": ""},
+    )
+    proposal = propose(said("Never route a request through issue/comment tools."))
+    assert proposal.rule is None

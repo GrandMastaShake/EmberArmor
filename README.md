@@ -36,6 +36,7 @@ The constraint ledger (`ember_armor/ledger`, standard library only on the hot pa
 - `ember-gate hook --event session-start` is a `SessionStart` hook: in `remind` and `enforce` mode, after the context was compacted (or on the starts named in `announce_on`), it prints the confirmed user and project rules that can apply in the directory the session starts in.
 - Every evaluation is appended to a hash-chained audit log (`~/.ember/audit/`), with secret-shaped values replaced and with the rules a reminder quoted. `ember-gate log verify` recomputes the chain.
 - `ember-gate lint` checks the ledger itself: with Z3 for dead, blanket, shadowed and contradictory rules, and on the filesystem for stale directory scopes (a `cwd_under` directory that is gone, a `repo_root` that is no repository any more).
+- `ember-gate draft` reads what you typed into Claude Code sessions, finds the standing orders ("never force-push", "don't hand-edit data/market_state.json", "always run pytest before git push") and proposes each as a rule you can read, with your sentence as its text and the session as its source. Nothing is written without `--write`, and a written draft is unconfirmed until you confirm it. Orders about conduct rather than commands or files are listed as said.
 - `ember-gate replay` runs the tool calls recorded in Claude Code transcripts through the gate and prints aggregates only: per rule, how often it fired and how many reminders `remind` mode would have sent.
 
 ## What does not work or is not implemented
@@ -308,7 +309,7 @@ The full list is in [docs/constraint-ledger.md](docs/constraint-ledger.md). The 
 
 ## Direction
 
-The constraint ledger is in this branch: structured rules kept outside the model's context, a gate that checks every tool call against them before it runs, reminders that tell the agent a rule again when it fires, a hash-chained audit log, a solver-backed lint, and a replay over recorded transcripts. Next is drafting rules from a conversation with a model, for a human to confirm (which is what the `confirmed` flag on a rule is for), and a public benchmark for the gate. The regex detector will be replaced; the auth, config and rate-limit shell stays.
+The constraint ledger is in this branch: structured rules kept outside the model's context, a gate that checks every tool call against them before it runs, reminders that tell the agent a rule again when it fires, a hash-chained audit log, a solver-backed lint, and a replay over recorded transcripts. Rules are now drafted from what was typed in a conversation (`ember-gate draft`), for a human to confirm (which is what the `confirmed` flag on a rule is for). Next is a model-assisted draft for the sentences the literal shapes miss, and a public benchmark for the gate. The regex detector will be replaced; the auth, config and rate-limit shell stays.
 
 ## Related repositories
 

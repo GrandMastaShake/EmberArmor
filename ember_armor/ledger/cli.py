@@ -1,8 +1,8 @@
 """``ember-gate`` command line.
 
 Subcommands: ``check``, ``rules list|add|confirm|remove``, ``lint``,
-``log tail|verify|stats``, ``replay``, ``hook`` (``--event pre-tool-use`` or
-``session-start``) and ``install claude-code --print``.
+``log tail|verify|stats``, ``replay``, ``draft``, ``hook`` (``--event pre-tool-use``
+or ``session-start``) and ``install claude-code --print``.
 """
 
 from __future__ import annotations
@@ -464,6 +464,49 @@ def _cmd_replay(args: argparse.Namespace) -> int:
 
 
 # ---------------------------------------------------------------------------
+# draft
+# ---------------------------------------------------------------------------
+def _cmd_draft(args: argparse.Namespace) -> int:
+    """Propose rules from the standing orders typed into Claude Code sessions.
+
+    Nothing is written without ``--write``, and what is written is stored
+    unconfirmed: a drafted rule can do no more than warn until the owner
+    confirms it with ``ember-gate rules confirm``.
+    """
+    from ember_armor.ledger.draft import DEFAULT_TRANSCRIPTS, draft, render
+
+    paths = args.paths or [str(Path(*DEFAULT_TRANSCRIPTS).expanduser())]
+    existing = store.load_all(os.getcwd(), os.environ)
+    since = args.since.timestamp() if args.since is not None else None
+    try:
+        result = draft(paths, since=since, existing=existing)
+    except FileNotFoundError as exc:
+        print(f"ember-gate: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    added: list[str] = []
+    if args.write:
+        target = _target_ledger(args)
+        for proposal in result.proposals:
+            if proposal.rule is None or proposal.covered or proposal.duplicate_of:
+                continue
+            store.add_rule(target, proposal.rule)
+            added.append(str(proposal.rule["id"]))
+    if args.json:
+        _print_json({**result.as_dict(), "added": added})
+        return EXIT_OK
+    print(render(result))
+    if args.write:
+        print()
+        if added:
+            print(f"added {len(added)} rule(s) to {_target_ledger(args)}, unconfirmed:")
+            for rule_id in added:
+                print(f"  ember-gate rules confirm {rule_id}")
+        else:
+            print("nothing added: every drafted rule is already in the ledger")
+    return EXIT_OK
+
+
+# ---------------------------------------------------------------------------
 # hook / install
 # ---------------------------------------------------------------------------
 def _cmd_hook(args: argparse.Namespace) -> int:
@@ -606,6 +649,30 @@ def build_parser() -> argparse.ArgumentParser:
     p_replay.add_argument("--json", action="store_true", help="print JSON")
     p_replay.set_defaults(func=_cmd_replay)
 
+    p_draft = commands.add_parser(
+        "draft",
+        help="propose rules from standing orders typed into Claude Code sessions",
+    )
+    p_draft.add_argument(
+        "paths",
+        nargs="*",
+        help="transcript .jsonl or directory (default: ~/.claude/projects)",
+    )
+    p_draft.add_argument(
+        "--since",
+        type=_since,
+        metavar="WHEN",
+        help="only what was said from this date or ISO 8601 timestamp on",
+    )
+    p_draft.add_argument(
+        "--write",
+        action="store_true",
+        help="add the drafted rules to the ledger, unconfirmed",
+    )
+    p_draft.add_argument("--ledger", help="ledger file to write to (with --write)")
+    p_draft.add_argument("--json", action="store_true", help="print JSON")
+    p_draft.set_defaults(func=_cmd_draft, project=False)
+
     # Parsed here for --help only: main() hands the arguments of "hook" to
     # the hook as they are (see there).
     p_hook = commands.add_parser("hook", help="Claude Code hook (stdin)")
@@ -626,7 +693,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 #: The subcommands other than ``hook``.
-_OTHER_COMMANDS = ("check", "rules", "lint", "log", "replay", "install")
+_OTHER_COMMANDS = ("check", "rules", "lint", "log", "replay", "draft", "install")
 
 
 def _hook_arguments(arguments: Sequence[str]) -> list[str] | None:

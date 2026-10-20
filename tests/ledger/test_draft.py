@@ -17,10 +17,13 @@ import pytest
 
 from ember_armor.ledger import cli
 from ember_armor.ledger.draft import (
+    Example,
+    Reply,
     Statement,
     collect,
     command_of,
     draft,
+    from_model,
     order_kind,
     path_globs,
     propose,
@@ -763,3 +766,107 @@ def test_two_orders_with_one_meaning_are_drafted_once(tmp_path: Path) -> None:
     assert first.rule is not None and second.rule is not None
     assert (first.duplicate_of, second.duplicate_of) == ("", first.rule["id"])
     assert "same as draft.write-data above" in render(result)
+
+
+# ---------------------------------------------------------------------------
+# A model's reply, checked by the engine
+# ---------------------------------------------------------------------------
+PUSH_MAIN = {
+    "id": "push-to-main",
+    "effect": "deny",
+    "text": "ignored",
+    "source": "ignored",
+    "when": {
+        "type": "command",
+        "program": "git",
+        "subcommand": ["push"],
+        "args_any_glob": ["main"],
+    },
+}
+FIRES = Example("Bash", {"command": "git push origin main"})
+QUIET = Example("Bash", {"command": "git push origin feature"})
+
+
+def test_a_model_rule_that_passes_its_own_examples_is_a_proposal() -> None:
+    reply = Reply(PUSH_MAIN, "pushes to main", FIRES, QUIET, model="m1")
+    proposal = from_model(said("Never push to main."), reply, False)
+    assert proposal.shape == "model"
+    assert proposal.note == "pushes to main"
+    rule = proposal.rule
+    assert rule is not None
+    assert rule["id"] == "draft.push-to-main"
+    assert rule["effect"] == "ask"  # deny is the owner's to give
+    assert rule["text"] == "Never push to main."
+    assert rule["source"] == "said 2026-10-01 in session s1; drafted by m1"
+    assert fires(rule, "Bash", "git push origin main")
+
+
+@pytest.mark.parametrize(
+    ("reply", "note"),
+    [
+        (Reply(None, "it is about conduct"), "model: it is about conduct"),
+        (Reply(PUSH_MAIN, "x", None, QUIET), "gave no example calls"),
+        (Reply(PUSH_MAIN, "x", QUIET, QUIET), "does not fire on its own example"),
+        (Reply(PUSH_MAIN, "x", FIRES, FIRES), "fires on its own counter-example"),
+        (
+            Reply({**PUSH_MAIN, "when": {"type": "wish"}}, "x", FIRES, QUIET),
+            "not a valid rule",
+        ),
+        (
+            Reply(PUSH_MAIN, "x", Example("Bash", {"command": 7}), QUIET),
+            "could not be read",
+        ),
+    ],
+)
+def test_a_model_reply_the_engine_disagrees_with_is_refused(
+    reply: Reply, note: str
+) -> None:
+    proposal = from_model(said("Never push to main."), reply, False)
+    assert proposal.rule is None
+    assert proposal.shape == "none"
+    assert note in proposal.note
+
+
+def test_the_drafter_asks_only_about_what_the_shapes_missed(tmp_path: Path) -> None:
+    path = transcript(
+        tmp_path / "t.jsonl",
+        user("Never `git push --force`."),
+        user("Never push to main.", at="2026-10-02T10:00:00Z"),
+        user("Stop walking the app room by room.", at="2026-10-03T10:00:00Z"),
+    )
+    asked: list[tuple[str, str]] = []
+
+    def ask(statement: Statement, why: str) -> Reply:
+        asked.append((statement.text, why))
+        if "main" in statement.text:
+            return Reply(PUSH_MAIN, "pushes to main", FIRES, QUIET, model="m1")
+        return Reply(None, "about conduct", model="m1")
+
+    result = draft([path], ask=ask, windows=False)
+    assert [text for text, _ in asked] == [
+        "Never push to main.",
+        "Stop walking the app room by room.",
+    ]
+    assert all("names no command" in why for _, why in asked)
+    shapes = [(p.shape, p.rule["id"] if p.rule else p.note) for p in result.proposals]
+    assert shapes == [
+        ("command", "draft.git-push-force"),
+        ("model", "draft.push-to-main"),
+        ("none", "model: about conduct"),
+    ]
+    text = render(result)
+    assert (
+        "draft.push-to-main  [ask, model]  said 2026-10-02 in session s1; drafted by m1"
+        in text
+    )
+
+
+def test_an_asker_that_raises_costs_one_line(tmp_path: Path) -> None:
+    path = transcript(tmp_path / "t.jsonl", user("Never push to main."))
+
+    def ask(statement: Statement, why: str) -> Reply:
+        raise RuntimeError("boom")
+
+    [proposal] = draft([path], ask=ask).proposals
+    assert proposal.rule is None
+    assert proposal.note == "model: RuntimeError: boom"

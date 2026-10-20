@@ -270,3 +270,60 @@ def test_cli_model_without_the_sdk_exits_one(
     write_ledger(tmp_path / "ledger.json")
     assert cli.main(["draft", str(path), "--model"]) == 1
     assert "not installed" in capsys.readouterr().err
+
+
+# ---------------------------------------------------------------------------
+# The key from the Windows user environment
+# ---------------------------------------------------------------------------
+def test_the_user_environment_is_asked_only_when_the_process_has_no_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ember_armor.ledger import assist
+
+    made: list[dict[str, Any]] = []
+
+    class FakeClient:
+        def __init__(self, **kwargs: Any) -> None:
+            made.append(kwargs)
+
+    monkeypatch.setattr(anthropic, "Anthropic", FakeClient)
+    monkeypatch.setattr(assist, "user_environment_key", lambda: "from-the-registry")
+    for name in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"):
+        monkeypatch.delenv(name, raising=False)
+    asker()
+    assert made == [{"api_key": "from-the-registry"}]
+
+    made.clear()
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "in-the-process")
+    asker()
+    assert made == [{}]  # the SDK reads the process environment itself
+
+    made.clear()
+    monkeypatch.delenv("ANTHROPIC_API_KEY")
+    monkeypatch.setattr(assist, "user_environment_key", lambda: None)
+    asker()
+    assert made == [{}]
+
+
+def test_user_environment_key_reads_the_registry_on_windows_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import os
+
+    from ember_armor.ledger import assist
+
+    if os.name != "nt":
+        assert assist.user_environment_key() is None
+        return
+    import winreg
+
+    monkeypatch.setattr(winreg, "QueryValueEx", lambda key, name: ("abc", 1))
+    assert assist.user_environment_key() == "abc"
+    monkeypatch.setattr(winreg, "QueryValueEx", lambda key, name: ("", 1))
+    assert assist.user_environment_key() is None
+
+    def missing(key: Any, name: str) -> Any:
+        raise FileNotFoundError(2, "no such value")
+
+    monkeypatch.setattr(winreg, "QueryValueEx", missing)
+    assert assist.user_environment_key() is None

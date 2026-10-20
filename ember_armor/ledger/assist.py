@@ -17,6 +17,7 @@ The gate itself never calls a model; this is an offline step.  The SDK
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Mapping
 from typing import Any
 
@@ -151,6 +152,26 @@ def reply_from(parsed: ModelReply, model: str) -> Reply:
     )
 
 
+def user_environment_key() -> str | None:
+    r"""``ANTHROPIC_API_KEY`` from the Windows user environment, or ``None``.
+
+    A key set in the user's environment after a shell or an app started is
+    not in that process's environment yet; the SDK then finds nothing.  On
+    Windows the value is read from the registry (``HKCU\Environment``), as
+    the SDK would have read it from the environment.  It is never printed.
+    """
+    if os.name != "nt":
+        return None
+    try:
+        import winreg
+
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment") as key:
+            value = winreg.QueryValueEx(key, "ANTHROPIC_API_KEY")[0]
+    except OSError:
+        return None
+    return value if isinstance(value, str) and value else None
+
+
 def asker(
     model: str = DEFAULT_MODEL,
     *,
@@ -162,7 +183,9 @@ def asker(
 
     *limit* caps the number of calls one run may make; past it every
     statement is answered "not asked".  *client* is for tests; by default
-    ``anthropic.Anthropic()`` resolves credentials from the environment.
+    ``anthropic.Anthropic()`` resolves credentials from the environment,
+    and on Windows from the user environment when the process has none
+    (see :func:`user_environment_key`).
 
     Raises
     ------
@@ -176,7 +199,15 @@ def asker(
             "Asking a model needs the Anthropic SDK, which is not installed. "
             'Install the optional extra: pip install "ember-armor[draft]"'
         ) from exc
-    api = anthropic.Anthropic() if client is None else client
+    if client is None:
+        given = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get(
+            "ANTHROPIC_AUTH_TOKEN"
+        )
+        fallback = None if given else user_environment_key()
+        client = (
+            anthropic.Anthropic(api_key=fallback) if fallback else anthropic.Anthropic()
+        )
+    api = client
     config: Any = {"effort": effort}
     calls = 0
     extra: dict[str, Any] = {}

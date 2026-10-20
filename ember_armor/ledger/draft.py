@@ -24,13 +24,16 @@ from __future__ import annotations
 
 import contextlib
 import json
+import os
 import re
-from collections.abc import Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from ember_armor.ledger.engine import evaluate
+from ember_armor.ledger.facts import Facts, extract
 from ember_armor.ledger.model import LedgerError, Rule, parse_rule
 from ember_armor.ledger.replay import transcript_files
 
@@ -593,6 +596,31 @@ def _name(token: str) -> str:
 
 
 @dataclass(frozen=True)
+class Example:
+    """One tool call a model says its rule fires on, or stays quiet on."""
+
+    tool: str
+    input: Mapping[str, Any]
+    cwd: str = ""  #: Empty: a neutral project directory.
+
+
+@dataclass(frozen=True)
+class Reply:
+    """What a model answered for one statement: a rule, or a reason."""
+
+    rule: dict[str, Any] | None
+    reason: str
+    fires_on: Example | None = None
+    quiet_on: Example | None = None
+    model: str = ""
+
+
+#: Asks a model about one statement the literal shapes could not place;
+#: the second argument is the reason they passed.
+Asker = Callable[[Statement, str], Reply]
+
+
+@dataclass(frozen=True)
 class Proposal:
     """What became of one statement: a rule, or a reason there is none."""
 
@@ -747,6 +775,68 @@ def propose(statement: Statement) -> Proposal:
 
 
 # ---------------------------------------------------------------------------
+# A model's reply, checked
+# ---------------------------------------------------------------------------
+_NEUTRAL_CWD = {True: "C:/work/app", False: "/work/app"}
+
+
+def _facts(example: Example, flavour: bool) -> Facts:
+    call = {
+        "session_id": "draft-check",
+        "cwd": example.cwd or _NEUTRAL_CWD[flavour],
+        "tool_name": example.tool,
+        "tool_input": dict(example.input),
+    }
+    return extract(call, windows=flavour, env=os.environ)
+
+
+def _fires(rule: Rule, example: Example, flavour: bool) -> bool:
+    decision = evaluate([rule], _facts(example, flavour), None)
+    return any(fired.id == rule.id for fired in decision.fired)
+
+
+def from_model(statement: Statement, reply: Reply, flavour: bool) -> Proposal:
+    """A proposal from a model's reply, or the reason there is none.
+
+    The rule keeps only what the ledger can check: its text is the sentence,
+    its source names the session and the model, its effect is ``ask`` or
+    ``warn``.  It is parsed by the ledger's parser and run through the
+    engine on the model's own two examples; a rule that does not fire on
+    the first, or fires on the second, is refused with that reason.
+    """
+    drafted = f"drafted by {reply.model}" if reply.model else "drafted by a model"
+    if reply.rule is None:
+        return Proposal(statement, None, "none", f"model: {reply.reason or 'no rule'}")
+    raw = {
+        k: v for k, v in reply.rule.items() if k not in ("confirmed", "text", "source")
+    }
+    raw["effect"] = raw.get("effect") if raw.get("effect") in ("ask", "warn") else "ask"
+    raw["text"] = _text(statement)
+    raw["source"] = f"{_source(statement)}; {drafted}"
+    given = str(raw.get("id") or "")
+    raw["id"] = "draft." + _slug(given.removeprefix("draft.") or statement.text[:40])
+    try:
+        parsed = parse_rule({**raw, "confirmed": True})
+    except LedgerError as exc:
+        return Proposal(statement, None, "none", f"model: not a valid rule: {exc}")
+    if reply.fires_on is None or reply.quiet_on is None:
+        note = "model: gave no example calls to check its rule on"
+        return Proposal(statement, None, "none", note)
+    try:
+        if not _fires(parsed, reply.fires_on, flavour):
+            note = "model: its rule does not fire on its own example"
+            return Proposal(statement, None, "none", note)
+        if _fires(parsed, reply.quiet_on, flavour):
+            note = "model: its rule fires on its own counter-example"
+            return Proposal(statement, None, "none", note)
+    except (ValueError, TypeError) as exc:
+        return Proposal(
+            statement, None, "none", f"model: its example could not be read: {exc}"
+        )
+    return Proposal(statement, raw, "model", reply.reason)
+
+
+# ---------------------------------------------------------------------------
 # The draft
 # ---------------------------------------------------------------------------
 @dataclass
@@ -831,19 +921,32 @@ def draft(
     *,
     since: float | None = None,
     existing: Iterable[Rule] = (),
+    ask: Asker | None = None,
+    windows: bool | None = None,
 ) -> Draft:
     """Read the transcripts and propose a rule for every order that fits a shape.
 
     *existing* are the rules in effect; a proposal that says what one of
     them already says is marked ``covered`` with that rule's id.  Ids are
-    unique among the proposals and against *existing*.
+    unique among the proposals and against *existing*.  With *ask*, every
+    statement the shapes could not place is put to a model, and its reply
+    becomes a proposal only once the engine agrees with the model's own
+    examples (see :func:`from_model`).  *windows* is the path flavour for
+    those checks; it defaults to the platform.
     """
+    flavour = os.name == "nt" if windows is None else windows
     others = list(existing)
     taken = {rule.id for rule in others}
     accepted: list[Rule] = []
     result = collect(paths, since=since)
     for statement in result.statements:
         proposal = propose(statement)
+        if proposal.rule is None and ask is not None:
+            try:
+                reply = ask(statement, proposal.note)
+            except Exception as exc:  # noqa: BLE001 - one bad answer is one line
+                reply = Reply(None, f"{type(exc).__name__}: {exc}")
+            proposal = from_model(statement, reply, flavour)
         if proposal.rule is not None:
             try:
                 parse_rule(proposal.rule)

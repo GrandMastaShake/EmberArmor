@@ -478,8 +478,17 @@ def _cmd_draft(args: argparse.Namespace) -> int:
     paths = args.paths or [str(Path(*DEFAULT_TRANSCRIPTS).expanduser())]
     existing = store.load_all(os.getcwd(), os.environ)
     since = args.since.timestamp() if args.since is not None else None
+    ask = None
+    if args.model:
+        from ember_armor.ledger.assist import AssistUnavailableError, asker
+
+        try:
+            ask = asker(args.model, limit=args.model_calls)
+        except AssistUnavailableError as exc:
+            print(f"ember-gate: {exc}", file=sys.stderr)
+            return EXIT_ERROR
     try:
-        result = draft(paths, since=since, existing=existing)
+        result = draft(paths, since=since, existing=existing, ask=ask)
     except FileNotFoundError as exc:
         print(f"ember-gate: {exc}", file=sys.stderr)
         return EXIT_ERROR
@@ -670,6 +679,21 @@ def build_parser() -> argparse.ArgumentParser:
         help="add the drafted rules to the ledger, unconfirmed",
     )
     p_draft.add_argument("--ledger", help="ledger file to write to (with --write)")
+    p_draft.add_argument(
+        "--model",
+        nargs="?",
+        const="claude-opus-5-5",
+        metavar="MODEL",
+        help="ask a model (default claude-opus-5-5) about the orders the shapes could "
+        "not place; needs the anthropic package and credentials in the environment",
+    )
+    p_draft.add_argument(
+        "--model-calls",
+        type=int,
+        default=100,
+        metavar="N",
+        help="at most N model calls in one run (default 100)",
+    )
     p_draft.add_argument("--json", action="store_true", help="print JSON")
     p_draft.set_defaults(func=_cmd_draft, project=False)
 

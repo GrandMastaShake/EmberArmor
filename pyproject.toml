@@ -29,7 +29,12 @@ ember-gate = "ember_armor.ledger.cli:main"
 smt = [
     "z3-solver>=4.12",
 ]
+# The Anthropic SDK, used only by "ember-gate draft --model".
+draft = [
+    "anthropic>=1.0",
+]
 dev = [
+    "anthropic>=1.0",
     "pytest>=8.0",
     "pytest-asyncio>=0.23.0",
     "pytest-cov>=5.0",

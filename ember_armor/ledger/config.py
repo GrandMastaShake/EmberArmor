@@ -44,7 +44,10 @@ _SETTINGS = (
     "exceptions",
     "remind_interval_minutes",
     "announce_on",
+    "resident_idle_minutes",
 )
+#: Minutes a resident gate waits for a request before it exits.
+RESIDENT_IDLE_MINUTES = 480.0
 _EXPECTED_MODES = "expected observe, remind or enforce"
 _SHELL_TOOL_KEYS = ("shell", "field", "cwd")
 _FALSE_WORDS = frozenset({"0", "false", "no", "off"})
@@ -82,6 +85,8 @@ def _validate(config: Any, path: Path) -> dict[str, Any]:
         raise ConfigError(f"{path}: 'disposable' must be a list of path patterns")
     _validate_shell_tools(config.get("shell_tools", {}), path)
     _exceptions(config.get("exceptions", []), path)
+    if "resident_idle_minutes" in config:
+        _minutes(config["resident_idle_minutes"], f"{path}: resident_idle_minutes")
     if "remind_interval_minutes" in config:
         _minutes(
             config["remind_interval_minutes"], f"{path}: 'remind_interval_minutes'"
@@ -208,6 +213,22 @@ def remind_interval(env: Mapping[str, str]) -> float:
         return 60 * _minutes(given, "EMBER_GATE_REMIND_INTERVAL")
     configured = read_config(env).get("remind_interval_minutes")
     return 60 * (REMIND_INTERVAL_MINUTES if configured is None else float(configured))
+
+
+def resident_idle(env: Mapping[str, str]) -> float:
+    """Seconds a resident gate waits for a request before it exits.
+
+    ``resident_idle_minutes`` in ``config.json``, else eight hours.  Zero
+    means never.
+
+    Raises
+    ------
+    ConfigError
+        If the value is not a finite number of minutes, zero or more.
+    """
+    minutes = read_config(env).get("resident_idle_minutes", RESIDENT_IDLE_MINUTES)
+    seconds = _minutes(minutes, "resident_idle_minutes") * 60
+    return seconds if seconds > 0 else float("inf")
 
 
 def announce_on(env: Mapping[str, str]) -> tuple[str, ...]:

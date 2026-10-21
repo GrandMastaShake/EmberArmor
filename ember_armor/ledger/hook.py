@@ -150,10 +150,10 @@ def session_start(
     return output, "; ".join(told.problems) or None
 
 
-def _passive() -> bool:
+def _passive(env: Mapping[str, str]) -> bool:
     """True only when the mode is positively known to let a failure pass."""
     try:
-        return gate_mode(os.environ) in _PASSIVE
+        return gate_mode(env) in _PASSIVE
     except Exception:
         return False
 
@@ -178,25 +178,30 @@ def _event(argv: Sequence[str]) -> tuple[str, str | None]:
     return PRE_TOOL_USE, f"unknown hook arguments ({expected})"
 
 
-def main(argv: Sequence[str] = ()) -> int:
-    """Entry point: read standard input, print the output, exit 0.
+def respond(
+    argv: Sequence[str], raw: bytes | None, env: Mapping[str, str] | None = None
+) -> tuple[str, str]:
+    """One hook invocation: what goes to standard output and to standard error.
 
     *argv* holds the arguments after the program name: none, or ``--event``
-    with ``pre-tool-use`` or ``session-start``.
+    with ``pre-tool-use`` or ``session-start``.  *raw* is the hook input;
+    ``None`` means it could not be read.  *env* defaults to the process
+    environment.  The command hook and the resident gate both end here.
     """
+    given = os.environ if env is None else env
     event, problem = _event(argv)
     if event == SESSION_START:
-        try:
-            output, error = session_start(sys.stdin.buffer.read())
-        except Exception as exc:  # reading standard input failed
-            output, error = "", f"{type(exc).__name__}: {exc}"
-        if error:
-            sys.stderr.write(f"ember-gate: session start: {error}\n")
-        if output:
-            sys.stdout.write(output + "\n")
-        return 0
+        told = ""
+        trouble: str | None = "standard input could not be read"
+        if raw is not None:
+            told, trouble = session_start(raw, given)
+        return told, f"session start: {trouble}" if trouble else ""
+    output = ""
+    error: str | None = None
     try:
-        result = handle(sys.stdin.buffer.read(), problem=problem)
+        if raw is None:
+            raise ValueError("standard input could not be read")
+        result = handle(raw, given, problem=problem)
         decision = result.decision
         # A project ledger's reason for not loading is not printed: see
         # ``Decision.said``.
@@ -207,9 +212,31 @@ def main(argv: Sequence[str] = ()) -> int:
         # failure kept unread.
         error = f"{type(exc).__name__}: {exc}"
         failure = f"EmberArmor gate failure: {error}"
-        output = "" if _passive() else _decision_object("ask", failure)
+        output = "" if _passive(given) else _decision_object("ask", failure)
+    return output, f"gate failure: {error}" if error else ""
+
+
+def _ensure_resident() -> None:
+    """At the start of a session, see that the resident gate answers, if used."""
+    try:
+        from ember_armor.ledger.resident import ensure
+
+        ensure(os.environ)
+    except Exception as exc:
+        sys.stderr.write(f"ember-gate: resident gate: {type(exc).__name__}: {exc}\n")
+
+
+def main(argv: Sequence[str] = ()) -> int:
+    """Entry point: read standard input, print the output, exit 0."""
+    try:
+        raw: bytes | None = sys.stdin.buffer.read()
+    except Exception:
+        raw = None
+    output, error = respond(argv, raw)
+    if _event(argv)[0] == SESSION_START:
+        _ensure_resident()
     if error:
-        sys.stderr.write(f"ember-gate: gate failure: {error}\n")
+        sys.stderr.write(f"ember-gate: {error}\n")
     if output:
         sys.stdout.write(output + "\n")
     return 0

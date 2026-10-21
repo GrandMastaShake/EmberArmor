@@ -522,6 +522,37 @@ def _cmd_hook(args: argparse.Namespace) -> int:
     return hook.main(["--event", args.event])
 
 
+def resident_settings(env: Mapping[str, str]) -> dict[str, Any]:
+    """Settings snippet with the resident gate as the PreToolUse hook.
+
+    PreToolUse is an HTTP hook: Claude Code posts each call to the resident
+    gate and reads the same JSON a command hook would print.  SessionStart
+    stays a command hook; it prints the summary and starts the resident gate
+    when none answers.  The address is read from ``resident.json`` in the
+    Ember home, written here if missing.  Set ``onFailure`` to ``block`` in
+    ``enforce`` mode, so a gate that does not answer blocks rather than
+    passes.
+    """
+    from ember_armor.ledger.resident import TOKEN_HEADER, address
+
+    where = address(env, create=True)
+    assert where is not None
+    python = Path(sys.executable).as_posix()
+    check_call = {
+        "type": "http",
+        "url": f"{where.url}/hook",
+        "headers": {TOKEN_HEADER: where.token},
+        "timeout": 20,
+    }
+    summary = {"type": "command", "command": python, "args": [*SESSION_ARGS]}
+    return {
+        "hooks": {
+            "PreToolUse": [{"matcher": "*", "hooks": [check_call]}],
+            "SessionStart": [{"hooks": [summary]}],
+        }
+    }
+
+
 def claude_code_settings() -> dict[str, Any]:
     """Settings snippet that registers the gate's two hooks.
 
@@ -554,8 +585,19 @@ def _cmd_install(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return EXIT_USAGE
-    _print_json(claude_code_settings())
+    _print_json(
+        resident_settings(os.environ) if args.resident else claude_code_settings()
+    )
     return EXIT_OK
+
+
+# ---------------------------------------------------------------------------
+# resident
+# ---------------------------------------------------------------------------
+def _cmd_resident(args: argparse.Namespace) -> int:
+    from ember_armor.ledger.resident import main as resident_main
+
+    return resident_main([args.action])
 
 
 # ---------------------------------------------------------------------------
@@ -709,15 +751,40 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_hook.set_defaults(func=_cmd_hook)
 
+    p_resident = commands.add_parser(
+        "resident", help="the gate kept warm as a local HTTP server"
+    )
+    p_resident.add_argument(
+        "action",
+        choices=("start", "ensure", "stop", "status"),
+        help="start runs it here; ensure starts it detached if none answers",
+    )
+    p_resident.set_defaults(func=_cmd_resident)
+
     install = commands.add_parser("install", help="show how to wire the gate in")
     install.add_argument("host", choices=("claude-code",))
     install.add_argument("--print", action="store_true", help="print the snippet")
+    install.add_argument(
+        "--resident",
+        action="store_true",
+        help="the PreToolUse hook as an HTTP hook to the resident gate "
+        "(writes resident.json if missing)",
+    )
     install.set_defaults(func=_cmd_install)
     return parser
 
 
 #: The subcommands other than ``hook``.
-_OTHER_COMMANDS = ("check", "rules", "lint", "log", "replay", "draft", "install")
+_OTHER_COMMANDS = (
+    "check",
+    "rules",
+    "lint",
+    "log",
+    "replay",
+    "draft",
+    "resident",
+    "install",
+)
 
 
 def _hook_arguments(arguments: Sequence[str]) -> list[str] | None:

@@ -18,11 +18,16 @@ to ``resident.log`` in the Ember home.
 
 The address lives in ``resident.json`` in the Ember home: a port, chosen
 free once and then fixed so the settings file can name it, and a token the
-caller must present in the ``X-Ember-Token`` header.  The file is written
-for the owner only.  The server exits after an idle period
+caller must present in the ``X-Ember-Token`` header.  On POSIX the file is
+written for the owner only (mode 0600).  On Windows the mode is ignored and
+the file has the permissions of the Ember home, which in a default profile
+are the owner's, SYSTEM's and the Administrators'; whoever can read it can
+ask the gate to stop.  The server exits after an idle period
 (``resident_idle_minutes`` in ``config.json``, eight hours by default),
-and after answering a request when the installed package has changed under
-it, in which case it first starts a fresh copy of itself.  The SessionStart
+and after answering a request when any module of the installed package has
+changed under it (an editable install that a ``git pull`` updates, say), in
+which case it closes its port and then starts a fresh copy of itself.  The
+SessionStart
 hook starts the server when none answers, so a session never begins
 without one for long; ``ember-gate resident ensure|start|stop|status`` do
 the same by hand.
@@ -30,6 +35,7 @@ the same by hand.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import secrets
@@ -42,6 +48,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from http.client import HTTPConnection
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from typing import Any
 
 from ember_armor.ledger.config import ember_home, resident_idle
@@ -107,10 +114,55 @@ def address(env: Mapping[str, str], *, create: bool = False) -> Address | None:
     return found
 
 
+#: Seconds a look at the package is reused.  Looking at every module costs a
+#: stat per file; reused for this long, a change is seen at the first request
+#: after it, at most this many seconds late.
+MARKER_SECONDS = 2.0
+_looked: dict[str, tuple[float, str]] = {}
+
+
+def look(root: Path) -> str:
+    """The files under *root*, or the one file *root*, as a string.
+
+    Each ``.py`` file's name, time and size go into it, so it changes when
+    any of them is changed, added, removed or renamed.
+
+    Raises
+    ------
+    OSError
+        If a file cannot be looked at.
+    """
+    files = [root] if root.is_file() else sorted(root.rglob("*.py"))
+    digest = hashlib.sha256()
+    for file in files:
+        stat = file.stat()
+        name = file.name if file == root else file.relative_to(root).as_posix()
+        digest.update(f"{name}:{stat.st_mtime_ns}:{stat.st_size}\n".encode())
+    return f"{len(files)}:{digest.hexdigest()[:16]}"
+
+
 def marker(path: str | None = None) -> str:
-    """The installed module as a string: it changes when the package does."""
-    stat = os.stat(path or __file__)
-    return f"{stat.st_mtime_ns}:{stat.st_size}"
+    """The installed package as a string: it changes when any module does.
+
+    The whole ``ember_armor`` package is looked at, so a change to
+    ``gate.py`` or ``builtin.py`` counts, not only one to this file (an
+    editable install that a ``git pull`` updates, say).  With *path*, the
+    files under that directory, or that one file.  A look is reused for
+    :data:`MARKER_SECONDS`.
+
+    Raises
+    ------
+    OSError
+        If a file cannot be looked at (the server then counts as stale).
+    """
+    root = Path(path) if path else Path(__file__).parent.parent
+    key, now = str(root), time.monotonic()
+    seen = _looked.get(key)
+    if seen is not None and now - seen[0] < MARKER_SECONDS:
+        return seen[1]
+    found = look(root)
+    _looked[key] = (now, found)
+    return found
 
 
 def _request(
@@ -230,6 +282,8 @@ class _Gate(ThreadingHTTPServer):
         self.started = time.monotonic()
         self.last_request = self.started
         self.served = 0
+        #: Set when the server leaves for a fresh copy of itself.
+        self.replace = False
         self.lock = threading.Lock()
         self.log_path = ember_home(env) / LOG_FILE
 
@@ -255,16 +309,32 @@ class _Gate(ThreadingHTTPServer):
             return True
 
     def leave(self, reason: str, *, replace: bool = False) -> None:
-        """Shut down from a handler thread, after the response is sent."""
+        """Shut down from a handler thread, after the response is sent.
+
+        With *replace*, :func:`serve` starts a fresh copy once the port is
+        closed.  It is not started here: this thread is not waited for, so
+        the copy was lost whenever the process exited first, and before the
+        port is closed a copy would find it taken.
+        """
         self.note(f"exit: {reason}")
+        self.replace = replace and self.respawn
 
         def go() -> None:
             time.sleep(0.2)
             self.shutdown()
-            if replace and self.respawn:
-                spawn(self.env)
 
         threading.Thread(target=go, daemon=True).start()
+
+    def replace_self(self) -> None:
+        """Start the fresh copy :meth:`leave` asked for; the port is closed."""
+        if not self.replace:
+            return
+        try:
+            spawn(self.env)
+        except OSError as exc:
+            self.note(f"replace: the fresh copy did not start: {exc}")
+            return
+        self.note("replace: a fresh copy was started")
 
     def watch(self) -> None:
         """Exit after ``idle_seconds`` without a request."""
@@ -399,6 +469,7 @@ def serve(
             gate.serve_forever()
         finally:
             gate.server_close()
+        gate.replace_self()
     return gate
 
 

@@ -261,7 +261,12 @@ class _Gate(ThreadingHTTPServer):
     """The server, with the state its handlers share."""
 
     daemon_threads = True
-    allow_reuse_address = False
+    #: On POSIX the port a server just closed is still held by the connections
+    #: it closed, in TIME_WAIT, and its fresh copy cannot bind it again without
+    #: SO_REUSEADDR, which there does not let two servers listen on one port.
+    #: On Windows SO_REUSEADDR would let a second server take a port in use,
+    #: so it stays off there.
+    allow_reuse_address = os.name != "nt"
 
     def __init__(
         self,

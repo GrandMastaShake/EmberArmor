@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import replace
 from datetime import date
 from pathlib import Path
@@ -96,19 +96,31 @@ def user_ledger_path(env: Mapping[str, str]) -> Path:
     return ember_home(env) / LEDGER_NAME
 
 
-def find_project_ledger(cwd: str) -> Path | None:
+def find_project_ledger(
+    cwd: str, *, passed_over: Callable[[Path], bool] | None = None
+) -> Path | None:
     """Nearest ``.ember/ledger.json`` at or above *cwd*, if any.
 
     A network or device path (one that starts with two separators) is never
     searched: looking there would contact a host named by the call.
+
+    A level that cannot be looked at (``Access is denied`` on a directory the
+    process may not read, where ``Path.is_file`` raises ``PermissionError``
+    rather than answering ``False``) raises ``OSError``, unless *passed_over*
+    says the file there is not a project ledger anyway; then the search goes
+    on above it.
     """
     if not cwd or cwd.replace("\\", "/").startswith("//"):
         return None
     start = Path(normalize(cwd, "/", windows=os.name == "nt"))
     for directory in (start, *start.parents):
         candidate = directory / ".ember" / LEDGER_NAME
-        if candidate.is_file():
-            return candidate
+        try:
+            if candidate.is_file():
+                return candidate
+        except OSError:
+            if passed_over is None or not passed_over(candidate):
+                raise
     return None
 
 
@@ -129,6 +141,21 @@ def _user_ledgers(user: Path) -> tuple[Path, ...]:
     except RuntimeError:  # no home directory can be worked out
         return (user.resolve(),)
     return (user.resolve(), (home / ".ember" / LEDGER_NAME).resolve())
+
+
+def _a_user_ledger(user: Path) -> Callable[[Path], bool]:
+    """Whether a file is one of the user ledgers of :func:`_user_ledgers`.
+
+    A file that cannot be resolved is not taken for one.
+    """
+
+    def judge(candidate: Path) -> bool:
+        try:
+            return candidate.resolve() in _user_ledgers(user)
+        except OSError:
+            return False
+
+    return judge
 
 
 def _read_json(path: Path, what: str) -> Any:
@@ -289,9 +316,21 @@ def load_sources(
     override = env.get("EMBER_LEDGER")
     user = user_ledger_path(env)
     sources = [("override", Path(override))] if override else [("user", user)]
-    found = find_project_ledger(cwd) if project and not override else None
-    if found is not None and found.resolve() not in _user_ledgers(user):
-        sources.append(("project", found))
+    unsearched: LoadFailure | None = None
+    if project and not override:
+        try:
+            found = find_project_ledger(cwd, passed_over=_a_user_ledger(user))
+            if found is not None and found.resolve() not in _user_ledgers(user):
+                sources.append(("project", found))
+        except OSError as exc:
+            # A directory above *cwd* that cannot be looked at may hold a
+            # project ledger: that is a project ledger that cannot be
+            # loaded, and the other sources are still read.
+            reason = (
+                f"the project ledger at or above {cwd} cannot be looked for: "
+                f"{type(exc).__name__}: {exc}"
+            )
+            unsearched = LoadFailure(reason, PROJECT_LEDGER_FAILED)
     for origin, path in sources:
         try:
             if origin == "project":
@@ -312,6 +351,8 @@ def load_sources(
             # One source that fails in a way nobody foresaw is still one
             # source: the rules of the others are loaded and judged.
             problems.append(f"ledger {path}: {type(exc).__name__}: {exc}")
+    if unsearched is not None:
+        problems.append(unsearched)
     return rules, problems
 
 

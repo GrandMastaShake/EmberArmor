@@ -224,7 +224,12 @@ def test_a_real_server_is_replaced_when_a_module_changes(
             return now if now and now["pid"] != started else None
 
         fresh = wait_for(replaced, 30)
-        assert fresh, "no fresh copy answered on the same port"
+        if not fresh:
+            log = (home / "resident.log").read_text(encoding="utf-8")
+            pytest.fail(
+                f"no fresh copy answered on port {where.port}; address now "
+                f"{address(env)}; resident.log:\n{log}"
+            )
         assert first.wait(timeout=10) == 0
         log = (home / "resident.log").read_text(encoding="utf-8")
         assert "exit: the installed package changed" in log

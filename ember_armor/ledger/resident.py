@@ -16,25 +16,39 @@ mode changed while the server runs takes effect on the next call; only the
 imports are kept.  What a command hook would print on standard error goes
 to ``resident.log`` in the Ember home.
 
-The address lives in ``resident.json`` in the Ember home: a port, chosen
-free once and then fixed so the settings file can name it, and a token the
-caller must present in the ``X-Ember-Token`` header.  On POSIX the file is
-written for the owner only (mode 0600).  On Windows the mode is ignored and
-the file has the permissions of the Ember home, which in a default profile
-are the owner's, SYSTEM's and the Administrators'; whoever can read it can
-ask the gate to stop.  The server exits after an idle period
-(``resident_idle_minutes`` in ``config.json``, eight hours by default),
-and after answering a request when any module of the installed package has
-changed under it (an editable install that a ``git pull`` updates, say), in
-which case it closes its port and then starts a fresh copy of itself.  The
-SessionStart
-hook starts the server when none answers, so a session never begins
-without one for long; ``ember-gate resident ensure|start|stop|status`` do
-the same by hand.
+The address lives in ``resident.json`` in the Ember home: a port and a
+token the caller must present in the ``X-Ember-Token`` header.  The file is
+written once, for the owner only, and **nothing but the owner's own command
+changes it afterwards** (``ember-gate resident move``): the settings file
+of the host names this address, and a gate that answers anywhere else
+checks nothing.  The first version of this module gave the port up when a
+new server could not bind it and got no answer from the old one within two
+seconds; on a busy machine that happened about a hundred times in four
+weeks, each time leaving the host posting to a dead address and letting
+every call pass (2026-10-28 to 2026-11-20 on the machine it was written
+on).  Now a server that cannot bind its port waits for the one that holds
+it, steps aside when that one answers as this gate, and otherwise says so
+in the log and exits; a slow answer is never taken for an absent server.
+
+The server stays up until it is stopped, unless ``resident_idle_minutes``
+in ``config.json`` names an idle period.  After answering a request it
+leaves when the installed package has changed under it, closing its port
+and then starting a fresh copy of itself.  The SessionStart hook sees to
+the gate (:func:`attend`): it starts the server when none answers and
+compares the address with the one the host's settings call; when the gate
+is not answering there, it tells the session so in plain words instead of
+letting it run unchecked in silence.  ``ember-gate resident
+ensure|start|stop|status|check|move`` do the same by hand.
+
+On Windows the server is started without a console (``pythonw.exe`` where
+the environment has one, and never ``DETACHED_PROCESS``, which made the
+real interpreter behind a virtual-environment launcher open a console
+window of its own at every start).
 """
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
@@ -46,7 +60,7 @@ import threading
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
-from http.client import HTTPConnection
+from http.client import HTTPConnection, HTTPException
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -55,18 +69,27 @@ from ember_armor.ledger.config import ember_home, resident_idle
 
 RESIDENT_FILE = "resident.json"
 LOG_FILE = "resident.log"
+STATE_FILE = "resident.state"
+ERROR_FILE = "resident.err"
 TOKEN_HEADER = "X-Ember-Token"  # noqa: S105 - a header name, not a secret
 HOST = "127.0.0.1"
-#: Seconds between the idle watchdog's looks.
+#: Ports the gate picks from.  Below the range operating systems hand out
+#: for outgoing connections (49152 up on Windows, 32768 up on Linux), so no
+#: other program is given the gate's port by chance while the gate is down.
+PORT_RANGE = (20000, 32000)
+#: Seconds between the watchdog's looks.
 _WATCH_SECONDS = 30.0
 #: The log is cut back to its last lines when it grows past this.
 _LOG_LIMIT = 1_000_000
+#: Seconds a server that cannot bind its port waits for the holder.
+PATIENCE_SECONDS = 15.0
 #: Interpreter arguments of a detached server.
 SERVER_ARGS = (
     "-I",
     "-c",
-    "from ember_armor.ledger.resident import serve; serve()",
+    "from ember_armor.ledger.resident import run; run()",
 )
+_LOG_LOCK = threading.Lock()
 
 
 @dataclass(frozen=True)
@@ -81,15 +104,75 @@ class Address:
         return f"http://{HOST}:{self.port}"
 
 
+def note(env: Mapping[str, str], text: str) -> None:
+    """Append a line to ``resident.log``, cutting it back when large."""
+    path = ember_home(env) / LOG_FILE
+    try:
+        stamp = time.strftime("%Y-%m-%dT%H:%M:%S")
+        with _LOG_LOCK:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if path.exists() and path.stat().st_size > _LOG_LIMIT:
+                lines = path.read_text(encoding="utf-8").splitlines()
+                path.write_text("\n".join(lines[-200:]) + "\n", encoding="utf-8")
+            with path.open("a", encoding="utf-8") as out:
+                out.write(f"{stamp} {text}\n")
+    except OSError:
+        pass
+
+
 def free_port() -> int:
-    """A port the loopback interface can bind right now."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
-        probe.bind((HOST, 0))
-        return int(probe.getsockname()[1])
+    """A port of :data:`PORT_RANGE` the loopback interface can bind right now.
+
+    Raises
+    ------
+    OSError
+        If none of two hundred tries could be bound.
+    """
+    low, high = PORT_RANGE
+    for _ in range(200):
+        port = low + secrets.randbelow(high - low)
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            try:
+                probe.bind((HOST, port))
+            except OSError:
+                continue
+            return port
+    raise OSError("no free port for the resident gate")
+
+
+def _read(path: Path) -> Address:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    port, token = data.get("port"), data.get("token")
+    if not isinstance(port, int) or not isinstance(token, str) or not token:
+        raise ValueError(f"{path} does not hold a port and a token")
+    return Address(port, token)
+
+
+def _write(path: Path, where: Address, *, replace: bool) -> bool:
+    """Write the address whole or not at all; false when one is there already."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    draft = path.with_name(f"{path.name}.{os.getpid()}.{secrets.token_hex(4)}")
+    handle = os.open(draft, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(handle, "w", encoding="utf-8") as out:
+        json.dump({"port": where.port, "token": where.token}, out)
+    try:
+        if replace:
+            os.replace(draft, path)
+        else:
+            os.link(draft, path)  # fails when the address exists: never overwritten
+    except FileExistsError:
+        return False
+    finally:
+        with contextlib.suppress(OSError):
+            os.unlink(draft)
+    return True
 
 
 def address(env: Mapping[str, str], *, create: bool = False) -> Address | None:
     """The address in ``resident.json``; with *create*, written if missing.
+
+    An address that exists is never changed here: two processes that both
+    find none write one between them, and both read the same.
 
     Raises
     ------
@@ -98,19 +181,32 @@ def address(env: Mapping[str, str], *, create: bool = False) -> Address | None:
     """
     path = ember_home(env) / RESIDENT_FILE
     if path.exists():
-        data = json.loads(path.read_text(encoding="utf-8"))
-        port, token = data.get("port"), data.get("token")
-        if not isinstance(port, int) or not isinstance(token, str) or not token:
-            raise ValueError(f"{path} does not hold a port and a token")
-        return Address(port, token)
+        return _read(path)
     if not create:
         return None
     found = Address(free_port(), secrets.token_hex(16))
-    path.parent.mkdir(parents=True, exist_ok=True)
-    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
-    handle = os.open(path, flags, 0o600)
-    with os.fdopen(handle, "w", encoding="utf-8") as out:
-        json.dump({"port": found.port, "token": found.token}, out)
+    if _write(path, found, replace=False):
+        return found
+    return _read(path)
+
+
+def move(env: Mapping[str, str]) -> Address:
+    """Give the gate a new port and keep its token: the owner's decision.
+
+    For the one case nothing else repairs: another program has taken the
+    port for good.  The host's settings have to be printed again afterwards.
+
+    Raises
+    ------
+    ValueError
+        If there is no address to move.
+    """
+    old = address(env)
+    if old is None:
+        raise ValueError("there is no resident address to move")
+    found = Address(free_port(), old.token)
+    _write(ember_home(env) / RESIDENT_FILE, found, replace=True)
+    note(env, f"moved: port {old.port} to port {found.port}, by the owner's command")
     return found
 
 
@@ -178,52 +274,124 @@ def _request(
         connection.close()
 
 
-def health(where: Address, timeout: float = 2.0) -> dict[str, Any] | None:
-    """What a resident gate at *where* says about itself, or ``None``."""
+def state(where: Address, timeout: float = 5.0) -> tuple[str, dict[str, Any] | None]:
+    """Who, if anyone, answers at *where*.
+
+    - ``running``: this gate, with what it says about itself.
+    - ``down``: nothing accepts a connection on the port.
+    - ``busy``: something accepted the connection and did not answer in
+      time.  A gate on a loaded machine looks like this, so it is never
+      taken for ``down``.
+    - ``foreign``: something answered, but not as this gate: another
+      program, or a gate that holds another token.
+    """
+    connection = HTTPConnection(HOST, where.port, timeout=timeout)
     try:
-        status, body = _request(where, "GET", "/health", timeout=timeout)
-    except OSError:
-        return None
+        try:
+            connection.connect()
+        except OSError:
+            return "down", None
+        try:
+            headers = {TOKEN_HEADER: where.token}
+            connection.request("GET", "/health", headers=headers)
+            response = connection.getresponse()
+            status, body = response.status, response.read()
+        except (OSError, HTTPException):
+            return "busy", None
+    finally:
+        connection.close()
     if status != 200:
-        return None
+        return "foreign", None
     try:
         data = json.loads(body)
     except ValueError:
-        return None
-    return data if isinstance(data, dict) and data.get("ok") else None
+        return "foreign", None
+    if isinstance(data, dict) and data.get("ok"):
+        return "running", data
+    return "foreign", None
 
 
-def stop(where: Address, timeout: float = 2.0) -> bool:
+def health(where: Address, timeout: float = 5.0) -> dict[str, Any] | None:
+    """What a resident gate at *where* says about itself, or ``None``."""
+    return state(where, timeout)[1]
+
+
+def stop(where: Address, timeout: float = 5.0) -> bool:
     """Ask the resident gate at *where* to exit; true when it answered."""
     try:
         status, _ = _request(where, "POST", "/stop", timeout=timeout)
-    except OSError:
+    except (OSError, HTTPException):
         return False
     return status == 200
 
 
+def console() -> str:
+    """``none``, ``hidden`` or ``visible``: the console of this process.
+
+    On Windows a server with a visible console is a window on the owner's
+    screen; anywhere else the answer is ``none``.
+    """
+    if os.name != "nt":
+        return "none"
+    try:
+        import ctypes
+
+        api: Any = getattr(ctypes, "windll")  # noqa: B009 - absent off Windows
+        window = api.kernel32.GetConsoleWindow()
+        if not window:
+            return "none"
+        shown = api.user32.IsWindowVisible(window)
+        return "visible" if shown else "hidden"
+    except Exception:
+        return "none"
+
+
+def interpreter(python: str | None = None) -> str:
+    """The interpreter a detached server runs under.
+
+    On Windows ``pythonw.exe`` beside the given one, where there is one: it
+    has no console, so none can appear.
+    """
+    exe = Path(python or sys.executable)
+    if os.name == "nt":
+        quiet = exe.with_name("pythonw.exe")
+        if quiet.exists():
+            return str(quiet)
+    return str(exe)
+
+
 def spawn(env: Mapping[str, str], python: str | None = None) -> None:
-    """Start a resident gate for the Ember home of *env*, detached."""
-    command = [python or sys.executable, *SERVER_ARGS]
+    """Start a resident gate for the Ember home of *env*, detached, unseen.
+
+    On Windows the process gets no window (``CREATE_NO_WINDOW``, and not
+    ``DETACHED_PROCESS``: without any console, the interpreter a launcher
+    starts opens a visible one of its own).  It is asked to leave the job of
+    the process that starts it, so it does not end with that session; where
+    the job does not allow that, it is started inside it.  What the server
+    writes to standard error is appended to ``resident.err``.
+    """
+    command = [interpreter(python), *SERVER_ARGS]
+    home = ember_home(env)
+    home.mkdir(parents=True, exist_ok=True)
     # The process environment underneath, so the interpreter finds what it
     # needs (SystemRoot on Windows, PATH); the given variables on top.
-    kwargs: dict[str, Any] = {
-        "stdin": subprocess.DEVNULL,
-        "stdout": subprocess.DEVNULL,
-        "stderr": subprocess.DEVNULL,
-        "close_fds": True,
-        "env": {**os.environ, **env},
-    }
-    if os.name == "nt":
-        flags = (
-            subprocess.DETACHED_PROCESS
-            | subprocess.CREATE_NEW_PROCESS_GROUP
-            | subprocess.CREATE_NO_WINDOW
-        )
-        kwargs["creationflags"] = flags
-    else:
-        kwargs["start_new_session"] = True
-    subprocess.Popen(command, **kwargs)  # noqa: S603 - the gate's own interpreter
+    with (home / ERROR_FILE).open("ab") as errors:
+        kwargs: dict[str, Any] = {
+            "stdin": subprocess.DEVNULL,
+            "stdout": subprocess.DEVNULL,
+            "stderr": errors,
+            "close_fds": True,
+            "env": {**os.environ, **env},
+        }
+        if os.name != "nt":
+            subprocess.Popen(command, start_new_session=True, **kwargs)  # noqa: S603
+            return
+        quiet = subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
+        try:
+            flags = quiet | subprocess.CREATE_BREAKAWAY_FROM_JOB
+            subprocess.Popen(command, creationflags=flags, **kwargs)  # noqa: S603
+        except OSError:
+            subprocess.Popen(command, creationflags=quiet, **kwargs)  # noqa: S603
 
 
 def ensure(
@@ -235,23 +403,127 @@ def ensure(
     """See that a resident gate answers for the Ember home of *env*.
 
     Returns ``not configured`` when ``resident.json`` is absent (the
-    command hook is in use), ``running`` when one answers, and ``started``
-    after spawning one.  With *wait*, polls up to that many seconds for the
-    new server to answer and returns ``running`` once it does.
+    command hook is in use), ``running`` when the gate answers, ``started``
+    after spawning one, and ``not answering`` when something holds the port
+    and does not answer as this gate: then nothing is started, because a
+    second server could not bind the port either.  With *wait*, polls up
+    to that many seconds and returns ``running`` once the gate answers.
     """
     given = os.environ if env is None else env
     where = address(given)
     if where is None:
         return "not configured"
-    if health(where) is not None:
+    found = state(where)[0]
+    if found == "running":
         return "running"
-    spawn(given, python)
+    result = "not answering"
+    if found == "down":
+        spawn(given, python)
+        result = "started"
     deadline = time.monotonic() + wait
     while wait and time.monotonic() < deadline:
         time.sleep(0.1)
-        if health(where) is not None:
+        if state(where, timeout=2.0)[0] == "running":
             return "running"
-    return "started"
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Is the gate where the host calls it?
+# ---------------------------------------------------------------------------
+def settings_file(env: Mapping[str, str]) -> Path:
+    """The user settings file of Claude Code."""
+    base = env.get("CLAUDE_CONFIG_DIR")
+    return (Path(base) if base else Path.home() / ".claude") / "settings.json"
+
+
+def configured(settings: Path) -> list[Address]:
+    """The loopback addresses the HTTP hooks of a settings file post to.
+
+    Only hooks to ``http://127.0.0.1:<port>/hook`` count.  A file that is
+    missing or cannot be read holds none.
+    """
+    try:
+        data = json.loads(settings.read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        return []
+    found: list[Address] = []
+    hooks = data.get("hooks") if isinstance(data, dict) else None
+    for groups in (hooks or {}).values() if isinstance(hooks, dict) else ():
+        for group in groups if isinstance(groups, list) else ():
+            entries = group.get("hooks") if isinstance(group, dict) else None
+            for entry in entries if isinstance(entries, list) else ():
+                if not isinstance(entry, dict) or entry.get("type") != "http":
+                    continue
+                url = str(entry.get("url") or "")
+                prefix = f"http://{HOST}:"
+                if not url.startswith(prefix) or not url.endswith("/hook"):
+                    continue
+                port = url[len(prefix) : -len("/hook")]
+                headers = entry.get("headers")
+                token = headers.get(TOKEN_HEADER) if isinstance(headers, dict) else ""
+                if port.isdigit():
+                    found.append(Address(int(port), str(token or "")))
+    return found
+
+
+def check(env: Mapping[str, str], settings: Path | None = None) -> list[str]:
+    """What keeps the gate from checking calls, in plain words; none when fine.
+
+    Looks at three things: the address file, whether the gate answers
+    there, and whether the host's settings post to that address with that
+    token.  Settings without an HTTP hook to the loopback interface are not
+    this module's business (the command hook is in use, or the hook is
+    registered elsewhere).
+    """
+    where = address(env)
+    if where is None:
+        return []
+    problems: list[str] = []
+    found = state(where)[0]
+    if found == "down":
+        problems.append(f"no gate is running on port {where.port}")
+    elif found != "running":
+        problems.append(
+            f"port {where.port} is held by something that does not answer as this gate"
+        )
+    calls = configured(settings or settings_file(env))
+    if calls and where not in calls:
+        ports = sorted({call.port for call in calls})
+        if where.port not in ports:
+            listed = ", ".join(str(port) for port in ports)
+            problems.append(
+                f"the settings post to port {listed}, the gate's address is "
+                f"port {where.port}"
+            )
+        else:
+            problems.append("the settings carry another token than the gate's")
+    return problems
+
+
+def attend(
+    env: Mapping[str, str], *, wait: float = 20.0, settings: Path | None = None
+) -> str:
+    """See to the resident gate at the start of a session.
+
+    Starts the gate when none answers and waits up to *wait* seconds for it
+    (a cold start took seven seconds on a busy machine), then checks that
+    it is where the host calls it.  Returns what the session has to be
+    told, or nothing: a gate that is not checking calls says so, in fixed
+    words, instead of letting the session run unchecked in silence.
+    """
+    if address(env) is None:
+        return ""
+    ensure(env, wait=wait)
+    problems = check(env, settings)
+    if not problems:
+        return ""
+    note(env, "warning: " + "; ".join(problems))
+    return (
+        "EmberArmor gate warning: the gate is NOT checking this session's tool "
+        f"calls ({'; '.join(problems)}). Tell the user now. To repair: "
+        "ember-gate resident ensure, then ember-gate resident check."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -285,26 +557,32 @@ class _Gate(ThreadingHTTPServer):
         self.marker_of = marker_of
         self.started_marker = str(marker_of())
         self.started = time.monotonic()
+        self.started_at = time.strftime("%Y-%m-%dT%H:%M:%S")
         self.last_request = self.started
         self.served = 0
         #: Set when the server leaves for a fresh copy of itself.
         self.replace = False
-        self.lock = threading.Lock()
-        self.log_path = ember_home(env) / LOG_FILE
+        self.state_path = ember_home(env) / STATE_FILE
 
     def note(self, text: str) -> None:
-        """Append a line to ``resident.log``, cutting it back when large."""
-        try:
-            stamp = time.strftime("%Y-%m-%dT%H:%M:%S")
-            with self.lock:
-                if self.log_path.exists() and self.log_path.stat().st_size > _LOG_LIMIT:
-                    lines = self.log_path.read_text(encoding="utf-8").splitlines()
-                    tail = "\n".join(lines[-200:]) + "\n"
-                    self.log_path.write_text(tail, encoding="utf-8")
-                with self.log_path.open("a", encoding="utf-8") as out:
-                    out.write(f"{stamp} {text}\n")
-        except OSError:
-            pass
+        """Append a line to ``resident.log``."""
+        note(self.env, text)
+
+    def beat(self, ended: str = "") -> None:
+        """Record that the server lives, or how it ended, in ``resident.state``.
+
+        The next server reads it: one that ended without a word (killed
+        with the session that started it, say) is then named in the log.
+        """
+        data = {
+            "pid": os.getpid(),
+            "started": self.started_at,
+            "seen": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "served": self.served,
+            "ended": ended,
+        }
+        with contextlib.suppress(OSError):
+            self.state_path.write_text(json.dumps(data), encoding="utf-8")
 
     def stale(self) -> bool:
         """True when the package was reinstalled under the running server."""
@@ -322,6 +600,7 @@ class _Gate(ThreadingHTTPServer):
         port is closed a copy would find it taken.
         """
         self.note(f"exit: {reason}")
+        self.beat(ended=reason)
         self.replace = replace and self.respawn
 
         def go() -> None:
@@ -342,13 +621,15 @@ class _Gate(ThreadingHTTPServer):
         self.note("replace: a fresh copy was started")
 
     def watch(self) -> None:
-        """Exit after ``idle_seconds`` without a request."""
+        """Record that the server lives; exit after ``idle_seconds`` idle."""
         while True:
             time.sleep(min(_WATCH_SECONDS, max(self.idle_seconds / 4, 0.01)))
             if time.monotonic() - self.last_request > self.idle_seconds:
                 self.note("exit: idle")
+                self.beat(ended="idle")
                 self.shutdown()
                 return
+            self.beat()
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -391,6 +672,7 @@ class _Handler(BaseHTTPRequestHandler):
             "marker": gate.started_marker,
             "stale": gate.stale(),
             "pid": os.getpid(),
+            "console": console(),
         }
         self._reply(200, json.dumps(data).encode("utf-8"))
 
@@ -424,6 +706,22 @@ class _Handler(BaseHTTPRequestHandler):
             gate.leave("the installed package changed", replace=True)
 
 
+def _unspoken(env: Mapping[str, str]) -> None:
+    """Name in the log a server that ended without saying so."""
+    path = ember_home(env) / STATE_FILE
+    try:
+        last = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    if isinstance(last, dict) and not last.get("ended"):
+        note(
+            env,
+            f"previous: pid {last.get('pid')} started {last.get('started')} "
+            f"ended without a word, last seen {last.get('seen')}, "
+            f"served {last.get('served')}",
+        )
+
+
 def serve(
     env: Mapping[str, str] | None = None,
     *,
@@ -431,43 +729,51 @@ def serve(
     respawn: bool = True,
     marker_of: Any = marker,
     block: bool = True,
+    patience: float = PATIENCE_SECONDS,
 ) -> _Gate:
     """Run the resident gate for the Ember home of *env*.
 
-    Creates ``resident.json`` when there is none.  When the port in it is
-    taken by a resident gate that answers with the same token, the process
-    exits with status 0, since the work is done; when it is taken by
-    something else, a new free port is chosen and written, and the
-    settings file has to be printed again.  With *block* false the server
-    is returned unstarted, for a thread of the caller's; the idle watchdog
-    runs either way.
+    Creates ``resident.json`` when there is none, and never changes one
+    that exists.  When the port in it cannot be bound, the server waits up
+    to *patience* seconds for whoever holds it: when that is a resident
+    gate answering with the same token, the process exits with status 0,
+    since the work is done; when the port comes free, it is taken; and
+    when it stays held by something that does not answer as this gate, the
+    log says so and the process exits with status 1.  The address stays as
+    it is in every case.  With *block* false the server is returned
+    unstarted, for a thread of the caller's; the watchdog runs either way.
     """
     given = dict(os.environ if env is None else env)
     where = address(given, create=True)
     assert where is not None
     idle = resident_idle(given) if idle_minutes is None else idle_minutes * 60
-    try:
-        gate = _Gate(
-            where, given, idle_seconds=idle, respawn=respawn, marker_of=marker_of
-        )
-    except OSError:
-        if health(where) is not None:
-            raise SystemExit(0) from None  # Another resident gate answers already.
-        path = ember_home(given) / RESIDENT_FILE
-        path.unlink(missing_ok=True)
-        where = address(given, create=True)
-        assert where is not None
-        sys.stderr.write(
-            f"ember-gate: port taken; the resident gate moved to {where.port}. "
-            "Print the settings again: "
-            "ember-gate install claude-code --print --resident\n"
-        )
-        gate = _Gate(
-            where, given, idle_seconds=idle, respawn=respawn, marker_of=marker_of
-        )
+    deadline = time.monotonic() + patience
+    while True:
+        try:
+            gate = _Gate(
+                where, given, idle_seconds=idle, respawn=respawn, marker_of=marker_of
+            )
+            break
+        except OSError as exc:
+            found = state(where, timeout=3.0)[0]
+            if found == "running":
+                raise SystemExit(0) from None  # Another resident gate answers.
+            if time.monotonic() >= deadline:
+                note(
+                    given,
+                    f"not started: port {where.port} cannot be bound ({exc}) and "
+                    f"what holds it does not answer as this gate ({found}). The "
+                    "address is kept. If another program owns the port for "
+                    "good: ember-gate resident move",
+                )
+                raise SystemExit(1) from None
+            time.sleep(0.5)
+    _unspoken(given)
     gate.note(
-        f"start: pid {os.getpid()}, port {where.port}, marker {gate.started_marker}"
+        f"start: pid {os.getpid()}, port {where.port}, console {console()}, "
+        f"marker {gate.started_marker}"
     )
+    gate.beat()
     threading.Thread(target=gate.watch, daemon=True).start()
     if block:
         try:
@@ -478,15 +784,26 @@ def serve(
     return gate
 
 
+def run() -> None:
+    """Entry point of a detached server: a crash is written to the log."""
+    try:
+        serve()
+    except SystemExit:
+        raise
+    except BaseException as exc:
+        note(os.environ, f"crash: {type(exc).__name__}: {exc}")
+        raise
+
+
 def main(argv: list[str]) -> int:
-    """``ember-gate resident start|ensure|stop|status``."""
+    """``ember-gate resident start|ensure|stop|status|check|move``."""
     action = argv[0] if argv else "status"
     env = os.environ
     if action == "start":
         serve(env)
         return 0
     if action == "ensure":
-        print(ensure(env, wait=5.0))
+        print(ensure(env, wait=8.0))
         return 0
     where = address(env)
     if where is None:
@@ -495,12 +812,27 @@ def main(argv: list[str]) -> int:
     if action == "stop":
         print("stopped" if stop(where) else "not running")
         return 0
+    if action == "move":
+        stop(where)
+        moved = move(env)
+        print(
+            f"moved to port {moved.port}. Print the settings again and put them "
+            "in place: ember-gate install claude-code --print --resident"
+        )
+        return 0
+    if action == "check":
+        problems = check(env)
+        for problem in problems:
+            print(f"problem: {problem}")
+        if not problems:
+            print(f"ok: the gate answers on port {where.port}, where the host calls it")
+        return 1 if problems else 0
     if action == "status":
-        state = health(where)
-        if state is None:
-            print(f"not running (port {where.port})")
+        found, data = state(where)
+        if data is None:
+            print(f"not running (port {where.port}: {found})")
             return 1
-        print(json.dumps({"port": where.port, **state}, indent=2))
+        print(json.dumps({"port": where.port, **data}, indent=2))
         return 0
     print(f"ember-gate resident: unknown action {action!r}", file=sys.stderr)
     return 2

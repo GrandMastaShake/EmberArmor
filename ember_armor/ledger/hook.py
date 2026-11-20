@@ -216,14 +216,34 @@ def respond(
     return output, f"gate failure: {error}" if error else ""
 
 
-def _ensure_resident() -> None:
-    """At the start of a session, see that the resident gate answers, if used."""
-    try:
-        from ember_armor.ledger.resident import ensure
+def _attend_resident() -> str:
+    """At the start of a session, see to the resident gate, if it is used.
 
-        ensure(os.environ)
+    Returns what the session has to be told when the gate is not checking
+    its calls (see :func:`ember_armor.ledger.resident.attend`), else nothing.
+    """
+    try:
+        from ember_armor.ledger.resident import attend
+
+        return attend(os.environ)
     except Exception as exc:
-        sys.stderr.write(f"ember-gate: resident gate: {type(exc).__name__}: {exc}\n")
+        return (
+            "EmberArmor gate warning: the resident gate could not be seen to "
+            f"({type(exc).__name__}: {exc}). Tool calls may be unchecked. "
+            "Tell the user."
+        )
+
+
+def _with_warning(output: str, warning: str) -> str:
+    """The session-start output with *warning* in front of what it says."""
+    said = ""
+    if output:
+        try:
+            said = json.loads(output)["hookSpecificOutput"]["additionalContext"]
+        except (ValueError, KeyError, TypeError):
+            said = ""
+    text = f"{warning}\n\n{said}" if said else warning
+    return _context_object("SessionStart", text)
 
 
 def main(argv: Sequence[str] = ()) -> int:
@@ -234,7 +254,11 @@ def main(argv: Sequence[str] = ()) -> int:
         raw = None
     output, error = respond(argv, raw)
     if _event(argv)[0] == SESSION_START:
-        _ensure_resident()
+        warning = _attend_resident()
+        if warning:
+            # Said in every mode: a gate that checks nothing is not observing.
+            sys.stderr.write(f"ember-gate: {warning}\n")
+            output = _with_warning(output, warning)
     if error:
         sys.stderr.write(f"ember-gate: {error}\n")
     if output:

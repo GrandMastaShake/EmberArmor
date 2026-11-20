@@ -46,8 +46,10 @@ _SETTINGS = (
     "announce_on",
     "resident_idle_minutes",
 )
-#: Minutes a resident gate waits for a request before it exits.
-RESIDENT_IDLE_MINUTES = 480.0
+#: Minutes a resident gate waits for a request before it exits; 0 is never,
+#: and the default: a gate that left while a session slept is not there
+#: when the session wakes, and nothing tells it so.
+RESIDENT_IDLE_MINUTES = 0.0
 _EXPECTED_MODES = "expected observe, remind or enforce"
 _SHELL_TOOL_KEYS = ("shell", "field", "cwd")
 _FALSE_WORDS = frozenset({"0", "false", "no", "off"})
@@ -218,8 +220,8 @@ def remind_interval(env: Mapping[str, str]) -> float:
 def resident_idle(env: Mapping[str, str]) -> float:
     """Seconds a resident gate waits for a request before it exits.
 
-    ``resident_idle_minutes`` in ``config.json``, else eight hours.  Zero
-    means never.
+    ``resident_idle_minutes`` in ``config.json``.  Zero, the default, means
+    never.
 
     Raises
     ------

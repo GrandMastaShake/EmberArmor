@@ -756,8 +756,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_resident.add_argument(
         "action",
-        choices=("start", "ensure", "stop", "status"),
-        help="start runs it here; ensure starts it detached if none answers",
+        choices=("start", "ensure", "stop", "status", "check", "move"),
+        help="start runs it here; ensure starts it detached if none answers; "
+        "check says whether it answers where the host calls it; move gives it "
+        "a new port (print the settings again afterwards)",
     )
     p_resident.set_defaults(func=_cmd_resident)
 

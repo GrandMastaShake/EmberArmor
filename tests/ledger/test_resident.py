@@ -21,14 +21,21 @@ from typing import Any
 
 import pytest
 
-from ember_armor.ledger import cli, hook
+from ember_armor.ledger import cli, hook, resident
+from ember_armor.ledger.config import resident_idle
 from ember_armor.ledger.resident import (
+    PORT_RANGE,
     TOKEN_HEADER,
     Address,
     address,
+    attend,
+    check,
+    configured,
     ensure,
     health,
+    move,
     serve,
+    state,
     stop,
 )
 from tests.ledger.helpers import make_call, rule, write_ledger
@@ -309,10 +316,13 @@ def test_the_session_start_hook_sees_to_the_resident_gate(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    from ember_armor.ledger import resident
-
     seen: list[str] = []
-    monkeypatch.setattr(resident, "ensure", lambda env: seen.append(env["EMBER_HOME"]))
+
+    def attended(env: Any) -> str:
+        seen.append(env["EMBER_HOME"])
+        return ""
+
+    monkeypatch.setattr(resident, "attend", attended)
     monkeypatch.setattr(sys, "stdin", io.TextIOWrapper(io.BytesIO(START)))
     assert hook.main(["--event", "session-start"]) == 0
     assert seen == [cli_env["EMBER_HOME"]]
@@ -335,3 +345,323 @@ def test_respond_is_what_main_prints(
     assert capsys.readouterr().out == output + "\n"
     output, error = hook.respond((), None, home_env)
     assert output == "" and "standard input could not be read" in error
+
+
+# ---------------------------------------------------------------------------
+# The address never moves by itself (the outage of 2026-10-28 to 2026-11-20)
+# ---------------------------------------------------------------------------
+def held(port: int, *, answer: bytes | None = None) -> Any:
+    """Something that is not the gate, listening on *port*.
+
+    It accepts connections and, with *answer*, sends that; without, it
+    says nothing, like a gate too busy to answer in time.
+    """
+    import socket
+
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener.bind(("127.0.0.1", port))
+    listener.listen(8)
+    kept: list[Any] = []
+
+    def accept() -> None:
+        while True:
+            try:
+                connection, _ = listener.accept()
+            except OSError:
+                return
+            kept.append(connection)
+            if answer is not None:
+                connection.recv(4096)
+                connection.sendall(answer)
+                connection.close()
+
+    threading.Thread(target=accept, daemon=True).start()
+    return listener
+
+
+NOT_FOUND = b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n"
+
+
+def log_of(env: dict[str, str]) -> str:
+    path = Path(env["EMBER_HOME"]) / "resident.log"
+    return path.read_text(encoding="utf-8") if path.exists() else ""
+
+
+def test_ports_come_from_below_the_range_systems_hand_out(
+    home_env: dict[str, str],
+) -> None:
+    where = address(home_env, create=True)
+    assert where is not None
+    assert PORT_RANGE[0] <= where.port < PORT_RANGE[1] <= 32768
+
+
+def test_state_tells_down_running_foreign_and_busy(
+    gate: Any, home_env: dict[str, str]
+) -> None:
+    assert state(gate.where)[0] == "running"
+    assert state(Address(gate.where.port, "another token"))[0] == "foreign"
+    free = resident.free_port()
+    assert state(Address(free, "t"), timeout=3.0) == ("down", None)
+    silent = held(free)
+    try:
+        assert state(Address(free, "t"), timeout=0.5) == ("busy", None)
+    finally:
+        silent.close()
+    other = resident.free_port()
+    talking = held(other, answer=NOT_FOUND)
+    try:
+        assert state(Address(other, "t"), timeout=3.0) == ("foreign", None)
+    finally:
+        talking.close()
+
+
+def test_a_server_that_cannot_bind_keeps_the_address_and_says_so(
+    home_env: dict[str, str],
+) -> None:
+    where = address(home_env, create=True)
+    assert where is not None
+    squatter = held(where.port, answer=NOT_FOUND)
+    try:
+        with pytest.raises(SystemExit) as stopped:
+            serve(home_env, idle_minutes=60, respawn=False, block=False, patience=1.0)
+    finally:
+        squatter.close()
+    assert stopped.value.code == 1
+    assert address(home_env) == where  # the outage: this used to be a new port
+    log = log_of(home_env)
+    assert f"not started: port {where.port} cannot be bound" in log
+    assert "ember-gate resident move" in log
+
+
+def test_a_slow_gate_is_not_taken_for_an_absent_one(
+    home_env: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    where = address(home_env, create=True)
+    assert where is not None
+    started: list[Any] = []
+    monkeypatch.setattr(resident, "spawn", lambda env, python=None: started.append(1))
+    monkeypatch.setattr(resident, "state", lambda where, timeout=5.0: ("busy", None))
+    assert ensure(home_env) == "not answering"
+    assert started == []  # no second server, and so no fight over the port
+    monkeypatch.setattr(resident, "state", lambda where, timeout=5.0: ("down", None))
+    assert ensure(home_env) == "started"
+    assert started == [1]
+    assert address(home_env) == where
+
+
+def test_a_server_waits_for_its_port_to_come_free(home_env: dict[str, str]) -> None:
+    where = address(home_env, create=True)
+    assert where is not None
+    squatter = held(where.port, answer=NOT_FOUND)
+    threading.Timer(0.8, squatter.close).start()
+    server = serve(home_env, idle_minutes=60, respawn=False, block=False, patience=10)
+    thread = run(server)
+    try:
+        assert server.where == where
+        assert state(where)[0] == "running"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def test_the_address_file_is_never_overwritten(home_env: dict[str, str]) -> None:
+    first = address(home_env, create=True)
+    assert first is not None
+    path = Path(home_env["EMBER_HOME"]) / "resident.json"
+    assert resident._write(path, Address(1, "x"), replace=False) is False
+    assert address(home_env) == first
+    assert [p.name for p in path.parent.iterdir() if "resident.json" in p.name] == [
+        "resident.json"
+    ]
+
+
+def test_only_the_owners_command_moves_the_address(home_env: dict[str, str]) -> None:
+    first = address(home_env, create=True)
+    assert first is not None
+    moved = move(home_env)
+    assert moved.token == first.token
+    assert moved.port != first.port
+    assert address(home_env) == moved
+    assert f"moved: port {first.port} to port {moved.port}" in log_of(home_env)
+    with pytest.raises(ValueError, match="no resident address"):
+        move({**home_env, "EMBER_HOME": home_env["EMBER_HOME"] + "-other"})
+
+
+def test_the_gate_stays_up_unless_told_an_idle_period(
+    home_env: dict[str, str],
+) -> None:
+    assert resident_idle(home_env) == float("inf")
+    home = Path(home_env["EMBER_HOME"])
+    home.mkdir(parents=True, exist_ok=True)
+    (home / "config.json").write_text('{"resident_idle_minutes": 3}', encoding="utf-8")
+    assert resident_idle(home_env) == 180.0
+
+
+# ---------------------------------------------------------------------------
+# A gate that is not checking calls says so
+# ---------------------------------------------------------------------------
+def settings_with(tmp_path: Path, *hooks: dict[str, Any]) -> Path:
+    path = tmp_path / "claude" / "settings.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    data = {"hooks": {"PreToolUse": [{"matcher": "*", "hooks": list(hooks)}]}}
+    path.write_text(json.dumps(data), encoding="utf-8")
+    return path
+
+
+def http_hook(where: Address) -> dict[str, Any]:
+    return {
+        "type": "http",
+        "url": f"{where.url}/hook",
+        "headers": {TOKEN_HEADER: where.token},
+    }
+
+
+def test_configured_reads_the_loopback_http_hooks(tmp_path: Path) -> None:
+    where = Address(21000, "abc")
+    path = settings_with(
+        tmp_path,
+        http_hook(where),
+        {"type": "command", "command": "python"},
+        {"type": "http", "url": "https://example.com/hook"},
+        {"type": "http", "url": "http://127.0.0.1:x/hook"},
+    )
+    assert configured(path) == [where]
+    assert configured(tmp_path / "nowhere.json") == []
+    path.write_text("{not json", encoding="utf-8")
+    assert configured(path) == []
+
+
+def test_check_is_quiet_when_the_gate_is_where_the_host_calls_it(
+    gate: Any, home_env: dict[str, str], tmp_path: Path
+) -> None:
+    assert check(home_env, settings_with(tmp_path, http_hook(gate.where))) == []
+    command_only = settings_with(tmp_path, {"type": "command", "command": "python"})
+    assert check(home_env, command_only) == []  # not this module's business
+    assert (
+        attend(home_env, settings=settings_with(tmp_path, http_hook(gate.where))) == ""
+    )
+
+
+def test_check_names_a_port_or_token_the_settings_got_wrong(
+    gate: Any, home_env: dict[str, str], tmp_path: Path
+) -> None:
+    elsewhere = Address(gate.where.port + 1, gate.where.token)
+    [problem] = check(home_env, settings_with(tmp_path, http_hook(elsewhere)))
+    assert problem == (
+        f"the settings post to port {elsewhere.port}, the gate's address is "
+        f"port {gate.where.port}"
+    )
+    stale = Address(gate.where.port, "an older token")
+    assert check(home_env, settings_with(tmp_path, http_hook(stale))) == [
+        "the settings carry another token than the gate's"
+    ]
+
+
+def test_attend_warns_the_session_in_fixed_words(
+    gate: Any, home_env: dict[str, str], tmp_path: Path
+) -> None:
+    elsewhere = Address(gate.where.port + 1, gate.where.token)
+    said = attend(home_env, settings=settings_with(tmp_path, http_hook(elsewhere)))
+    assert said.startswith(
+        "EmberArmor gate warning: the gate is NOT checking this session's tool calls"
+    )
+    assert f"the settings post to port {elsewhere.port}" in said
+    assert "Tell the user now." in said
+    assert "warning: the settings post to port" in log_of(home_env)
+
+
+def test_attend_says_nothing_when_the_resident_gate_is_not_in_use(
+    home_env: dict[str, str], tmp_path: Path
+) -> None:
+    assert attend(home_env, settings=tmp_path / "nowhere.json") == ""
+    assert not (Path(home_env["EMBER_HOME"]) / "resident.json").exists()
+
+
+def test_check_names_a_gate_that_is_down(
+    home_env: dict[str, str], tmp_path: Path
+) -> None:
+    where = address(home_env, create=True)
+    assert where is not None
+    assert check(home_env, tmp_path / "nowhere.json") == [
+        f"no gate is running on port {where.port}"
+    ]
+
+
+def test_the_session_start_hook_prints_the_warning_in_front(
+    cli_env: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(resident, "attend", lambda env: "EmberArmor gate warning: X.")
+    monkeypatch.setattr(sys, "stdin", io.TextIOWrapper(io.BytesIO(START)))
+    assert hook.main(["--event", "session-start"]) == 0
+    captured = capsys.readouterr()
+    context = json.loads(captured.out)["hookSpecificOutput"]
+    assert context["hookEventName"] == "SessionStart"
+    assert context["additionalContext"].startswith("EmberArmor gate warning: X.")
+    assert "EmberArmor gate warning: X." in captured.err
+
+
+def test_a_failure_to_attend_is_itself_a_warning(
+    cli_env: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def broken(env: Any) -> str:
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(resident, "attend", broken)
+    monkeypatch.setattr(sys, "stdin", io.TextIOWrapper(io.BytesIO(START)))
+    assert hook.main(["--event", "session-start"]) == 0
+    assert "could not be seen to (RuntimeError: boom)" in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------------------
+# What a server leaves behind
+# ---------------------------------------------------------------------------
+def test_a_server_that_ended_without_a_word_is_named_by_the_next(
+    home_env: dict[str, str],
+) -> None:
+    first = serve(home_env, idle_minutes=60, respawn=False, block=False)
+    first.server_close()  # gone, as if killed: no exit line, no ended state
+    second = serve(home_env, idle_minutes=60, respawn=False, block=False)
+    second.server_close()
+    log = log_of(home_env)
+    assert f"previous: pid {os.getpid()} started" in log
+    assert "ended without a word" in log
+    thread = run(third := serve(home_env, idle_minutes=60, respawn=False, block=False))
+    assert stop(third.where)
+    thread.join(timeout=5)
+    third.server_close()
+    fourth = serve(home_env, idle_minutes=60, respawn=False, block=False)
+    fourth.server_close()
+    assert log_of(home_env).count("ended without a word") == 2  # not a third time
+
+
+def test_a_started_server_has_no_window(home_env: dict[str, str]) -> None:
+    where = address(home_env, create=True)
+    assert where is not None
+    assert ensure(home_env, wait=20.0) == "running"
+    try:
+        said = health(where)
+        assert said is not None
+        assert said["console"] in ("none", "hidden")
+        assert "console " + said["console"] in log_of(home_env)
+    finally:
+        stop(where)
+
+
+def test_check_and_move_from_the_command_line(
+    cli_env: dict[str, str], capsys: pytest.CaptureFixture[str]
+) -> None:
+    where = address(cli_env, create=True)
+    assert where is not None
+    assert cli.main(["resident", "check"]) == 1
+    assert (
+        f"problem: no gate is running on port {where.port}" in capsys.readouterr().out
+    )
+    assert cli.main(["resident", "move"]) == 0
+    assert "Print the settings again" in capsys.readouterr().out
+    moved = address(cli_env)
+    assert moved is not None and moved.token == where.token and moved.port != where.port

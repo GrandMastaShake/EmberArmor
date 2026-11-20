@@ -8,6 +8,7 @@ nothing executes them.
 
 from __future__ import annotations
 
+import contextlib
 import io
 import json
 import os
@@ -379,6 +380,20 @@ def held(port: int, *, answer: bytes | None = None) -> Any:
     return listener
 
 
+def let_go(listener: Any) -> None:
+    """Close *listener* so that its port is free.
+
+    On Linux a thread blocked in ``accept`` keeps a closed socket listening
+    until the call returns; shutting it down first wakes the thread.  On
+    Windows a listening socket cannot be shut down, and closing is enough.
+    """
+    import socket
+
+    with contextlib.suppress(OSError):
+        listener.shutdown(socket.SHUT_RDWR)
+    listener.close()
+
+
 NOT_FOUND = b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n"
 
 
@@ -406,13 +421,13 @@ def test_state_tells_down_running_foreign_and_busy(
     try:
         assert state(Address(free, "t"), timeout=0.5) == ("busy", None)
     finally:
-        silent.close()
+        let_go(silent)
     other = resident.free_port()
     talking = held(other, answer=NOT_FOUND)
     try:
         assert state(Address(other, "t"), timeout=3.0) == ("foreign", None)
     finally:
-        talking.close()
+        let_go(talking)
 
 
 def test_a_server_that_cannot_bind_keeps_the_address_and_says_so(
@@ -425,7 +440,7 @@ def test_a_server_that_cannot_bind_keeps_the_address_and_says_so(
         with pytest.raises(SystemExit) as stopped:
             serve(home_env, idle_minutes=60, respawn=False, block=False, patience=1.0)
     finally:
-        squatter.close()
+        let_go(squatter)
     assert stopped.value.code == 1
     assert address(home_env) == where  # the outage: this used to be a new port
     log = log_of(home_env)
@@ -453,7 +468,7 @@ def test_a_server_waits_for_its_port_to_come_free(home_env: dict[str, str]) -> N
     where = address(home_env, create=True)
     assert where is not None
     squatter = held(where.port, answer=NOT_FOUND)
-    threading.Timer(0.8, squatter.close).start()
+    threading.Timer(0.8, let_go, [squatter]).start()
     server = serve(home_env, idle_minutes=60, respawn=False, block=False, patience=10)
     thread = run(server)
     try:

@@ -360,6 +360,12 @@ def held(port: int, *, answer: bytes | None = None) -> Any:
     import socket
 
     listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    if os.name != "nt":
+        # As the gate does.  The connections this listener closes stay in
+        # TIME_WAIT on its port, and on Linux a later bind with SO_REUSEADDR
+        # passes them only when they were made with it too: without it here,
+        # the gate could not take the port for a minute after it came free.
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     listener.bind(("127.0.0.1", port))
     listener.listen(8)
     kept: list[Any] = []

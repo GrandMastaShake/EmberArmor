@@ -302,6 +302,22 @@ The full list is in [docs/constraint-ledger.md](docs/constraint-ledger.md). The 
 - A gate that is not running reminds of nothing. What the HTTP hook does when no server answers is the host's decision, and by default the call proceeds; the resident gate exits after eight idle hours (`resident_idle_minutes` in `config.json`, 0 for never). Until the next session start restarts it, every call passes with no reminder, and nothing but `resident.log` says so. `"onFailure": "block"` on the hook turns a gate that does not answer into a blocked call instead.
 - Nothing here has been measured on a public benchmark.
 
+## Security graph
+
+[docs/security-graph/SECURITY_GRAPH.md](docs/security-graph/SECURITY_GRAPH.md) maps every rule to what it watches (programs, path operations, shell signals), to the tools it can fire on, and to its proof: the must-flag corpus cases the gate really flags with it, the must-not-flag cases that run the same program and subcommand, and the test files that name it. It then lists the gaps, such as tools no rule looks at and rules with no PowerShell case. `security_graph.json` beside it holds the same graph as nodes and edges.
+
+Rebuild it after changing a rule or the corpus (it takes about two seconds and runs nothing):
+
+```bash
+python tools/security_graph/build_security_graph.py
+```
+
+`tests/ledger/test_security_graph.py` fails when the committed graph no longer matches, so CI catches a stale graph without a workflow that writes to the repository. To graph your own rules beside the built-in pack, name your ledger and a directory outside the repository:
+
+```bash
+python tools/security_graph/build_security_graph.py --ledger ~/.ember/ledger.json --out ~/ember-graph
+```
+
 ## Known issues
 
 - One detector regex backtracks badly on crafted input: about 0.7 to 0.9 s for 2,400 characters and 6 to 8 s for 4,800 on this machine, roughly eightfold each time the length doubles. It runs inside the event loop, so the server answers nothing else in the meantime; a `GET /ready` sent during the 4,800-character request waited more than 5 s.

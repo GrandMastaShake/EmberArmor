@@ -416,6 +416,8 @@ class AuditLog:
         """Recompute the chain over every file and report what does not fit."""
         problems: list[str] = []
         expected = GENESIS
+        #: What the line before the last one had to link to.
+        before: str | None = None
         count = 0
         for path in self.files():
             with path.open("rb") as handle:
@@ -431,9 +433,20 @@ class AuditLog:
                     else:
                         entry = json.loads(line)
                         if entry.get("prev") != expected:
-                            problems.append(f"{where}: chain broken (prev mismatch)")
+                            problem = f"{where}: chain broken (prev mismatch)"
+                            if before is not None and entry.get("prev") == before:
+                                # What :meth:`_link` leaves on purpose.
+                                problem += (
+                                    ": it links to the entry two lines up, as "
+                                    "an append does after one that was cut "
+                                    "short before the head was written (its "
+                                    "writer was killed); the line between is "
+                                    "kept"
+                                )
+                            problems.append(problem)
                         if entry_hash(entry) != stored:
                             problems.append(f"{where}: entry modified (hash mismatch)")
+                    before = expected
                     expected = _link_after(line)
         head = self._head()
         if head is not None and head != expected:

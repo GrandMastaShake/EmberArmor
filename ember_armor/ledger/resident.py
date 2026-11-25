@@ -148,13 +148,20 @@ def _read(path: Path) -> Address:
     return Address(port, token)
 
 
-def _write(path: Path, where: Address, *, replace: bool) -> bool:
-    """Write the address whole or not at all; false when one is there already."""
+def _write(path: Path, where: Address, *, replace: bool, python: str = "") -> bool:
+    """Write the address whole or not at all; false when one is there already.
+
+    *python* is the interpreter of the installation the gate of this home
+    runs from (see :func:`owner`); empty when none is named.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     draft = path.with_name(f"{path.name}.{os.getpid()}.{secrets.token_hex(4)}")
     handle = os.open(draft, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    data: dict[str, Any] = {"port": where.port, "token": where.token}
+    if python:
+        data["python"] = python
     with os.fdopen(handle, "w", encoding="utf-8") as out:
-        json.dump({"port": where.port, "token": where.token}, out)
+        json.dump(data, out)
     try:
         if replace:
             os.replace(draft, path)
@@ -185,9 +192,76 @@ def address(env: Mapping[str, str], *, create: bool = False) -> Address | None:
     if not create:
         return None
     found = Address(free_port(), secrets.token_hex(16))
-    if _write(path, found, replace=False):
+    if _write(path, found, replace=False, python=sys.executable):
         return found
     return _read(path)
+
+
+def owner(env: Mapping[str, str]) -> str:
+    """The interpreter of the installation this home's gate runs from.
+
+    ``resident.json`` names it since the address is written with it: the
+    installation that created the address, or the one the owner named with
+    ``ember-gate resident own``.  Empty when the file is missing, cannot be
+    read, or was written before installations were named: then any
+    installation may start the gate, as before.
+
+    Why it is there: every ``ember-gate`` on the machine reads the same
+    home.  Without a named installation, a development checkout whose
+    ``ember-gate resident ensure`` found the gate down started it from its
+    own working tree, and that server then answered every call, with
+    whatever code the checkout held, for as long as it lived.
+    """
+    try:
+        data = json.loads((ember_home(env) / RESIDENT_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ""
+    named = data.get("python") if isinstance(data, dict) else None
+    return named if isinstance(named, str) else ""
+
+
+def same_installation(one: str, other: str) -> bool:
+    """True when two interpreters are of one installation.
+
+    Compared by the directory they are in: ``python.exe`` and
+    ``pythonw.exe`` of one environment are one installation, and so is an
+    interpreter under another spelling of the same path.
+    """
+    if not one or not other:
+        return False
+
+    def folder(path: str) -> str:
+        return os.path.normcase(os.path.abspath(os.path.dirname(path)))
+
+    return folder(one) == folder(other)
+
+
+def own(env: Mapping[str, str], python: str | None = None) -> str:
+    """Name this installation as the one the home's gate runs from.
+
+    The owner's decision, for a home whose address was written before
+    installations were named, or after the gate was installed somewhere
+    else.  Port and token stay.  Returns the interpreter named.
+
+    Raises
+    ------
+    ValueError
+        If there is no address to name an installation for.
+    """
+    where = address(env)
+    if where is None:
+        raise ValueError("there is no resident address to name an installation for")
+    named = python or sys.executable
+    before = owner(env)
+    _write(ember_home(env) / RESIDENT_FILE, where, replace=True, python=named)
+    if not same_installation(before, named):
+        note(
+            env,
+            f"owned: the gate of this home runs from {named}"
+            + (f" (before: {before})" if before else "")
+            + ", by the owner's command",
+        )
+    return named
 
 
 def move(env: Mapping[str, str]) -> Address:
@@ -205,7 +279,7 @@ def move(env: Mapping[str, str]) -> Address:
     if old is None:
         raise ValueError("there is no resident address to move")
     found = Address(free_port(), old.token)
-    _write(ember_home(env) / RESIDENT_FILE, found, replace=True)
+    _write(ember_home(env) / RESIDENT_FILE, found, replace=True, python=owner(env))
     note(env, f"moved: port {old.port} to port {found.port}, by the owner's command")
     return found
 
@@ -369,8 +443,22 @@ def spawn(env: Mapping[str, str], python: str | None = None) -> None:
     the process that starts it, so it does not end with that session; where
     the job does not allow that, it is started inside it.  What the server
     writes to standard error is appended to ``resident.err``.
+
+    The server runs under the interpreter the home names (:func:`owner`),
+    whichever installation asks for it; under this process's interpreter
+    only when the home names none.
+
+    Raises
+    ------
+    OSError
+        If the home names an interpreter that is not there any more.
     """
-    command = [interpreter(python), *SERVER_ARGS]
+    named = python or owner(env)
+    if named and not Path(named).exists():
+        raise FileNotFoundError(
+            f"the installation this home's gate runs from is gone: {named}"
+        )
+    command = [interpreter(named or None), *SERVER_ARGS]
     home = ember_home(env)
     home.mkdir(parents=True, exist_ok=True)
     # The process environment underneath, so the interpreter finds what it
@@ -408,17 +496,37 @@ def ensure(
     and does not answer as this gate: then nothing is started, because a
     second server could not bind the port either.  With *wait*, polls up
     to that many seconds and returns ``running`` once the gate answers.
+
+    A gate that answers from another installation than the one the home
+    names (:func:`owner`) is asked to stop, and the home's own is started
+    in its place.  When the home's installation is gone, nothing is
+    started and the answer is ``not answering``: :func:`check` says why.
     """
     given = os.environ if env is None else env
     where = address(given)
     if where is None:
         return "not configured"
-    found = state(where)[0]
-    if found == "running":
+    found, said = state(where)
+    if found == "running" and not _stranger(given, said):
         return "running"
+    if found == "running":
+        note(
+            given,
+            f"replace: the gate on port {where.port} runs from "
+            f"{(said or {}).get('python')}, this home's runs from {owner(given)}",
+        )
+        stop(where)
+        gone = time.monotonic() + 5.0
+        while found != "down" and time.monotonic() < gone:
+            time.sleep(0.1)
+            found = state(where, timeout=2.0)[0]
     result = "not answering"
     if found == "down":
-        spawn(given, python)
+        try:
+            spawn(given, python)
+        except OSError as exc:
+            note(given, f"not started: {exc}")
+            return result
         result = "started"
     deadline = time.monotonic() + wait
     while wait and time.monotonic() < deadline:
@@ -426,6 +534,19 @@ def ensure(
         if state(where, timeout=2.0)[0] == "running":
             return "running"
     return result
+
+
+def _stranger(env: Mapping[str, str], said: Mapping[str, Any] | None) -> bool:
+    """True when a gate that answered runs from another installation.
+
+    Never true while the home names no installation.  A gate that does not
+    say where it runs from (one started before gates said so) counts as a
+    stranger once the home names one.
+    """
+    named = owner(env)
+    if not named:
+        return False
+    return not same_installation(named, str((said or {}).get("python") or ""))
 
 
 # ---------------------------------------------------------------------------
@@ -480,12 +601,25 @@ def check(env: Mapping[str, str], settings: Path | None = None) -> list[str]:
     if where is None:
         return []
     problems: list[str] = []
-    found = state(where)[0]
+    found, said = state(where)
+    named = owner(env)
     if found == "down":
         problems.append(f"no gate is running on port {where.port}")
     elif found != "running":
         problems.append(
             f"port {where.port} is held by something that does not answer as this gate"
+        )
+    elif _stranger(env, said):
+        problems.append(
+            f"the gate on port {where.port} runs from "
+            f"{(said or {}).get('python') or 'an installation it does not name'}, "
+            f"not from this home's installation ({named}): its code is not the "
+            "installed gate's"
+        )
+    if named and not Path(named).exists():
+        problems.append(
+            f"the installation this home's gate runs from is gone ({named}); "
+            "from the installation that should run it: ember-gate resident own"
         )
     calls = configured(settings or settings_file(env))
     if calls and where not in calls:
@@ -673,6 +807,7 @@ class _Handler(BaseHTTPRequestHandler):
             "stale": gate.stale(),
             "pid": os.getpid(),
             "console": console(),
+            "python": sys.executable,
         }
         self._reply(200, json.dumps(data).encode("utf-8"))
 
@@ -746,6 +881,17 @@ def serve(
     given = dict(os.environ if env is None else env)
     where = address(given, create=True)
     assert where is not None
+    named = owner(given)
+    if named and not same_installation(named, sys.executable):
+        # Not this installation's home to serve: its code is not the code
+        # the owner installed as the gate.
+        note(
+            given,
+            f"not started: this home's gate runs from {named}; this process "
+            f"runs from {sys.executable}. To make this installation the "
+            "home's: ember-gate resident own",
+        )
+        raise SystemExit(1)
     idle = resident_idle(given) if idle_minutes is None else idle_minutes * 60
     deadline = time.monotonic() + patience
     while True:
@@ -796,7 +942,7 @@ def run() -> None:
 
 
 def main(argv: list[str]) -> int:
-    """``ember-gate resident start|ensure|stop|status|check|move``."""
+    """``ember-gate resident start|ensure|stop|status|check|move|own``."""
     action = argv[0] if argv else "status"
     env = os.environ
     if action == "start":
@@ -818,6 +964,13 @@ def main(argv: list[str]) -> int:
         print(
             f"moved to port {moved.port}. Print the settings again and put them "
             "in place: ember-gate install claude-code --print --resident"
+        )
+        return 0
+    if action == "own":
+        named = own(env)
+        print(
+            f"this home's gate now runs from {named}. Start it from there: "
+            "ember-gate resident ensure"
         )
         return 0
     if action == "check":

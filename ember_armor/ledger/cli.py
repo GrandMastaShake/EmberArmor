@@ -529,14 +529,17 @@ def resident_settings(env: Mapping[str, str]) -> dict[str, Any]:
     gate and reads the same JSON a command hook would print.  SessionStart
     stays a command hook; it prints the summary and starts the resident gate
     when none answers.  The address is read from ``resident.json`` in the
-    Ember home, written here if missing.  Set ``onFailure`` to ``block`` in
-    ``enforce`` mode, so a gate that does not answer blocks rather than
-    passes.
+    Ember home, written here if missing.  The file also names the
+    installation the gate runs from: this one, when it is written here or
+    names none yet.  Set ``onFailure`` to ``block`` in ``enforce`` mode, so
+    a gate that does not answer blocks rather than passes.
     """
-    from ember_armor.ledger.resident import TOKEN_HEADER, address
+    from ember_armor.ledger.resident import TOKEN_HEADER, address, own, owner
 
     where = address(env, create=True)
     assert where is not None
+    if not owner(env):
+        own(env)
     python = Path(sys.executable).as_posix()
     check_call = {
         "type": "http",
@@ -756,10 +759,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_resident.add_argument(
         "action",
-        choices=("start", "ensure", "stop", "status", "check", "move"),
+        choices=("start", "ensure", "stop", "status", "check", "move", "own"),
         help="start runs it here; ensure starts it detached if none answers; "
         "check says whether it answers where the host calls it; move gives it "
-        "a new port (print the settings again afterwards)",
+        "a new port (print the settings again afterwards); own names this "
+        "installation as the one the gate of this home runs from",
     )
     p_resident.set_defaults(func=_cmd_resident)
 

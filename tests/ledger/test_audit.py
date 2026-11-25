@@ -102,6 +102,32 @@ def test_deleting_an_entry_is_detected(tmp_path: Path) -> None:
     assert result.problems == ("2026-10.jsonl:2: chain broken (prev mismatch)",)
 
 
+def test_an_append_cut_short_is_named_for_what_it_is(tmp_path: Path) -> None:
+    """A writer killed between the line and the head leaves a visible gap.
+
+    The next entry links to the head, two lines up.  The gap stays a
+    problem, and the report says which kind: it is what the log does on
+    purpose, not an entry that was removed or put in.
+    """
+    log, path = _log_with(tmp_path, 2)
+    first = json.loads(lines(path)[0])["hash"]
+    (tmp_path / "head").write_text(first + "\n", encoding="ascii")
+    for marker in tmp_path.glob(".last.*"):
+        marker.unlink()
+    third = log.append(record(2), OCTOBER)
+    assert third["prev"] == first
+    log.append(record(3), OCTOBER)
+
+    result = log.verify()
+    assert result.entries == 4
+    [problem] = result.problems
+    assert problem.startswith(
+        "2026-10.jsonl:3: chain broken (prev mismatch): it links to the entry "
+        "two lines up"
+    )
+    assert "cut short" in problem and "the line between is kept" in problem
+
+
 def test_reordering_entries_is_detected(tmp_path: Path) -> None:
     log, path = _log_with(tmp_path, 3)
     rows = lines(path)

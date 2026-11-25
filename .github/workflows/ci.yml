@@ -29,7 +29,7 @@ jobs:
         run: python -m pip install -e ".[dev]"
 
       - name: Lint (constraint ledger)
-        run: ruff check ember_armor/ledger tests/ledger ember_armor/api/routes/ledger.py
+        run: ruff check ember_armor/ledger tests/ledger ember_armor/api/routes/ledger.py tools/security_graph
 
       - name: Test
         run: python -m pytest

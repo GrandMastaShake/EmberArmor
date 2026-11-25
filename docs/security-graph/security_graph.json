@@ -1,0 +1,5085 @@
+{
+ "edges": [
+  {
+   "from": "area:delete",
+   "kind": "contains",
+   "to": "rule:builtin.delete.protected"
+  },
+  {
+   "from": "rule:builtin.delete.protected",
+   "kind": "watches",
+   "to": "path:delete"
+  },
+  {
+   "from": "rule:builtin.delete.protected",
+   "kind": "reaches",
+   "to": "tool:Bash"
+  },
+  {
+   "from": "rule:builtin.delete.protected",
+   "kind": "reaches",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "rule:builtin.delete.protected",
+   "kind": "reaches",
+   "to": "tool:mcp__Windows-MCP__PowerShell"
+  },
+  {
+   "from": "rule:builtin.delete.protected",
+   "kind": "reaches",
+   "to": "tool:mcp__terminal__run_in_terminal"
+  },
+  {
+   "cases": 30,
+   "from": "rule:builtin.delete.protected",
+   "kind": "proven_on",
+   "to": "tool:Bash"
+  },
+  {
+   "cases": 20,
+   "from": "rule:builtin.delete.protected",
+   "kind": "proven_on",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "area:delete",
+   "kind": "contains",
+   "to": "rule:builtin.delete.git-dir"
+  },
+  {
+   "from": "rule:builtin.delete.git-dir",
+   "kind": "watches",
+   "to": "path:delete"
+  },
+  {
+   "from": "rule:builtin.delete.git-dir",
+   "kind": "reaches",
+   "to": "tool:Bash"
+  },
+  {
+   "from": "rule:builtin.delete.git-dir",
+   "kind": "reaches",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "rule:builtin.delete.git-dir",
+   "kind": "reaches",
+   "to": "tool:mcp__Windows-MCP__PowerShell"
+  },
+  {
+   "from": "rule:builtin.delete.git-dir",
+   "kind": "reaches",
+   "to": "tool:mcp__terminal__run_in_terminal"
+  },
+  {
+   "cases": 6,
+   "from": "rule:builtin.delete.git-dir",
+   "kind": "proven_on",
+   "to": "tool:Bash"
+  },
+  {
+   "cases": 2,
+   "from": "rule:builtin.delete.git-dir",
+   "kind": "proven_on",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "area:delete",
+   "kind": "contains",
+   "to": "rule:builtin.delete.recursive"
+  },
+  {
+   "from": "rule:builtin.delete.recursive",
+   "kind": "watches",
+   "to": "path:delete"
+  },
+  {
+   "from": "rule:builtin.delete.recursive",
+   "kind": "reaches",
+   "to": "tool:Bash"
+  },
+  {
+   "from": "rule:builtin.delete.recursive",
+   "kind": "reaches",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "rule:builtin.delete.recursive",
+   "kind": "reaches",
+   "to": "tool:mcp__Windows-MCP__PowerShell"
+  },
+  {
+   "from": "rule:builtin.delete.recursive",
+   "kind": "reaches",
+   "to": "tool:mcp__terminal__run_in_terminal"
+  },
+  {
+   "cases": 118,
+   "from": "rule:builtin.delete.recursive",
+   "kind": "proven_on",
+   "to": "tool:Bash"
+  },
+  {
+   "cases": 62,
+   "from": "rule:builtin.delete.recursive",
+   "kind": "proven_on",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "area:delete",
+   "kind": "contains",
+   "to": "rule:builtin.delete.home-wildcard"
+  },
+  {
+   "from": "rule:builtin.delete.home-wildcard",
+   "kind": "watches",
+   "to": "path:delete"
+  },
+  {
+   "from": "rule:builtin.delete.home-wildcard",
+   "kind": "reaches",
+   "to": "tool:Bash"
+  },
+  {
+   "from": "rule:builtin.delete.home-wildcard",
+   "kind": "reaches",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "rule:builtin.delete.home-wildcard",
+   "kind": "reaches",
+   "to": "tool:mcp__Windows-MCP__PowerShell"
+  },
+  {
+   "from": "rule:builtin.delete.home-wildcard",
+   "kind": "reaches",
+   "to": "tool:mcp__terminal__run_in_terminal"
+  },
+  {
+   "cases": 4,
+   "from": "rule:builtin.delete.home-wildcard",
+   "kind": "proven_on",
+   "to": "tool:Bash"
+  },
+  {
+   "cases": 4,
+   "from": "rule:builtin.delete.home-wildcard",
+   "kind": "proven_on",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "area:delete",
+   "kind": "contains",
+   "to": "rule:builtin.delete.mirror"
+  },
+  {
+   "from": "rule:builtin.delete.mirror",
+   "kind": "watches",
+   "to": "program:robocopy"
+  },
+  {
+   "from": "rule:builtin.delete.mirror",
+   "kind": "watches",
+   "to": "program:rsync"
+  },
+  {
+   "from": "rule:builtin.delete.mirror",
+   "kind": "reaches",
+   "to": "tool:Bash"
+  },
+  {
+   "from": "rule:builtin.delete.mirror",
+   "kind": "reaches",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "rule:builtin.delete.mirror",
+   "kind": "reaches",
+   "to": "tool:mcp__Windows-MCP__PowerShell"
+  },
+  {
+   "from": "rule:builtin.delete.mirror",
+   "kind": "reaches",
+   "to": "tool:mcp__terminal__run_in_terminal"
+  },
+  {
+   "cases": 3,
+   "from": "rule:builtin.delete.mirror",
+   "kind": "proven_on",
+   "to": "tool:Bash"
+  },
+  {
+   "cases": 2,
+   "from": "rule:builtin.delete.mirror",
+   "kind": "proven_on",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "area:git",
+   "kind": "contains",
+   "to": "rule:builtin.git.force-push"
+  },
+  {
+   "from": "rule:builtin.git.force-push",
+   "kind": "watches",
+   "to": "program:git"
+  },
+  {
+   "from": "rule:builtin.git.force-push",
+   "kind": "reaches",
+   "to": "tool:Bash"
+  },
+  {
+   "from": "rule:builtin.git.force-push",
+   "kind": "reaches",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "rule:builtin.git.force-push",
+   "kind": "reaches",
+   "to": "tool:mcp__Windows-MCP__PowerShell"
+  },
+  {
+   "from": "rule:builtin.git.force-push",
+   "kind": "reaches",
+   "to": "tool:mcp__terminal__run_in_terminal"
+  },
+  {
+   "cases": 12,
+   "from": "rule:builtin.git.force-push",
+   "kind": "proven_on",
+   "to": "tool:Bash"
+  },
+  {
+   "cases": 5,
+   "from": "rule:builtin.git.force-push",
+   "kind": "proven_on",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "area:git",
+   "kind": "contains",
+   "to": "rule:builtin.git.force-push-lease"
+  },
+  {
+   "from": "rule:builtin.git.force-push-lease",
+   "kind": "watches",
+   "to": "program:git"
+  },
+  {
+   "from": "rule:builtin.git.force-push-lease",
+   "kind": "reaches",
+   "to": "tool:Bash"
+  },
+  {
+   "from": "rule:builtin.git.force-push-lease",
+   "kind": "reaches",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "rule:builtin.git.force-push-lease",
+   "kind": "reaches",
+   "to": "tool:mcp__Windows-MCP__PowerShell"
+  },
+  {
+   "from": "rule:builtin.git.force-push-lease",
+   "kind": "reaches",
+   "to": "tool:mcp__terminal__run_in_terminal"
+  },
+  {
+   "cases": 2,
+   "from": "rule:builtin.git.force-push-lease",
+   "kind": "proven_on",
+   "to": "tool:Bash"
+  },
+  {
+   "from": "area:git",
+   "kind": "contains",
+   "to": "rule:builtin.git.remote-delete"
+  },
+  {
+   "from": "rule:builtin.git.remote-delete",
+   "kind": "watches",
+   "to": "program:git"
+  },
+  {
+   "from": "rule:builtin.git.remote-delete",
+   "kind": "reaches",
+   "to": "tool:Bash"
+  },
+  {
+   "from": "rule:builtin.git.remote-delete",
+   "kind": "reaches",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "rule:builtin.git.remote-delete",
+   "kind": "reaches",
+   "to": "tool:mcp__Windows-MCP__PowerShell"
+  },
+  {
+   "from": "rule:builtin.git.remote-delete",
+   "kind": "reaches",
+   "to": "tool:mcp__terminal__run_in_terminal"
+  },
+  {
+   "cases": 3,
+   "from": "rule:builtin.git.remote-delete",
+   "kind": "proven_on",
+   "to": "tool:Bash"
+  },
+  {
+   "cases": 1,
+   "from": "rule:builtin.git.remote-delete",
+   "kind": "proven_on",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "area:git",
+   "kind": "contains",
+   "to": "rule:builtin.git.reset-hard"
+  },
+  {
+   "from": "rule:builtin.git.reset-hard",
+   "kind": "watches",
+   "to": "program:git"
+  },
+  {
+   "from": "rule:builtin.git.reset-hard",
+   "kind": "reaches",
+   "to": "tool:Bash"
+  },
+  {
+   "from": "rule:builtin.git.reset-hard",
+   "kind": "reaches",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "rule:builtin.git.reset-hard",
+   "kind": "reaches",
+   "to": "tool:mcp__Windows-MCP__PowerShell"
+  },
+  {
+   "from": "rule:builtin.git.reset-hard",
+   "kind": "reaches",
+   "to": "tool:mcp__terminal__run_in_terminal"
+  },
+  {
+   "cases": 34,
+   "from": "rule:builtin.git.reset-hard",
+   "kind": "proven_on",
+   "to": "tool:Bash"
+  },
+  {
+   "cases": 26,
+   "from": "rule:builtin.git.reset-hard",
+   "kind": "proven_on",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "area:git",
+   "kind": "contains",
+   "to": "rule:builtin.git.clean"
+  },
+  {
+   "from": "rule:builtin.git.clean",
+   "kind": "watches",
+   "to": "program:git"
+  },
+  {
+   "from": "rule:builtin.git.clean",
+   "kind": "reaches",
+   "to": "tool:Bash"
+  },
+  {
+   "from": "rule:builtin.git.clean",
+   "kind": "reaches",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "rule:builtin.git.clean",
+   "kind": "reaches",
+   "to": "tool:mcp__Windows-MCP__PowerShell"
+  },
+  {
+   "from": "rule:builtin.git.clean",
+   "kind": "reaches",
+   "to": "tool:mcp__terminal__run_in_terminal"
+  },
+  {
+   "cases": 9,
+   "from": "rule:builtin.git.clean",
+   "kind": "proven_on",
+   "to": "tool:Bash"
+  },
+  {
+   "cases": 2,
+   "from": "rule:builtin.git.clean",
+   "kind": "proven_on",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "area:git",
+   "kind": "contains",
+   "to": "rule:builtin.git.discard-worktree"
+  },
+  {
+   "from": "rule:builtin.git.discard-worktree",
+   "kind": "watches",
+   "to": "program:git"
+  },
+  {
+   "from": "rule:builtin.git.discard-worktree",
+   "kind": "reaches",
+   "to": "tool:Bash"
+  },
+  {
+   "from": "rule:builtin.git.discard-worktree",
+   "kind": "reaches",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "rule:builtin.git.discard-worktree",
+   "kind": "reaches",
+   "to": "tool:mcp__Windows-MCP__PowerShell"
+  },
+  {
+   "from": "rule:builtin.git.discard-worktree",
+   "kind": "reaches",
+   "to": "tool:mcp__terminal__run_in_terminal"
+  },
+  {
+   "cases": 13,
+   "from": "rule:builtin.git.discard-worktree",
+   "kind": "proven_on",
+   "to": "tool:Bash"
+  },
+  {
+   "from": "area:git",
+   "kind": "contains",
+   "to": "rule:builtin.git.stash-drop"
+  },
+  {
+   "from": "rule:builtin.git.stash-drop",
+   "kind": "watches",
+   "to": "program:git"
+  },
+  {
+   "from": "rule:builtin.git.stash-drop",
+   "kind": "reaches",
+   "to": "tool:Bash"
+  },
+  {
+   "from": "rule:builtin.git.stash-drop",
+   "kind": "reaches",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "rule:builtin.git.stash-drop",
+   "kind": "reaches",
+   "to": "tool:mcp__Windows-MCP__PowerShell"
+  },
+  {
+   "from": "rule:builtin.git.stash-drop",
+   "kind": "reaches",
+   "to": "tool:mcp__terminal__run_in_terminal"
+  },
+  {
+   "cases": 2,
+   "from": "rule:builtin.git.stash-drop",
+   "kind": "proven_on",
+   "to": "tool:Bash"
+  },
+  {
+   "from": "area:git",
+   "kind": "contains",
+   "to": "rule:builtin.git.history-prune"
+  },
+  {
+   "from": "rule:builtin.git.history-prune",
+   "kind": "watches",
+   "to": "program:git"
+  },
+  {
+   "from": "rule:builtin.git.history-prune",
+   "kind": "reaches",
+   "to": "tool:Bash"
+  },
+  {
+   "from": "rule:builtin.git.history-prune",
+   "kind": "reaches",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "rule:builtin.git.history-prune",
+   "kind": "reaches",
+   "to": "tool:mcp__Windows-MCP__PowerShell"
+  },
+  {
+   "from": "rule:builtin.git.history-prune",
+   "kind": "reaches",
+   "to": "tool:mcp__terminal__run_in_terminal"
+  },
+  {
+   "cases": 3,
+   "from": "rule:builtin.git.history-prune",
+   "kind": "proven_on",
+   "to": "tool:Bash"
+  },
+  {
+   "from": "area:git",
+   "kind": "contains",
+   "to": "rule:builtin.git.branch-force-delete"
+  },
+  {
+   "from": "rule:builtin.git.branch-force-delete",
+   "kind": "watches",
+   "to": "program:git"
+  },
+  {
+   "from": "rule:builtin.git.branch-force-delete",
+   "kind": "reaches",
+   "to": "tool:Bash"
+  },
+  {
+   "from": "rule:builtin.git.branch-force-delete",
+   "kind": "reaches",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "rule:builtin.git.branch-force-delete",
+   "kind": "reaches",
+   "to": "tool:mcp__Windows-MCP__PowerShell"
+  },
+  {
+   "from": "rule:builtin.git.branch-force-delete",
+   "kind": "reaches",
+   "to": "tool:mcp__terminal__run_in_terminal"
+  },
+  {
+   "cases": 4,
+   "from": "rule:builtin.git.branch-force-delete",
+   "kind": "proven_on",
+   "to": "tool:Bash"
+  },
+  {
+   "cases": 1,
+   "from": "rule:builtin.git.branch-force-delete",
+   "kind": "proven_on",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "area:sql",
+   "kind": "contains",
+   "to": "rule:builtin.sql.destructive"
+  },
+  {
+   "from": "rule:builtin.sql.destructive",
+   "kind": "watches",
+   "to": "program:bq"
+  },
+  {
+   "from": "rule:builtin.sql.destructive",
+   "kind": "watches",
+   "to": "program:clickhouse-client"
+  },
+  {
+   "from": "rule:builtin.sql.destructive",
+   "kind": "watches",
+   "to": "program:cockroach"
+  },
+  {
+   "from": "rule:builtin.sql.destructive",
+   "kind": "watches",
+   "to": "program:duckdb"
+  },
+  {
+   "from": "rule:builtin.sql.destructive",
+   "kind": "watches",
+   "to": "program:invoke-sqlcmd"
+  },
+  {
+   "from": "rule:builtin.sql.destructive",
+   "kind": "watches",
+   "to": "program:mariadb"
+  },
+  {
+   "from": "rule:builtin.sql.destructive",
+   "kind": "watches",
+   "to": "program:mycli"
+  },
+  {
+   "from": "rule:builtin.sql.destructive",
+   "kind": "watches",
+   "to": "program:mysql"
+  },
+  {
+   "from": "rule:builtin.sql.destructive",
+   "kind": "watches",
+   "to": "program:pgcli"
+  },
+  {
+   "from": "rule:builtin.sql.destructive",
+   "kind": "watches",
+   "to": "program:psql"
+  },
+  {
+   "from": "rule:builtin.sql.destructive",
+   "kind": "watches",
+   "to": "program:snowsql"
+  },
+  {
+   "from": "rule:builtin.sql.destructive",
+   "kind": "watches",
+   "to": "program:sqlcmd"
+  },
+  {
+   "from": "rule:builtin.sql.destructive",
+   "kind": "watches",
+   "to": "program:sqlite3"
+  },
+  {
+   "from": "rule:builtin.sql.destructive",
+   "kind": "watches",
+   "to": "program:sqlplus"
+  },
+  {
+   "from": "rule:builtin.sql.destructive",
+   "kind": "watches",
+   "to": "program:turso"
+  },
+  {
+   "from": "rule:builtin.sql.destructive",
+   "kind": "watches",
+   "to": "program:usql"
+  },
+  {
+   "from": "rule:builtin.sql.destructive",
+   "kind": "watches",
+   "to": "program:wrangler"
+  },
+  {
+   "from": "rule:builtin.sql.destructive",
+   "kind": "reaches",
+   "to": "tool:Bash"
+  },
+  {
+   "from": "rule:builtin.sql.destructive",
+   "kind": "reaches",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "rule:builtin.sql.destructive",
+   "kind": "reaches",
+   "to": "tool:mcp__Windows-MCP__PowerShell"
+  },
+  {
+   "from": "rule:builtin.sql.destructive",
+   "kind": "reaches",
+   "to": "tool:mcp__terminal__run_in_terminal"
+  },
+  {
+   "cases": 20,
+   "from": "rule:builtin.sql.destructive",
+   "kind": "proven_on",
+   "to": "tool:Bash"
+  },
+  {
+   "cases": 3,
+   "from": "rule:builtin.sql.destructive",
+   "kind": "proven_on",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "area:cloud",
+   "kind": "contains",
+   "to": "rule:builtin.cloud.gh-repo-delete"
+  },
+  {
+   "from": "rule:builtin.cloud.gh-repo-delete",
+   "kind": "watches",
+   "to": "program:gh"
+  },
+  {
+   "from": "rule:builtin.cloud.gh-repo-delete",
+   "kind": "reaches",
+   "to": "tool:Bash"
+  },
+  {
+   "from": "rule:builtin.cloud.gh-repo-delete",
+   "kind": "reaches",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "rule:builtin.cloud.gh-repo-delete",
+   "kind": "reaches",
+   "to": "tool:mcp__Windows-MCP__PowerShell"
+  },
+  {
+   "from": "rule:builtin.cloud.gh-repo-delete",
+   "kind": "reaches",
+   "to": "tool:mcp__terminal__run_in_terminal"
+  },
+  {
+   "cases": 1,
+   "from": "rule:builtin.cloud.gh-repo-delete",
+   "kind": "proven_on",
+   "to": "tool:Bash"
+  },
+  {
+   "from": "area:cloud",
+   "kind": "contains",
+   "to": "rule:builtin.cloud.vercel-remove"
+  },
+  {
+   "from": "rule:builtin.cloud.vercel-remove",
+   "kind": "watches",
+   "to": "program:vc"
+  },
+  {
+   "from": "rule:builtin.cloud.vercel-remove",
+   "kind": "watches",
+   "to": "program:vercel"
+  },
+  {
+   "from": "rule:builtin.cloud.vercel-remove",
+   "kind": "reaches",
+   "to": "tool:Bash"
+  },
+  {
+   "from": "rule:builtin.cloud.vercel-remove",
+   "kind": "reaches",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "rule:builtin.cloud.vercel-remove",
+   "kind": "reaches",
+   "to": "tool:mcp__Windows-MCP__PowerShell"
+  },
+  {
+   "from": "rule:builtin.cloud.vercel-remove",
+   "kind": "reaches",
+   "to": "tool:mcp__terminal__run_in_terminal"
+  },
+  {
+   "cases": 10,
+   "from": "rule:builtin.cloud.vercel-remove",
+   "kind": "proven_on",
+   "to": "tool:Bash"
+  },
+  {
+   "cases": 3,
+   "from": "rule:builtin.cloud.vercel-remove",
+   "kind": "proven_on",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "area:cloud",
+   "kind": "contains",
+   "to": "rule:builtin.cloud.terraform-destroy"
+  },
+  {
+   "from": "rule:builtin.cloud.terraform-destroy",
+   "kind": "watches",
+   "to": "program:terraform"
+  },
+  {
+   "from": "rule:builtin.cloud.terraform-destroy",
+   "kind": "watches",
+   "to": "program:terragrunt"
+  },
+  {
+   "from": "rule:builtin.cloud.terraform-destroy",
+   "kind": "watches",
+   "to": "program:tofu"
+  },
+  {
+   "from": "rule:builtin.cloud.terraform-destroy",
+   "kind": "reaches",
+   "to": "tool:Bash"
+  },
+  {
+   "from": "rule:builtin.cloud.terraform-destroy",
+   "kind": "reaches",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "rule:builtin.cloud.terraform-destroy",
+   "kind": "reaches",
+   "to": "tool:mcp__Windows-MCP__PowerShell"
+  },
+  {
+   "from": "rule:builtin.cloud.terraform-destroy",
+   "kind": "reaches",
+   "to": "tool:mcp__terminal__run_in_terminal"
+  },
+  {
+   "cases": 7,
+   "from": "rule:builtin.cloud.terraform-destroy",
+   "kind": "proven_on",
+   "to": "tool:Bash"
+  },
+  {
+   "cases": 2,
+   "from": "rule:builtin.cloud.terraform-destroy",
+   "kind": "proven_on",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "area:cloud",
+   "kind": "contains",
+   "to": "rule:builtin.cloud.kubectl-delete"
+  },
+  {
+   "from": "rule:builtin.cloud.kubectl-delete",
+   "kind": "watches",
+   "to": "program:kubectl"
+  },
+  {
+   "from": "rule:builtin.cloud.kubectl-delete",
+   "kind": "watches",
+   "to": "program:oc"
+  },
+  {
+   "from": "rule:builtin.cloud.kubectl-delete",
+   "kind": "reaches",
+   "to": "tool:Bash"
+  },
+  {
+   "from": "rule:builtin.cloud.kubectl-delete",
+   "kind": "reaches",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "rule:builtin.cloud.kubectl-delete",
+   "kind": "reaches",
+   "to": "tool:mcp__Windows-MCP__PowerShell"
+  },
+  {
+   "from": "rule:builtin.cloud.kubectl-delete",
+   "kind": "reaches",
+   "to": "tool:mcp__terminal__run_in_terminal"
+  },
+  {
+   "cases": 5,
+   "from": "rule:builtin.cloud.kubectl-delete",
+   "kind": "proven_on",
+   "to": "tool:Bash"
+  },
+  {
+   "cases": 1,
+   "from": "rule:builtin.cloud.kubectl-delete",
+   "kind": "proven_on",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "area:cloud",
+   "kind": "contains",
+   "to": "rule:builtin.cloud.docker-prune"
+  },
+  {
+   "from": "rule:builtin.cloud.docker-prune",
+   "kind": "watches",
+   "to": "program:docker"
+  },
+  {
+   "from": "rule:builtin.cloud.docker-prune",
+   "kind": "watches",
+   "to": "program:podman"
+  },
+  {
+   "from": "rule:builtin.cloud.docker-prune",
+   "kind": "reaches",
+   "to": "tool:Bash"
+  },
+  {
+   "from": "rule:builtin.cloud.docker-prune",
+   "kind": "reaches",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "rule:builtin.cloud.docker-prune",
+   "kind": "reaches",
+   "to": "tool:mcp__Windows-MCP__PowerShell"
+  },
+  {
+   "from": "rule:builtin.cloud.docker-prune",
+   "kind": "reaches",
+   "to": "tool:mcp__terminal__run_in_terminal"
+  },
+  {
+   "cases": 3,
+   "from": "rule:builtin.cloud.docker-prune",
+   "kind": "proven_on",
+   "to": "tool:Bash"
+  },
+  {
+   "from": "area:cloud",
+   "kind": "contains",
+   "to": "rule:builtin.cloud.docker-volume-rm"
+  },
+  {
+   "from": "rule:builtin.cloud.docker-volume-rm",
+   "kind": "watches",
+   "to": "program:docker"
+  },
+  {
+   "from": "rule:builtin.cloud.docker-volume-rm",
+   "kind": "watches",
+   "to": "program:docker-compose"
+  },
+  {
+   "from": "rule:builtin.cloud.docker-volume-rm",
+   "kind": "watches",
+   "to": "program:podman"
+  },
+  {
+   "from": "rule:builtin.cloud.docker-volume-rm",
+   "kind": "reaches",
+   "to": "tool:Bash"
+  },
+  {
+   "from": "rule:builtin.cloud.docker-volume-rm",
+   "kind": "reaches",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "rule:builtin.cloud.docker-volume-rm",
+   "kind": "reaches",
+   "to": "tool:mcp__Windows-MCP__PowerShell"
+  },
+  {
+   "from": "rule:builtin.cloud.docker-volume-rm",
+   "kind": "reaches",
+   "to": "tool:mcp__terminal__run_in_terminal"
+  },
+  {
+   "cases": 5,
+   "from": "rule:builtin.cloud.docker-volume-rm",
+   "kind": "proven_on",
+   "to": "tool:Bash"
+  },
+  {
+   "cases": 1,
+   "from": "rule:builtin.cloud.docker-volume-rm",
+   "kind": "proven_on",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "area:cloud",
+   "kind": "contains",
+   "to": "rule:builtin.cloud.aws-s3-delete"
+  },
+  {
+   "from": "rule:builtin.cloud.aws-s3-delete",
+   "kind": "watches",
+   "to": "program:aws"
+  },
+  {
+   "from": "rule:builtin.cloud.aws-s3-delete",
+   "kind": "reaches",
+   "to": "tool:Bash"
+  },
+  {
+   "from": "rule:builtin.cloud.aws-s3-delete",
+   "kind": "reaches",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "rule:builtin.cloud.aws-s3-delete",
+   "kind": "reaches",
+   "to": "tool:mcp__Windows-MCP__PowerShell"
+  },
+  {
+   "from": "rule:builtin.cloud.aws-s3-delete",
+   "kind": "reaches",
+   "to": "tool:mcp__terminal__run_in_terminal"
+  },
+  {
+   "cases": 4,
+   "from": "rule:builtin.cloud.aws-s3-delete",
+   "kind": "proven_on",
+   "to": "tool:Bash"
+  },
+  {
+   "from": "area:cloud",
+   "kind": "contains",
+   "to": "rule:builtin.cloud.resource-delete"
+  },
+  {
+   "from": "rule:builtin.cloud.resource-delete",
+   "kind": "watches",
+   "to": "program:aws"
+  },
+  {
+   "from": "rule:builtin.cloud.resource-delete",
+   "kind": "watches",
+   "to": "program:az"
+  },
+  {
+   "from": "rule:builtin.cloud.resource-delete",
+   "kind": "watches",
+   "to": "program:cdk"
+  },
+  {
+   "from": "rule:builtin.cloud.resource-delete",
+   "kind": "watches",
+   "to": "program:cdktf"
+  },
+  {
+   "from": "rule:builtin.cloud.resource-delete",
+   "kind": "watches",
+   "to": "program:fly"
+  },
+  {
+   "from": "rule:builtin.cloud.resource-delete",
+   "kind": "watches",
+   "to": "program:flyctl"
+  },
+  {
+   "from": "rule:builtin.cloud.resource-delete",
+   "kind": "watches",
+   "to": "program:gcloud"
+  },
+  {
+   "from": "rule:builtin.cloud.resource-delete",
+   "kind": "watches",
+   "to": "program:gsutil"
+  },
+  {
+   "from": "rule:builtin.cloud.resource-delete",
+   "kind": "watches",
+   "to": "program:helm"
+  },
+  {
+   "from": "rule:builtin.cloud.resource-delete",
+   "kind": "watches",
+   "to": "program:heroku"
+  },
+  {
+   "from": "rule:builtin.cloud.resource-delete",
+   "kind": "watches",
+   "to": "program:pulumi"
+  },
+  {
+   "from": "rule:builtin.cloud.resource-delete",
+   "kind": "watches",
+   "to": "program:supabase"
+  },
+  {
+   "from": "rule:builtin.cloud.resource-delete",
+   "kind": "watches",
+   "to": "program:wrangler"
+  },
+  {
+   "from": "rule:builtin.cloud.resource-delete",
+   "kind": "reaches",
+   "to": "tool:Bash"
+  },
+  {
+   "from": "rule:builtin.cloud.resource-delete",
+   "kind": "reaches",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "rule:builtin.cloud.resource-delete",
+   "kind": "reaches",
+   "to": "tool:mcp__Windows-MCP__PowerShell"
+  },
+  {
+   "from": "rule:builtin.cloud.resource-delete",
+   "kind": "reaches",
+   "to": "tool:mcp__terminal__run_in_terminal"
+  },
+  {
+   "cases": 14,
+   "from": "rule:builtin.cloud.resource-delete",
+   "kind": "proven_on",
+   "to": "tool:Bash"
+  },
+  {
+   "from": "area:cloud",
+   "kind": "contains",
+   "to": "rule:builtin.cloud.npm-unpublish"
+  },
+  {
+   "from": "rule:builtin.cloud.npm-unpublish",
+   "kind": "watches",
+   "to": "program:npm"
+  },
+  {
+   "from": "rule:builtin.cloud.npm-unpublish",
+   "kind": "watches",
+   "to": "program:pnpm"
+  },
+  {
+   "from": "rule:builtin.cloud.npm-unpublish",
+   "kind": "reaches",
+   "to": "tool:Bash"
+  },
+  {
+   "from": "rule:builtin.cloud.npm-unpublish",
+   "kind": "reaches",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "rule:builtin.cloud.npm-unpublish",
+   "kind": "reaches",
+   "to": "tool:mcp__Windows-MCP__PowerShell"
+  },
+  {
+   "from": "rule:builtin.cloud.npm-unpublish",
+   "kind": "reaches",
+   "to": "tool:mcp__terminal__run_in_terminal"
+  },
+  {
+   "cases": 1,
+   "from": "rule:builtin.cloud.npm-unpublish",
+   "kind": "proven_on",
+   "to": "tool:Bash"
+  },
+  {
+   "from": "area:system",
+   "kind": "contains",
+   "to": "rule:builtin.system.trust-root-cert"
+  },
+  {
+   "from": "rule:builtin.system.trust-root-cert",
+   "kind": "watches",
+   "to": "program:caddy"
+  },
+  {
+   "from": "rule:builtin.system.trust-root-cert",
+   "kind": "watches",
+   "to": "program:certutil"
+  },
+  {
+   "from": "rule:builtin.system.trust-root-cert",
+   "kind": "watches",
+   "to": "program:dotnet"
+  },
+  {
+   "from": "rule:builtin.system.trust-root-cert",
+   "kind": "watches",
+   "to": "program:import-certificate"
+  },
+  {
+   "from": "rule:builtin.system.trust-root-cert",
+   "kind": "watches",
+   "to": "program:import-pfxcertificate"
+  },
+  {
+   "from": "rule:builtin.system.trust-root-cert",
+   "kind": "watches",
+   "to": "program:keytool"
+  },
+  {
+   "from": "rule:builtin.system.trust-root-cert",
+   "kind": "watches",
+   "to": "program:mkcert"
+  },
+  {
+   "from": "rule:builtin.system.trust-root-cert",
+   "kind": "watches",
+   "to": "program:security"
+  },
+  {
+   "from": "rule:builtin.system.trust-root-cert",
+   "kind": "watches",
+   "to": "program:step"
+  },
+  {
+   "from": "rule:builtin.system.trust-root-cert",
+   "kind": "watches",
+   "to": "program:trust"
+  },
+  {
+   "from": "rule:builtin.system.trust-root-cert",
+   "kind": "watches",
+   "to": "program:update-ca-certificates"
+  },
+  {
+   "from": "rule:builtin.system.trust-root-cert",
+   "kind": "watches",
+   "to": "program:update-ca-trust"
+  },
+  {
+   "from": "rule:builtin.system.trust-root-cert",
+   "kind": "reaches",
+   "to": "tool:Bash"
+  },
+  {
+   "from": "rule:builtin.system.trust-root-cert",
+   "kind": "reaches",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "rule:builtin.system.trust-root-cert",
+   "kind": "reaches",
+   "to": "tool:mcp__Windows-MCP__PowerShell"
+  },
+  {
+   "from": "rule:builtin.system.trust-root-cert",
+   "kind": "reaches",
+   "to": "tool:mcp__terminal__run_in_terminal"
+  },
+  {
+   "cases": 8,
+   "from": "rule:builtin.system.trust-root-cert",
+   "kind": "proven_on",
+   "to": "tool:Bash"
+  },
+  {
+   "cases": 7,
+   "from": "rule:builtin.system.trust-root-cert",
+   "kind": "proven_on",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "area:system",
+   "kind": "contains",
+   "to": "rule:builtin.system.firewall-off"
+  },
+  {
+   "from": "rule:builtin.system.firewall-off",
+   "kind": "watches",
+   "to": "program:ip6tables"
+  },
+  {
+   "from": "rule:builtin.system.firewall-off",
+   "kind": "watches",
+   "to": "program:iptables"
+  },
+  {
+   "from": "rule:builtin.system.firewall-off",
+   "kind": "watches",
+   "to": "program:netsh"
+  },
+  {
+   "from": "rule:builtin.system.firewall-off",
+   "kind": "watches",
+   "to": "program:nft"
+  },
+  {
+   "from": "rule:builtin.system.firewall-off",
+   "kind": "watches",
+   "to": "program:pfctl"
+  },
+  {
+   "from": "rule:builtin.system.firewall-off",
+   "kind": "watches",
+   "to": "program:set-netfirewallprofile"
+  },
+  {
+   "from": "rule:builtin.system.firewall-off",
+   "kind": "watches",
+   "to": "program:socketfilterfw"
+  },
+  {
+   "from": "rule:builtin.system.firewall-off",
+   "kind": "watches",
+   "to": "program:systemctl"
+  },
+  {
+   "from": "rule:builtin.system.firewall-off",
+   "kind": "watches",
+   "to": "program:ufw"
+  },
+  {
+   "from": "rule:builtin.system.firewall-off",
+   "kind": "reaches",
+   "to": "tool:Bash"
+  },
+  {
+   "from": "rule:builtin.system.firewall-off",
+   "kind": "reaches",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "rule:builtin.system.firewall-off",
+   "kind": "reaches",
+   "to": "tool:mcp__Windows-MCP__PowerShell"
+  },
+  {
+   "from": "rule:builtin.system.firewall-off",
+   "kind": "reaches",
+   "to": "tool:mcp__terminal__run_in_terminal"
+  },
+  {
+   "cases": 12,
+   "from": "rule:builtin.system.firewall-off",
+   "kind": "proven_on",
+   "to": "tool:Bash"
+  },
+  {
+   "cases": 6,
+   "from": "rule:builtin.system.firewall-off",
+   "kind": "proven_on",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "area:system",
+   "kind": "contains",
+   "to": "rule:builtin.system.antivirus-off"
+  },
+  {
+   "from": "rule:builtin.system.antivirus-off",
+   "kind": "watches",
+   "to": "program:aa-teardown"
+  },
+  {
+   "from": "rule:builtin.system.antivirus-off",
+   "kind": "watches",
+   "to": "program:add-mppreference"
+  },
+  {
+   "from": "rule:builtin.system.antivirus-off",
+   "kind": "watches",
+   "to": "program:csrutil"
+  },
+  {
+   "from": "rule:builtin.system.antivirus-off",
+   "kind": "watches",
+   "to": "program:net"
+  },
+  {
+   "from": "rule:builtin.system.antivirus-off",
+   "kind": "watches",
+   "to": "program:sc"
+  },
+  {
+   "from": "rule:builtin.system.antivirus-off",
+   "kind": "watches",
+   "to": "program:set-mppreference"
+  },
+  {
+   "from": "rule:builtin.system.antivirus-off",
+   "kind": "watches",
+   "to": "program:set-service"
+  },
+  {
+   "from": "rule:builtin.system.antivirus-off",
+   "kind": "watches",
+   "to": "program:setenforce"
+  },
+  {
+   "from": "rule:builtin.system.antivirus-off",
+   "kind": "watches",
+   "to": "program:spctl"
+  },
+  {
+   "from": "rule:builtin.system.antivirus-off",
+   "kind": "watches",
+   "to": "program:stop-service"
+  },
+  {
+   "from": "rule:builtin.system.antivirus-off",
+   "kind": "watches",
+   "to": "program:systemctl"
+  },
+  {
+   "from": "rule:builtin.system.antivirus-off",
+   "kind": "reaches",
+   "to": "tool:Bash"
+  },
+  {
+   "from": "rule:builtin.system.antivirus-off",
+   "kind": "reaches",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "rule:builtin.system.antivirus-off",
+   "kind": "reaches",
+   "to": "tool:mcp__Windows-MCP__PowerShell"
+  },
+  {
+   "from": "rule:builtin.system.antivirus-off",
+   "kind": "reaches",
+   "to": "tool:mcp__terminal__run_in_terminal"
+  },
+  {
+   "cases": 7,
+   "from": "rule:builtin.system.antivirus-off",
+   "kind": "proven_on",
+   "to": "tool:Bash"
+  },
+  {
+   "cases": 11,
+   "from": "rule:builtin.system.antivirus-off",
+   "kind": "proven_on",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "area:system",
+   "kind": "contains",
+   "to": "rule:builtin.system.registry-defences"
+  },
+  {
+   "from": "rule:builtin.system.registry-defences",
+   "kind": "watches",
+   "to": "program:new-item"
+  },
+  {
+   "from": "rule:builtin.system.registry-defences",
+   "kind": "watches",
+   "to": "program:new-itemproperty"
+  },
+  {
+   "from": "rule:builtin.system.registry-defences",
+   "kind": "watches",
+   "to": "program:reg"
+  },
+  {
+   "from": "rule:builtin.system.registry-defences",
+   "kind": "watches",
+   "to": "program:set-itemproperty"
+  },
+  {
+   "from": "rule:builtin.system.registry-defences",
+   "kind": "reaches",
+   "to": "tool:Bash"
+  },
+  {
+   "from": "rule:builtin.system.registry-defences",
+   "kind": "reaches",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "rule:builtin.system.registry-defences",
+   "kind": "reaches",
+   "to": "tool:mcp__Windows-MCP__PowerShell"
+  },
+  {
+   "from": "rule:builtin.system.registry-defences",
+   "kind": "reaches",
+   "to": "tool:mcp__terminal__run_in_terminal"
+  },
+  {
+   "cases": 1,
+   "from": "rule:builtin.system.registry-defences",
+   "kind": "proven_on",
+   "to": "tool:Bash"
+  },
+  {
+   "cases": 3,
+   "from": "rule:builtin.system.registry-defences",
+   "kind": "proven_on",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "area:system",
+   "kind": "contains",
+   "to": "rule:builtin.system.registry-delete"
+  },
+  {
+   "from": "rule:builtin.system.registry-delete",
+   "kind": "watches",
+   "to": "program:clear-item"
+  },
+  {
+   "from": "rule:builtin.system.registry-delete",
+   "kind": "watches",
+   "to": "program:clear-itemproperty"
+  },
+  {
+   "from": "rule:builtin.system.registry-delete",
+   "kind": "watches",
+   "to": "program:reg"
+  },
+  {
+   "from": "rule:builtin.system.registry-delete",
+   "kind": "watches",
+   "to": "program:remove-item"
+  },
+  {
+   "from": "rule:builtin.system.registry-delete",
+   "kind": "watches",
+   "to": "program:remove-itemproperty"
+  },
+  {
+   "from": "rule:builtin.system.registry-delete",
+   "kind": "reaches",
+   "to": "tool:Bash"
+  },
+  {
+   "from": "rule:builtin.system.registry-delete",
+   "kind": "reaches",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "rule:builtin.system.registry-delete",
+   "kind": "reaches",
+   "to": "tool:mcp__Windows-MCP__PowerShell"
+  },
+  {
+   "from": "rule:builtin.system.registry-delete",
+   "kind": "reaches",
+   "to": "tool:mcp__terminal__run_in_terminal"
+  },
+  {
+   "cases": 3,
+   "from": "rule:builtin.system.registry-delete",
+   "kind": "proven_on",
+   "to": "tool:Bash"
+  },
+  {
+   "cases": 6,
+   "from": "rule:builtin.system.registry-delete",
+   "kind": "proven_on",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "area:system",
+   "kind": "contains",
+   "to": "rule:builtin.system.disk"
+  },
+  {
+   "from": "rule:builtin.system.disk",
+   "kind": "watches",
+   "to": "program:bcdedit"
+  },
+  {
+   "from": "rule:builtin.system.disk",
+   "kind": "watches",
+   "to": "program:blkdiscard"
+  },
+  {
+   "from": "rule:builtin.system.disk",
+   "kind": "watches",
+   "to": "program:clear-disk"
+  },
+  {
+   "from": "rule:builtin.system.disk",
+   "kind": "watches",
+   "to": "program:dd"
+  },
+  {
+   "from": "rule:builtin.system.disk",
+   "kind": "watches",
+   "to": "program:diskpart"
+  },
+  {
+   "from": "rule:builtin.system.disk",
+   "kind": "watches",
+   "to": "program:diskutil"
+  },
+  {
+   "from": "rule:builtin.system.disk",
+   "kind": "watches",
+   "to": "program:format"
+  },
+  {
+   "from": "rule:builtin.system.disk",
+   "kind": "watches",
+   "to": "program:format-volume"
+  },
+  {
+   "from": "rule:builtin.system.disk",
+   "kind": "watches",
+   "to": "program:initialize-disk"
+  },
+  {
+   "from": "rule:builtin.system.disk",
+   "kind": "watches",
+   "to": "program:lvremove"
+  },
+  {
+   "from": "rule:builtin.system.disk",
+   "kind": "watches",
+   "to": "program:mke2fs"
+  },
+  {
+   "from": "rule:builtin.system.disk",
+   "kind": "watches",
+   "to": "program:mkfs"
+  },
+  {
+   "from": "rule:builtin.system.disk",
+   "kind": "watches",
+   "to": "program:mkfs.btrfs"
+  },
+  {
+   "from": "rule:builtin.system.disk",
+   "kind": "watches",
+   "to": "program:mkfs.exfat"
+  },
+  {
+   "from": "rule:builtin.system.disk",
+   "kind": "watches",
+   "to": "program:mkfs.ext2"
+  },
+  {
+   "from": "rule:builtin.system.disk",
+   "kind": "watches",
+   "to": "program:mkfs.ext3"
+  },
+  {
+   "from": "rule:builtin.system.disk",
+   "kind": "watches",
+   "to": "program:mkfs.ext4"
+  },
+  {
+   "from": "rule:builtin.system.disk",
+   "kind": "watches",
+   "to": "program:mkfs.f2fs"
+  },
+  {
+   "from": "rule:builtin.system.disk",
+   "kind": "watches",
+   "to": "program:mkfs.fat"
+  },
+  {
+   "from": "rule:builtin.system.disk",
+   "kind": "watches",
+   "to": "program:mkfs.ntfs"
+  },
+  {
+   "from": "rule:builtin.system.disk",
+   "kind": "watches",
+   "to": "program:mkfs.vfat"
+  },
+  {
+   "from": "rule:builtin.system.disk",
+   "kind": "watches",
+   "to": "program:mkfs.xfs"
+  },
+  {
+   "from": "rule:builtin.system.disk",
+   "kind": "watches",
+   "to": "program:mkswap"
+  },
+  {
+   "from": "rule:builtin.system.disk",
+   "kind": "watches",
+   "to": "program:remove-partition"
+  },
+  {
+   "from": "rule:builtin.system.disk",
+   "kind": "watches",
+   "to": "program:sgdisk"
+  },
+  {
+   "from": "rule:builtin.system.disk",
+   "kind": "watches",
+   "to": "program:shred"
+  },
+  {
+   "from": "rule:builtin.system.disk",
+   "kind": "watches",
+   "to": "program:vgremove"
+  },
+  {
+   "from": "rule:builtin.system.disk",
+   "kind": "watches",
+   "to": "program:wipefs"
+  },
+  {
+   "from": "rule:builtin.system.disk",
+   "kind": "watches",
+   "to": "program:zfs"
+  },
+  {
+   "from": "rule:builtin.system.disk",
+   "kind": "watches",
+   "to": "program:zpool"
+  },
+  {
+   "from": "rule:builtin.system.disk",
+   "kind": "reaches",
+   "to": "tool:Bash"
+  },
+  {
+   "from": "rule:builtin.system.disk",
+   "kind": "reaches",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "rule:builtin.system.disk",
+   "kind": "reaches",
+   "to": "tool:mcp__Windows-MCP__PowerShell"
+  },
+  {
+   "from": "rule:builtin.system.disk",
+   "kind": "reaches",
+   "to": "tool:mcp__terminal__run_in_terminal"
+  },
+  {
+   "cases": 6,
+   "from": "rule:builtin.system.disk",
+   "kind": "proven_on",
+   "to": "tool:Bash"
+  },
+  {
+   "cases": 9,
+   "from": "rule:builtin.system.disk",
+   "kind": "proven_on",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "area:secrets",
+   "kind": "contains",
+   "to": "rule:builtin.secrets.read"
+  },
+  {
+   "from": "rule:builtin.secrets.read",
+   "kind": "watches",
+   "to": "path:read"
+  },
+  {
+   "from": "rule:builtin.secrets.read",
+   "kind": "reaches",
+   "to": "tool:Bash"
+  },
+  {
+   "from": "rule:builtin.secrets.read",
+   "kind": "reaches",
+   "to": "tool:Grep"
+  },
+  {
+   "from": "rule:builtin.secrets.read",
+   "kind": "reaches",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "rule:builtin.secrets.read",
+   "kind": "reaches",
+   "to": "tool:Read"
+  },
+  {
+   "from": "rule:builtin.secrets.read",
+   "kind": "reaches",
+   "to": "tool:mcp__Windows-MCP__PowerShell"
+  },
+  {
+   "from": "rule:builtin.secrets.read",
+   "kind": "reaches",
+   "to": "tool:mcp__terminal__run_in_terminal"
+  },
+  {
+   "cases": 65,
+   "from": "rule:builtin.secrets.read",
+   "kind": "proven_on",
+   "to": "tool:Bash"
+  },
+  {
+   "cases": 4,
+   "from": "rule:builtin.secrets.read",
+   "kind": "proven_on",
+   "to": "tool:Grep"
+  },
+  {
+   "cases": 21,
+   "from": "rule:builtin.secrets.read",
+   "kind": "proven_on",
+   "to": "tool:PowerShell"
+  },
+  {
+   "cases": 3,
+   "from": "rule:builtin.secrets.read",
+   "kind": "proven_on",
+   "to": "tool:Read"
+  },
+  {
+   "from": "area:secrets",
+   "kind": "contains",
+   "to": "rule:builtin.secrets.environment"
+  },
+  {
+   "from": "rule:builtin.secrets.environment",
+   "kind": "watches",
+   "to": "program:declare"
+  },
+  {
+   "from": "rule:builtin.secrets.environment",
+   "kind": "watches",
+   "to": "program:env"
+  },
+  {
+   "from": "rule:builtin.secrets.environment",
+   "kind": "watches",
+   "to": "program:export"
+  },
+  {
+   "from": "rule:builtin.secrets.environment",
+   "kind": "watches",
+   "to": "program:get-childitem"
+  },
+  {
+   "from": "rule:builtin.secrets.environment",
+   "kind": "watches",
+   "to": "program:get-item"
+  },
+  {
+   "from": "rule:builtin.secrets.environment",
+   "kind": "watches",
+   "to": "program:printenv"
+  },
+  {
+   "from": "rule:builtin.secrets.environment",
+   "kind": "watches",
+   "to": "program:set"
+  },
+  {
+   "from": "rule:builtin.secrets.environment",
+   "kind": "watches",
+   "to": "signal:text:command"
+  },
+  {
+   "from": "rule:builtin.secrets.environment",
+   "kind": "reaches",
+   "to": "tool:Bash"
+  },
+  {
+   "from": "rule:builtin.secrets.environment",
+   "kind": "reaches",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "rule:builtin.secrets.environment",
+   "kind": "reaches",
+   "to": "tool:mcp__Windows-MCP__PowerShell"
+  },
+  {
+   "from": "rule:builtin.secrets.environment",
+   "kind": "reaches",
+   "to": "tool:mcp__terminal__run_in_terminal"
+  },
+  {
+   "cases": 7,
+   "from": "rule:builtin.secrets.environment",
+   "kind": "proven_on",
+   "to": "tool:Bash"
+  },
+  {
+   "cases": 5,
+   "from": "rule:builtin.secrets.environment",
+   "kind": "proven_on",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "area:secrets",
+   "kind": "contains",
+   "to": "rule:builtin.secrets.variable"
+  },
+  {
+   "from": "rule:builtin.secrets.variable",
+   "kind": "watches",
+   "to": "program:echo"
+  },
+  {
+   "from": "rule:builtin.secrets.variable",
+   "kind": "watches",
+   "to": "program:get-childitem"
+  },
+  {
+   "from": "rule:builtin.secrets.variable",
+   "kind": "watches",
+   "to": "program:get-item"
+  },
+  {
+   "from": "rule:builtin.secrets.variable",
+   "kind": "watches",
+   "to": "program:out-host"
+  },
+  {
+   "from": "rule:builtin.secrets.variable",
+   "kind": "watches",
+   "to": "program:printenv"
+  },
+  {
+   "from": "rule:builtin.secrets.variable",
+   "kind": "watches",
+   "to": "program:printf"
+  },
+  {
+   "from": "rule:builtin.secrets.variable",
+   "kind": "watches",
+   "to": "program:set"
+  },
+  {
+   "from": "rule:builtin.secrets.variable",
+   "kind": "watches",
+   "to": "program:write-host"
+  },
+  {
+   "from": "rule:builtin.secrets.variable",
+   "kind": "watches",
+   "to": "program:write-information"
+  },
+  {
+   "from": "rule:builtin.secrets.variable",
+   "kind": "watches",
+   "to": "program:write-output"
+  },
+  {
+   "from": "rule:builtin.secrets.variable",
+   "kind": "watches",
+   "to": "program:write-verbose"
+  },
+  {
+   "from": "rule:builtin.secrets.variable",
+   "kind": "watches",
+   "to": "program:write-warning"
+  },
+  {
+   "from": "rule:builtin.secrets.variable",
+   "kind": "watches",
+   "to": "signal:text:command"
+  },
+  {
+   "from": "rule:builtin.secrets.variable",
+   "kind": "reaches",
+   "to": "tool:Bash"
+  },
+  {
+   "from": "rule:builtin.secrets.variable",
+   "kind": "reaches",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "rule:builtin.secrets.variable",
+   "kind": "reaches",
+   "to": "tool:mcp__Windows-MCP__PowerShell"
+  },
+  {
+   "from": "rule:builtin.secrets.variable",
+   "kind": "reaches",
+   "to": "tool:mcp__terminal__run_in_terminal"
+  },
+  {
+   "cases": 6,
+   "from": "rule:builtin.secrets.variable",
+   "kind": "proven_on",
+   "to": "tool:Bash"
+  },
+  {
+   "cases": 5,
+   "from": "rule:builtin.secrets.variable",
+   "kind": "proven_on",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "area:system",
+   "kind": "contains",
+   "to": "rule:builtin.system.login-files"
+  },
+  {
+   "from": "rule:builtin.system.login-files",
+   "kind": "watches",
+   "to": "path:delete"
+  },
+  {
+   "from": "rule:builtin.system.login-files",
+   "kind": "watches",
+   "to": "path:write"
+  },
+  {
+   "from": "rule:builtin.system.login-files",
+   "kind": "reaches",
+   "to": "tool:Bash"
+  },
+  {
+   "from": "rule:builtin.system.login-files",
+   "kind": "reaches",
+   "to": "tool:Edit"
+  },
+  {
+   "from": "rule:builtin.system.login-files",
+   "kind": "reaches",
+   "to": "tool:MultiEdit"
+  },
+  {
+   "from": "rule:builtin.system.login-files",
+   "kind": "reaches",
+   "to": "tool:NotebookEdit"
+  },
+  {
+   "from": "rule:builtin.system.login-files",
+   "kind": "reaches",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "rule:builtin.system.login-files",
+   "kind": "reaches",
+   "to": "tool:Write"
+  },
+  {
+   "from": "rule:builtin.system.login-files",
+   "kind": "reaches",
+   "to": "tool:mcp__Windows-MCP__PowerShell"
+  },
+  {
+   "from": "rule:builtin.system.login-files",
+   "kind": "reaches",
+   "to": "tool:mcp__terminal__run_in_terminal"
+  },
+  {
+   "cases": 4,
+   "from": "rule:builtin.system.login-files",
+   "kind": "proven_on",
+   "to": "tool:Bash"
+  },
+  {
+   "cases": 2,
+   "from": "rule:builtin.system.login-files",
+   "kind": "proven_on",
+   "to": "tool:Edit"
+  },
+  {
+   "cases": 2,
+   "from": "rule:builtin.system.login-files",
+   "kind": "proven_on",
+   "to": "tool:PowerShell"
+  },
+  {
+   "cases": 4,
+   "from": "rule:builtin.system.login-files",
+   "kind": "proven_on",
+   "to": "tool:Write"
+  },
+  {
+   "from": "area:gate",
+   "kind": "contains",
+   "to": "rule:builtin.gate.files"
+  },
+  {
+   "from": "rule:builtin.gate.files",
+   "kind": "watches",
+   "to": "path:delete"
+  },
+  {
+   "from": "rule:builtin.gate.files",
+   "kind": "watches",
+   "to": "path:write"
+  },
+  {
+   "from": "rule:builtin.gate.files",
+   "kind": "reaches",
+   "to": "tool:Bash"
+  },
+  {
+   "from": "rule:builtin.gate.files",
+   "kind": "reaches",
+   "to": "tool:Edit"
+  },
+  {
+   "from": "rule:builtin.gate.files",
+   "kind": "reaches",
+   "to": "tool:MultiEdit"
+  },
+  {
+   "from": "rule:builtin.gate.files",
+   "kind": "reaches",
+   "to": "tool:NotebookEdit"
+  },
+  {
+   "from": "rule:builtin.gate.files",
+   "kind": "reaches",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "rule:builtin.gate.files",
+   "kind": "reaches",
+   "to": "tool:Write"
+  },
+  {
+   "from": "rule:builtin.gate.files",
+   "kind": "reaches",
+   "to": "tool:mcp__Windows-MCP__PowerShell"
+  },
+  {
+   "from": "rule:builtin.gate.files",
+   "kind": "reaches",
+   "to": "tool:mcp__terminal__run_in_terminal"
+  },
+  {
+   "cases": 10,
+   "from": "rule:builtin.gate.files",
+   "kind": "proven_on",
+   "to": "tool:Bash"
+  },
+  {
+   "cases": 2,
+   "from": "rule:builtin.gate.files",
+   "kind": "proven_on",
+   "to": "tool:Edit"
+  },
+  {
+   "cases": 6,
+   "from": "rule:builtin.gate.files",
+   "kind": "proven_on",
+   "to": "tool:PowerShell"
+  },
+  {
+   "cases": 2,
+   "from": "rule:builtin.gate.files",
+   "kind": "proven_on",
+   "to": "tool:Write"
+  },
+  {
+   "from": "area:gate",
+   "kind": "contains",
+   "to": "rule:builtin.gate.rules"
+  },
+  {
+   "from": "rule:builtin.gate.rules",
+   "kind": "watches",
+   "to": "program:ember-gate"
+  },
+  {
+   "from": "rule:builtin.gate.rules",
+   "kind": "watches",
+   "to": "program:py"
+  },
+  {
+   "from": "rule:builtin.gate.rules",
+   "kind": "watches",
+   "to": "program:python"
+  },
+  {
+   "from": "rule:builtin.gate.rules",
+   "kind": "watches",
+   "to": "program:python3"
+  },
+  {
+   "from": "rule:builtin.gate.rules",
+   "kind": "reaches",
+   "to": "tool:Bash"
+  },
+  {
+   "from": "rule:builtin.gate.rules",
+   "kind": "reaches",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "rule:builtin.gate.rules",
+   "kind": "reaches",
+   "to": "tool:mcp__Windows-MCP__PowerShell"
+  },
+  {
+   "from": "rule:builtin.gate.rules",
+   "kind": "reaches",
+   "to": "tool:mcp__terminal__run_in_terminal"
+  },
+  {
+   "cases": 7,
+   "from": "rule:builtin.gate.rules",
+   "kind": "proven_on",
+   "to": "tool:Bash"
+  },
+  {
+   "cases": 4,
+   "from": "rule:builtin.gate.rules",
+   "kind": "proven_on",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "area:gate",
+   "kind": "contains",
+   "to": "rule:builtin.gate.environment"
+  },
+  {
+   "from": "rule:builtin.gate.environment",
+   "kind": "watches",
+   "to": "signal:assigns:EMBER_GATE_MODE,EMBER_LEDGER,EMBER_HOME,EMBER_GATE_BUILTIN,EMBER_GATE_REMIND_INTERVAL"
+  },
+  {
+   "from": "rule:builtin.gate.environment",
+   "kind": "reaches",
+   "to": "tool:Bash"
+  },
+  {
+   "from": "rule:builtin.gate.environment",
+   "kind": "reaches",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "rule:builtin.gate.environment",
+   "kind": "reaches",
+   "to": "tool:mcp__Windows-MCP__PowerShell"
+  },
+  {
+   "from": "rule:builtin.gate.environment",
+   "kind": "reaches",
+   "to": "tool:mcp__terminal__run_in_terminal"
+  },
+  {
+   "cases": 9,
+   "from": "rule:builtin.gate.environment",
+   "kind": "proven_on",
+   "to": "tool:Bash"
+  },
+  {
+   "cases": 6,
+   "from": "rule:builtin.gate.environment",
+   "kind": "proven_on",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "area:gate",
+   "kind": "contains",
+   "to": "rule:builtin.gate.host-settings"
+  },
+  {
+   "from": "rule:builtin.gate.host-settings",
+   "kind": "watches",
+   "to": "path:delete"
+  },
+  {
+   "from": "rule:builtin.gate.host-settings",
+   "kind": "watches",
+   "to": "path:write"
+  },
+  {
+   "from": "rule:builtin.gate.host-settings",
+   "kind": "reaches",
+   "to": "tool:Bash"
+  },
+  {
+   "from": "rule:builtin.gate.host-settings",
+   "kind": "reaches",
+   "to": "tool:Edit"
+  },
+  {
+   "from": "rule:builtin.gate.host-settings",
+   "kind": "reaches",
+   "to": "tool:MultiEdit"
+  },
+  {
+   "from": "rule:builtin.gate.host-settings",
+   "kind": "reaches",
+   "to": "tool:NotebookEdit"
+  },
+  {
+   "from": "rule:builtin.gate.host-settings",
+   "kind": "reaches",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "rule:builtin.gate.host-settings",
+   "kind": "reaches",
+   "to": "tool:Write"
+  },
+  {
+   "from": "rule:builtin.gate.host-settings",
+   "kind": "reaches",
+   "to": "tool:mcp__Windows-MCP__PowerShell"
+  },
+  {
+   "from": "rule:builtin.gate.host-settings",
+   "kind": "reaches",
+   "to": "tool:mcp__terminal__run_in_terminal"
+  },
+  {
+   "cases": 3,
+   "from": "rule:builtin.gate.host-settings",
+   "kind": "proven_on",
+   "to": "tool:Bash"
+  },
+  {
+   "cases": 1,
+   "from": "rule:builtin.gate.host-settings",
+   "kind": "proven_on",
+   "to": "tool:Edit"
+  },
+  {
+   "cases": 1,
+   "from": "rule:builtin.gate.host-settings",
+   "kind": "proven_on",
+   "to": "tool:MultiEdit"
+  },
+  {
+   "cases": 2,
+   "from": "rule:builtin.gate.host-settings",
+   "kind": "proven_on",
+   "to": "tool:PowerShell"
+  },
+  {
+   "cases": 1,
+   "from": "rule:builtin.gate.host-settings",
+   "kind": "proven_on",
+   "to": "tool:Write"
+  },
+  {
+   "from": "area:shell",
+   "kind": "contains",
+   "to": "rule:builtin.shell.download-pipe"
+  },
+  {
+   "from": "rule:builtin.shell.download-pipe",
+   "kind": "watches",
+   "to": "signal:dynamic:download_pipe"
+  },
+  {
+   "from": "rule:builtin.shell.download-pipe",
+   "kind": "reaches",
+   "to": "tool:Bash"
+  },
+  {
+   "from": "rule:builtin.shell.download-pipe",
+   "kind": "reaches",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "rule:builtin.shell.download-pipe",
+   "kind": "reaches",
+   "to": "tool:mcp__Windows-MCP__PowerShell"
+  },
+  {
+   "from": "rule:builtin.shell.download-pipe",
+   "kind": "reaches",
+   "to": "tool:mcp__terminal__run_in_terminal"
+  },
+  {
+   "cases": 11,
+   "from": "rule:builtin.shell.download-pipe",
+   "kind": "proven_on",
+   "to": "tool:Bash"
+  },
+  {
+   "cases": 5,
+   "from": "rule:builtin.shell.download-pipe",
+   "kind": "proven_on",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "area:shell",
+   "kind": "contains",
+   "to": "rule:builtin.shell.unreadable"
+  },
+  {
+   "from": "rule:builtin.shell.unreadable",
+   "kind": "watches",
+   "to": "signal:dynamic:parse_error,encoded_command"
+  },
+  {
+   "from": "rule:builtin.shell.unreadable",
+   "kind": "reaches",
+   "to": "tool:Bash"
+  },
+  {
+   "from": "rule:builtin.shell.unreadable",
+   "kind": "reaches",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "rule:builtin.shell.unreadable",
+   "kind": "reaches",
+   "to": "tool:mcp__Windows-MCP__PowerShell"
+  },
+  {
+   "from": "rule:builtin.shell.unreadable",
+   "kind": "reaches",
+   "to": "tool:mcp__terminal__run_in_terminal"
+  },
+  {
+   "cases": 4,
+   "from": "rule:builtin.shell.unreadable",
+   "kind": "proven_on",
+   "to": "tool:Bash"
+  },
+  {
+   "cases": 3,
+   "from": "rule:builtin.shell.unreadable",
+   "kind": "proven_on",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "area:shell",
+   "kind": "contains",
+   "to": "rule:builtin.shell.unknown-directory"
+  },
+  {
+   "from": "rule:builtin.shell.unknown-directory",
+   "kind": "watches",
+   "to": "signal:unknown-directory"
+  },
+  {
+   "from": "rule:builtin.shell.unknown-directory",
+   "kind": "reaches",
+   "to": "tool:Bash"
+  },
+  {
+   "from": "rule:builtin.shell.unknown-directory",
+   "kind": "reaches",
+   "to": "tool:PowerShell"
+  },
+  {
+   "from": "rule:builtin.shell.unknown-directory",
+   "kind": "reaches",
+   "to": "tool:mcp__Windows-MCP__PowerShell"
+  },
+  {
+   "from": "rule:builtin.shell.unknown-directory",
+   "kind": "reaches",
+   "to": "tool:mcp__terminal__run_in_terminal"
+  },
+  {
+   "cases": 1,
+   "from": "rule:builtin.shell.unknown-directory",
+   "kind": "proven_on",
+   "to": "tool:Bash"
+  },
+  {
+   "cases": 1,
+   "from": "rule:builtin.shell.unknown-directory",
+   "kind": "proven_on",
+   "to": "tool:PowerShell"
+  },
+  {
+   "cases": 8,
+   "from": "rule:builtin.delete.git-dir",
+   "kind": "overlaps",
+   "to": "rule:builtin.delete.recursive"
+  },
+  {
+   "cases": 50,
+   "from": "rule:builtin.delete.protected",
+   "kind": "overlaps",
+   "to": "rule:builtin.delete.recursive"
+  },
+  {
+   "cases": 1,
+   "from": "rule:builtin.delete.recursive",
+   "kind": "overlaps",
+   "to": "rule:builtin.gate.files"
+  }
+ ],
+ "gaps": {
+  "file_reach_without_file_case": [],
+  "no_near_miss_case": [],
+  "no_powershell_case": [
+   {
+    "programs": [
+     "git"
+    ],
+    "rule": "builtin.git.force-push-lease"
+   },
+   {
+    "programs": [
+     "git"
+    ],
+    "rule": "builtin.git.discard-worktree"
+   },
+   {
+    "programs": [
+     "git"
+    ],
+    "rule": "builtin.git.stash-drop"
+   },
+   {
+    "programs": [
+     "git"
+    ],
+    "rule": "builtin.git.history-prune"
+   },
+   {
+    "programs": [
+     "gh"
+    ],
+    "rule": "builtin.cloud.gh-repo-delete"
+   },
+   {
+    "programs": [
+     "docker",
+     "podman"
+    ],
+    "rule": "builtin.cloud.docker-prune"
+   },
+   {
+    "programs": [
+     "aws"
+    ],
+    "rule": "builtin.cloud.aws-s3-delete"
+   },
+   {
+    "programs": [
+     "aws",
+     "az",
+     "cdk",
+     "cdktf",
+     "fly",
+     "flyctl",
+     "gcloud",
+     "gsutil",
+     "helm",
+     "heroku",
+     "pulumi",
+     "supabase",
+     "wrangler"
+    ],
+    "rule": "builtin.cloud.resource-delete"
+   },
+   {
+    "programs": [
+     "npm",
+     "pnpm"
+    ],
+    "rule": "builtin.cloud.npm-unpublish"
+   }
+  ],
+  "no_proof": [],
+  "unconfirmed": [],
+  "unwatched_tools": [
+   "Agent",
+   "Glob",
+   "WebFetch",
+   "WebSearch",
+   "mcp__* (other MCP tools)"
+  ]
+ },
+ "nodes": [
+  {
+   "id": "area:cloud",
+   "kind": "area",
+   "rules": 9
+  },
+  {
+   "id": "area:delete",
+   "kind": "area",
+   "rules": 5
+  },
+  {
+   "id": "area:gate",
+   "kind": "area",
+   "rules": 4
+  },
+  {
+   "id": "area:git",
+   "kind": "area",
+   "rules": 9
+  },
+  {
+   "id": "area:secrets",
+   "kind": "area",
+   "rules": 3
+  },
+  {
+   "id": "area:shell",
+   "kind": "area",
+   "rules": 3
+  },
+  {
+   "id": "area:sql",
+   "kind": "area",
+   "rules": 1
+  },
+  {
+   "id": "area:system",
+   "kind": "area",
+   "rules": 7
+  },
+  {
+   "area": "cloud",
+   "confirmed": true,
+   "effect": "ask",
+   "exceptable": true,
+   "flag_cases": {
+    "Bash": 4
+   },
+   "flag_platforms": {
+    "posix": 4,
+    "windows": 4
+   },
+   "flag_shells": {
+    "bash": 4
+   },
+   "history": false,
+   "id": "builtin.cloud.aws-s3-delete",
+   "kind": "rule",
+   "near_miss_cases": 6,
+   "origin": "builtin",
+   "path_ops": [],
+   "programs": [
+    "aws"
+   ],
+   "reaches": [
+    "Bash",
+    "PowerShell",
+    "mcp__Windows-MCP__PowerShell",
+    "mcp__terminal__run_in_terminal"
+   ],
+   "signals": [],
+   "test_files": [],
+   "text": "Ask before removing an S3 bucket or deleting objects recursively."
+  },
+  {
+   "area": "cloud",
+   "confirmed": true,
+   "effect": "ask",
+   "exceptable": true,
+   "flag_cases": {
+    "Bash": 3
+   },
+   "flag_platforms": {
+    "posix": 3,
+    "windows": 3
+   },
+   "flag_shells": {
+    "bash": 3
+   },
+   "history": false,
+   "id": "builtin.cloud.docker-prune",
+   "kind": "rule",
+   "near_miss_cases": 3,
+   "origin": "builtin",
+   "path_ops": [],
+   "programs": [
+    "docker",
+    "podman"
+   ],
+   "reaches": [
+    "Bash",
+    "PowerShell",
+    "mcp__Windows-MCP__PowerShell",
+    "mcp__terminal__run_in_terminal"
+   ],
+   "signals": [],
+   "test_files": [],
+   "text": "Ask before docker system prune -a: it removes all unused images."
+  },
+  {
+   "area": "cloud",
+   "confirmed": true,
+   "effect": "ask",
+   "exceptable": true,
+   "flag_cases": {
+    "Bash": 5,
+    "PowerShell": 1
+   },
+   "flag_platforms": {
+    "posix": 5,
+    "windows": 6
+   },
+   "flag_shells": {
+    "bash": 5,
+    "powershell": 1
+   },
+   "history": false,
+   "id": "builtin.cloud.docker-volume-rm",
+   "kind": "rule",
+   "near_miss_cases": 5,
+   "origin": "builtin",
+   "path_ops": [],
+   "programs": [
+    "docker",
+    "docker-compose",
+    "podman"
+   ],
+   "reaches": [
+    "Bash",
+    "PowerShell",
+    "mcp__Windows-MCP__PowerShell",
+    "mcp__terminal__run_in_terminal"
+   ],
+   "signals": [],
+   "test_files": [],
+   "text": "Ask before removing Docker volumes: their data is not recoverable."
+  },
+  {
+   "area": "cloud",
+   "confirmed": true,
+   "effect": "ask",
+   "exceptable": true,
+   "flag_cases": {
+    "Bash": 1
+   },
+   "flag_platforms": {
+    "posix": 1,
+    "windows": 1
+   },
+   "flag_shells": {
+    "bash": 1
+   },
+   "history": false,
+   "id": "builtin.cloud.gh-repo-delete",
+   "kind": "rule",
+   "near_miss_cases": 3,
+   "origin": "builtin",
+   "path_ops": [],
+   "programs": [
+    "gh"
+   ],
+   "reaches": [
+    "Bash",
+    "PowerShell",
+    "mcp__Windows-MCP__PowerShell",
+    "mcp__terminal__run_in_terminal"
+   ],
+   "signals": [],
+   "test_files": [],
+   "text": "Ask before deleting a GitHub repository."
+  },
+  {
+   "area": "cloud",
+   "confirmed": true,
+   "effect": "ask",
+   "exceptable": true,
+   "flag_cases": {
+    "Bash": 5,
+    "PowerShell": 1
+   },
+   "flag_platforms": {
+    "posix": 5,
+    "windows": 6
+   },
+   "flag_shells": {
+    "bash": 5,
+    "powershell": 1
+   },
+   "history": false,
+   "id": "builtin.cloud.kubectl-delete",
+   "kind": "rule",
+   "near_miss_cases": 1,
+   "origin": "builtin",
+   "path_ops": [],
+   "programs": [
+    "kubectl",
+    "oc"
+   ],
+   "reaches": [
+    "Bash",
+    "PowerShell",
+    "mcp__Windows-MCP__PowerShell",
+    "mcp__terminal__run_in_terminal"
+   ],
+   "signals": [],
+   "test_files": [],
+   "text": "Ask before deleting Kubernetes resources."
+  },
+  {
+   "area": "cloud",
+   "confirmed": true,
+   "effect": "ask",
+   "exceptable": true,
+   "flag_cases": {
+    "Bash": 1
+   },
+   "flag_platforms": {
+    "posix": 1,
+    "windows": 1
+   },
+   "flag_shells": {
+    "bash": 1
+   },
+   "history": false,
+   "id": "builtin.cloud.npm-unpublish",
+   "kind": "rule",
+   "near_miss_cases": 2,
+   "origin": "builtin",
+   "path_ops": [],
+   "programs": [
+    "npm",
+    "pnpm"
+   ],
+   "reaches": [
+    "Bash",
+    "PowerShell",
+    "mcp__Windows-MCP__PowerShell",
+    "mcp__terminal__run_in_terminal"
+   ],
+   "signals": [],
+   "test_files": [],
+   "text": "Ask before unpublishing a package from the registry."
+  },
+  {
+   "area": "cloud",
+   "confirmed": true,
+   "effect": "ask",
+   "exceptable": true,
+   "flag_cases": {
+    "Bash": 14
+   },
+   "flag_platforms": {
+    "posix": 14,
+    "windows": 14
+   },
+   "flag_shells": {
+    "bash": 14
+   },
+   "history": false,
+   "id": "builtin.cloud.resource-delete",
+   "kind": "rule",
+   "near_miss_cases": 10,
+   "origin": "builtin",
+   "path_ops": [],
+   "programs": [
+    "aws",
+    "az",
+    "cdk",
+    "cdktf",
+    "fly",
+    "flyctl",
+    "gcloud",
+    "gsutil",
+    "helm",
+    "heroku",
+    "pulumi",
+    "supabase",
+    "wrangler"
+   ],
+   "reaches": [
+    "Bash",
+    "PowerShell",
+    "mcp__Windows-MCP__PowerShell",
+    "mcp__terminal__run_in_terminal"
+   ],
+   "signals": [],
+   "test_files": [],
+   "text": "Ask before deleting cloud resources or infrastructure (helm, gcloud, az, aws, gsutil, pulumi, cdk, fly, wrangler, heroku, supabase)."
+  },
+  {
+   "area": "cloud",
+   "confirmed": true,
+   "effect": "ask",
+   "exceptable": true,
+   "flag_cases": {
+    "Bash": 7,
+    "PowerShell": 2
+   },
+   "flag_platforms": {
+    "posix": 8,
+    "windows": 9
+   },
+   "flag_shells": {
+    "bash": 7,
+    "powershell": 2
+   },
+   "history": false,
+   "id": "builtin.cloud.terraform-destroy",
+   "kind": "rule",
+   "near_miss_cases": 4,
+   "origin": "builtin",
+   "path_ops": [],
+   "programs": [
+    "terraform",
+    "terragrunt",
+    "tofu"
+   ],
+   "reaches": [
+    "Bash",
+    "PowerShell",
+    "mcp__Windows-MCP__PowerShell",
+    "mcp__terminal__run_in_terminal"
+   ],
+   "signals": [],
+   "test_files": [],
+   "text": "Ask before terraform destroy."
+  },
+  {
+   "area": "cloud",
+   "confirmed": true,
+   "effect": "ask",
+   "exceptable": true,
+   "flag_cases": {
+    "Bash": 10,
+    "PowerShell": 3
+   },
+   "flag_platforms": {
+    "posix": 13,
+    "windows": 13
+   },
+   "flag_shells": {
+    "bash": 10,
+    "powershell": 3
+   },
+   "history": false,
+   "id": "builtin.cloud.vercel-remove",
+   "kind": "rule",
+   "near_miss_cases": 3,
+   "origin": "builtin",
+   "path_ops": [],
+   "programs": [
+    "vc",
+    "vercel"
+   ],
+   "reaches": [
+    "Bash",
+    "PowerShell",
+    "mcp__Windows-MCP__PowerShell",
+    "mcp__terminal__run_in_terminal"
+   ],
+   "signals": [],
+   "test_files": [],
+   "text": "Ask before removing a Vercel deployment or project."
+  },
+  {
+   "area": "delete",
+   "confirmed": true,
+   "effect": "deny",
+   "exceptable": false,
+   "flag_cases": {
+    "Bash": 6,
+    "PowerShell": 2
+   },
+   "flag_platforms": {
+    "posix": 6,
+    "windows": 7
+   },
+   "flag_shells": {
+    "bash": 6,
+    "powershell": 2
+   },
+   "history": false,
+   "id": "builtin.delete.git-dir",
+   "kind": "rule",
+   "near_miss_cases": 0,
+   "origin": "builtin",
+   "path_ops": [
+    "delete"
+   ],
+   "programs": [],
+   "reaches": [
+    "Bash",
+    "PowerShell",
+    "mcp__Windows-MCP__PowerShell",
+    "mcp__terminal__run_in_terminal"
+   ],
+   "signals": [],
+   "test_files": [
+    "tests/ledger/test_exceptions.py",
+    "tests/ledger/test_shell_tools.py"
+   ],
+   "text": "Never recursively delete the .git directory of the repository you are in: it is the repository's whole history."
+  },
+  {
+   "area": "delete",
+   "confirmed": true,
+   "effect": "ask",
+   "exceptable": true,
+   "flag_cases": {
+    "Bash": 4,
+    "PowerShell": 4
+   },
+   "flag_platforms": {
+    "posix": 4,
+    "windows": 7
+   },
+   "flag_shells": {
+    "bash": 4,
+    "cmd": 1,
+    "powershell": 4
+   },
+   "history": false,
+   "id": "builtin.delete.home-wildcard",
+   "kind": "rule",
+   "near_miss_cases": 0,
+   "origin": "builtin",
+   "path_ops": [
+    "delete"
+   ],
+   "programs": [],
+   "reaches": [
+    "Bash",
+    "PowerShell",
+    "mcp__Windows-MCP__PowerShell",
+    "mcp__terminal__run_in_terminal"
+   ],
+   "signals": [],
+   "test_files": [],
+   "text": "Ask before deleting with a wildcard directly in a home directory or in one of its top-level folders."
+  },
+  {
+   "area": "delete",
+   "confirmed": true,
+   "effect": "ask",
+   "exceptable": true,
+   "flag_cases": {
+    "Bash": 3,
+    "PowerShell": 2
+   },
+   "flag_platforms": {
+    "posix": 5,
+    "windows": 5
+   },
+   "flag_shells": {
+    "bash": 3,
+    "powershell": 2
+   },
+   "history": false,
+   "id": "builtin.delete.mirror",
+   "kind": "rule",
+   "near_miss_cases": 5,
+   "origin": "builtin",
+   "path_ops": [],
+   "programs": [
+    "robocopy",
+    "rsync"
+   ],
+   "reaches": [
+    "Bash",
+    "PowerShell",
+    "mcp__Windows-MCP__PowerShell",
+    "mcp__terminal__run_in_terminal"
+   ],
+   "signals": [],
+   "test_files": [
+    "tests/ledger/test_exceptions.py"
+   ],
+   "text": "Ask before a sync that deletes what the source does not have (rsync --delete, robocopy /MIR)."
+  },
+  {
+   "area": "delete",
+   "confirmed": true,
+   "effect": "deny",
+   "exceptable": false,
+   "flag_cases": {
+    "Bash": 30,
+    "PowerShell": 20
+   },
+   "flag_platforms": {
+    "posix": 23,
+    "windows": 44
+   },
+   "flag_shells": {
+    "bash": 30,
+    "cmd": 1,
+    "powershell": 20
+   },
+   "history": false,
+   "id": "builtin.delete.protected",
+   "kind": "rule",
+   "near_miss_cases": 0,
+   "origin": "builtin",
+   "path_ops": [
+    "delete"
+   ],
+   "programs": [],
+   "reaches": [
+    "Bash",
+    "PowerShell",
+    "mcp__Windows-MCP__PowerShell",
+    "mcp__terminal__run_in_terminal"
+   ],
+   "signals": [],
+   "test_files": [
+    "tests/ledger/test_cli.py",
+    "tests/ledger/test_exceptions.py",
+    "tests/ledger/test_fail_closed.py",
+    "tests/ledger/test_gate.py",
+    "tests/ledger/test_hook.py",
+    "tests/ledger/test_http.py",
+    "tests/ledger/test_reminders.py",
+    "tests/ledger/test_replay.py",
+    "tests/ledger/test_repo_root.py",
+    "tests/ledger/test_shell_tools.py"
+   ],
+   "text": "Never recursively delete a filesystem root, a home directory or a users directory."
+  },
+  {
+   "area": "delete",
+   "confirmed": true,
+   "effect": "ask",
+   "exceptable": true,
+   "flag_cases": {
+    "Bash": 118,
+    "PowerShell": 62
+   },
+   "flag_platforms": {
+    "posix": 113,
+    "windows": 169
+   },
+   "flag_shells": {
+    "bash": 121,
+    "cmd": 9,
+    "powershell": 62
+   },
+   "history": false,
+   "id": "builtin.delete.recursive",
+   "kind": "rule",
+   "near_miss_cases": 0,
+   "origin": "builtin",
+   "path_ops": [
+    "delete"
+   ],
+   "programs": [],
+   "reaches": [
+    "Bash",
+    "PowerShell",
+    "mcp__Windows-MCP__PowerShell",
+    "mcp__terminal__run_in_terminal"
+   ],
+   "signals": [],
+   "test_files": [
+    "tests/ledger/test_cli.py",
+    "tests/ledger/test_exceptions.py",
+    "tests/ledger/test_http.py",
+    "tests/ledger/test_replay.py",
+    "tests/ledger/test_shell_tools.py",
+    "tests/ledger/test_store.py"
+   ],
+   "text": "Ask before deleting a directory tree outside build, cache and temporary directories."
+  },
+  {
+   "area": "gate",
+   "confirmed": true,
+   "effect": "ask",
+   "exceptable": false,
+   "flag_cases": {
+    "Bash": 9,
+    "PowerShell": 6
+   },
+   "flag_platforms": {
+    "posix": 15,
+    "windows": 15
+   },
+   "flag_shells": {
+    "bash": 8,
+    "cmd": 1,
+    "powershell": 4
+   },
+   "history": false,
+   "id": "builtin.gate.environment",
+   "kind": "rule",
+   "near_miss_cases": 0,
+   "origin": "builtin",
+   "path_ops": [],
+   "programs": [],
+   "reaches": [
+    "Bash",
+    "PowerShell",
+    "mcp__Windows-MCP__PowerShell",
+    "mcp__terminal__run_in_terminal"
+   ],
+   "signals": [
+    "assigns:EMBER_GATE_MODE,EMBER_LEDGER,EMBER_HOME,EMBER_GATE_BUILTIN,EMBER_GATE_REMIND_INTERVAL"
+   ],
+   "test_files": [
+    "tests/ledger/test_exceptions.py",
+    "tests/ledger/test_reminders.py"
+   ],
+   "text": "Ask before setting the variables that choose the gate's mode, ledger, home, built-in pack or reminder interval."
+  },
+  {
+   "area": "gate",
+   "confirmed": true,
+   "effect": "ask",
+   "exceptable": false,
+   "flag_cases": {
+    "Bash": 10,
+    "Edit": 2,
+    "PowerShell": 6,
+    "Write": 2
+   },
+   "flag_platforms": {
+    "posix": 13,
+    "windows": 19
+   },
+   "flag_shells": {
+    "bash": 10,
+    "powershell": 6
+   },
+   "history": false,
+   "id": "builtin.gate.files",
+   "kind": "rule",
+   "near_miss_cases": 0,
+   "origin": "builtin",
+   "path_ops": [
+    "delete",
+    "write"
+   ],
+   "programs": [],
+   "reaches": [
+    "Bash",
+    "Edit",
+    "MultiEdit",
+    "NotebookEdit",
+    "PowerShell",
+    "Write",
+    "mcp__Windows-MCP__PowerShell",
+    "mcp__terminal__run_in_terminal"
+   ],
+   "signals": [],
+   "test_files": [
+    "tests/ledger/test_exceptions.py",
+    "tests/ledger/test_self_protection.py"
+   ],
+   "text": "Ask before changing the gate's own files: its configuration, its ledgers and its audit log."
+  },
+  {
+   "area": "gate",
+   "confirmed": true,
+   "effect": "ask",
+   "exceptable": false,
+   "flag_cases": {
+    "Bash": 3,
+    "Edit": 1,
+    "MultiEdit": 1,
+    "PowerShell": 2,
+    "Write": 1
+   },
+   "flag_platforms": {
+    "posix": 6,
+    "windows": 8
+   },
+   "flag_shells": {
+    "bash": 3,
+    "powershell": 2
+   },
+   "history": false,
+   "id": "builtin.gate.host-settings",
+   "kind": "rule",
+   "near_miss_cases": 0,
+   "origin": "builtin",
+   "path_ops": [
+    "delete",
+    "write"
+   ],
+   "programs": [],
+   "reaches": [
+    "Bash",
+    "Edit",
+    "MultiEdit",
+    "NotebookEdit",
+    "PowerShell",
+    "Write",
+    "mcp__Windows-MCP__PowerShell",
+    "mcp__terminal__run_in_terminal"
+   ],
+   "signals": [],
+   "test_files": [
+    "tests/ledger/test_exceptions.py"
+   ],
+   "text": "Ask before changing Claude Code settings files: they hold the hook that runs this gate."
+  },
+  {
+   "area": "gate",
+   "confirmed": true,
+   "effect": "ask",
+   "exceptable": false,
+   "flag_cases": {
+    "Bash": 7,
+    "PowerShell": 4
+   },
+   "flag_platforms": {
+    "posix": 11,
+    "windows": 11
+   },
+   "flag_shells": {
+    "bash": 7,
+    "powershell": 4
+   },
+   "history": false,
+   "id": "builtin.gate.rules",
+   "kind": "rule",
+   "near_miss_cases": 19,
+   "origin": "builtin",
+   "path_ops": [],
+   "programs": [
+    "ember-gate",
+    "py",
+    "python",
+    "python3"
+   ],
+   "reaches": [
+    "Bash",
+    "PowerShell",
+    "mcp__Windows-MCP__PowerShell",
+    "mcp__terminal__run_in_terminal"
+   ],
+   "signals": [],
+   "test_files": [
+    "tests/ledger/test_exceptions.py"
+   ],
+   "text": "Ask before adding, confirming or removing ledger rules, or installing the hook: that is the owner's decision."
+  },
+  {
+   "area": "git",
+   "confirmed": true,
+   "effect": "ask",
+   "exceptable": true,
+   "flag_cases": {
+    "Bash": 4,
+    "PowerShell": 1
+   },
+   "flag_platforms": {
+    "posix": 4,
+    "windows": 5
+   },
+   "flag_shells": {
+    "bash": 4,
+    "powershell": 1
+   },
+   "history": false,
+   "id": "builtin.git.branch-force-delete",
+   "kind": "rule",
+   "near_miss_cases": 4,
+   "origin": "builtin",
+   "path_ops": [],
+   "programs": [
+    "git"
+   ],
+   "reaches": [
+    "Bash",
+    "PowerShell",
+    "mcp__Windows-MCP__PowerShell",
+    "mcp__terminal__run_in_terminal"
+   ],
+   "signals": [],
+   "test_files": [],
+   "text": "Ask before force-deleting a branch (git branch -D)."
+  },
+  {
+   "area": "git",
+   "confirmed": true,
+   "effect": "ask",
+   "exceptable": true,
+   "flag_cases": {
+    "Bash": 9,
+    "PowerShell": 2
+   },
+   "flag_platforms": {
+    "posix": 9,
+    "windows": 11
+   },
+   "flag_shells": {
+    "bash": 9,
+    "powershell": 2
+   },
+   "history": false,
+   "id": "builtin.git.clean",
+   "kind": "rule",
+   "near_miss_cases": 3,
+   "origin": "builtin",
+   "path_ops": [],
+   "programs": [
+    "git"
+   ],
+   "reaches": [
+    "Bash",
+    "PowerShell",
+    "mcp__Windows-MCP__PowerShell",
+    "mcp__terminal__run_in_terminal"
+   ],
+   "signals": [],
+   "test_files": [
+    "tests/ledger/test_exceptions.py",
+    "tests/ledger/test_http_scopes.py"
+   ],
+   "text": "Ask before git clean -f: it deletes untracked files."
+  },
+  {
+   "area": "git",
+   "confirmed": true,
+   "effect": "ask",
+   "exceptable": true,
+   "flag_cases": {
+    "Bash": 13
+   },
+   "flag_platforms": {
+    "posix": 13,
+    "windows": 13
+   },
+   "flag_shells": {
+    "bash": 13
+   },
+   "history": false,
+   "id": "builtin.git.discard-worktree",
+   "kind": "rule",
+   "near_miss_cases": 12,
+   "origin": "builtin",
+   "path_ops": [],
+   "programs": [
+    "git"
+   ],
+   "reaches": [
+    "Bash",
+    "PowerShell",
+    "mcp__Windows-MCP__PowerShell",
+    "mcp__terminal__run_in_terminal"
+   ],
+   "signals": [],
+   "test_files": [],
+   "text": "Ask before discarding all working-tree changes (git checkout -- . / git restore .)."
+  },
+  {
+   "area": "git",
+   "confirmed": true,
+   "effect": "ask",
+   "exceptable": true,
+   "flag_cases": {
+    "Bash": 12,
+    "PowerShell": 5
+   },
+   "flag_platforms": {
+    "posix": 13,
+    "windows": 17
+   },
+   "flag_shells": {
+    "bash": 13,
+    "powershell": 4
+   },
+   "history": false,
+   "id": "builtin.git.force-push",
+   "kind": "rule",
+   "near_miss_cases": 12,
+   "origin": "builtin",
+   "path_ops": [],
+   "programs": [
+    "git"
+   ],
+   "reaches": [
+    "Bash",
+    "PowerShell",
+    "mcp__Windows-MCP__PowerShell",
+    "mcp__terminal__run_in_terminal"
+   ],
+   "signals": [],
+   "test_files": [
+    "tests/bench/bench_resident.py",
+    "tests/ledger/test_cli.py",
+    "tests/ledger/test_exceptions.py",
+    "tests/ledger/test_gate.py",
+    "tests/ledger/test_hook.py",
+    "tests/ledger/test_http.py",
+    "tests/ledger/test_lint.py",
+    "tests/ledger/test_reminder_hardening.py",
+    "tests/ledger/test_reminders.py",
+    "tests/ledger/test_replay.py",
+    "tests/ledger/test_shell_tools.py",
+    "tests/ledger/test_unreadable_directory.py",
+    "tests/test_endpoints.py"
+   ],
+   "text": "Ask before force-pushing: it rewrites history on the remote."
+  },
+  {
+   "area": "git",
+   "confirmed": true,
+   "effect": "warn",
+   "exceptable": true,
+   "flag_cases": {
+    "Bash": 2
+   },
+   "flag_platforms": {
+    "posix": 2,
+    "windows": 2
+   },
+   "flag_shells": {
+    "bash": 2
+   },
+   "history": false,
+   "id": "builtin.git.force-push-lease",
+   "kind": "rule",
+   "near_miss_cases": 12,
+   "origin": "builtin",
+   "path_ops": [],
+   "programs": [
+    "git"
+   ],
+   "reaches": [
+    "Bash",
+    "PowerShell",
+    "mcp__Windows-MCP__PowerShell",
+    "mcp__terminal__run_in_terminal"
+   ],
+   "signals": [],
+   "test_files": [
+    "tests/ledger/test_project_ledger.py"
+   ],
+   "text": "A forced push with a lease still rewrites the remote branch; make sure nobody has built on it."
+  },
+  {
+   "area": "git",
+   "confirmed": true,
+   "effect": "ask",
+   "exceptable": true,
+   "flag_cases": {
+    "Bash": 3
+   },
+   "flag_platforms": {
+    "posix": 3,
+    "windows": 3
+   },
+   "flag_shells": {
+    "bash": 3
+   },
+   "history": false,
+   "id": "builtin.git.history-prune",
+   "kind": "rule",
+   "near_miss_cases": 3,
+   "origin": "builtin",
+   "path_ops": [],
+   "programs": [
+    "git"
+   ],
+   "reaches": [
+    "Bash",
+    "PowerShell",
+    "mcp__Windows-MCP__PowerShell",
+    "mcp__terminal__run_in_terminal"
+   ],
+   "signals": [],
+   "test_files": [],
+   "text": "Ask before making commits unrecoverable: expiring the reflog, pruning now, or deleting a ref directly."
+  },
+  {
+   "area": "git",
+   "confirmed": true,
+   "effect": "ask",
+   "exceptable": true,
+   "flag_cases": {
+    "Bash": 3,
+    "PowerShell": 1
+   },
+   "flag_platforms": {
+    "posix": 4,
+    "windows": 4
+   },
+   "flag_shells": {
+    "bash": 3,
+    "powershell": 1
+   },
+   "history": false,
+   "id": "builtin.git.remote-delete",
+   "kind": "rule",
+   "near_miss_cases": 12,
+   "origin": "builtin",
+   "path_ops": [],
+   "programs": [
+    "git"
+   ],
+   "reaches": [
+    "Bash",
+    "PowerShell",
+    "mcp__Windows-MCP__PowerShell",
+    "mcp__terminal__run_in_terminal"
+   ],
+   "signals": [],
+   "test_files": [],
+   "text": "Ask before deleting branches or tags on a remote."
+  },
+  {
+   "area": "git",
+   "confirmed": true,
+   "effect": "ask",
+   "exceptable": true,
+   "flag_cases": {
+    "Bash": 34,
+    "PowerShell": 26
+   },
+   "flag_platforms": {
+    "posix": 48,
+    "windows": 60
+   },
+   "flag_shells": {
+    "bash": 35,
+    "cmd": 8,
+    "powershell": 25
+   },
+   "history": false,
+   "id": "builtin.git.reset-hard",
+   "kind": "rule",
+   "near_miss_cases": 3,
+   "origin": "builtin",
+   "path_ops": [],
+   "programs": [
+    "git"
+   ],
+   "reaches": [
+    "Bash",
+    "PowerShell",
+    "mcp__Windows-MCP__PowerShell",
+    "mcp__terminal__run_in_terminal"
+   ],
+   "signals": [],
+   "test_files": [
+    "tests/ledger/test_exceptions.py",
+    "tests/ledger/test_http_scopes.py",
+    "tests/ledger/test_shell_tools.py"
+   ],
+   "text": "Ask before git reset --hard: it discards uncommitted work."
+  },
+  {
+   "area": "git",
+   "confirmed": true,
+   "effect": "ask",
+   "exceptable": true,
+   "flag_cases": {
+    "Bash": 2
+   },
+   "flag_platforms": {
+    "posix": 2,
+    "windows": 2
+   },
+   "flag_shells": {
+    "bash": 2
+   },
+   "history": false,
+   "id": "builtin.git.stash-drop",
+   "kind": "rule",
+   "near_miss_cases": 3,
+   "origin": "builtin",
+   "path_ops": [],
+   "programs": [
+    "git"
+   ],
+   "reaches": [
+    "Bash",
+    "PowerShell",
+    "mcp__Windows-MCP__PowerShell",
+    "mcp__terminal__run_in_terminal"
+   ],
+   "signals": [],
+   "test_files": [],
+   "text": "Ask before dropping stashed work (git stash drop, git stash clear)."
+  },
+  {
+   "area": "secrets",
+   "confirmed": true,
+   "effect": "ask",
+   "exceptable": true,
+   "flag_cases": {
+    "Bash": 7,
+    "PowerShell": 5
+   },
+   "flag_platforms": {
+    "posix": 11,
+    "windows": 12
+   },
+   "flag_shells": {
+    "bash": 7,
+    "cmd": 1,
+    "powershell": 5
+   },
+   "history": false,
+   "id": "builtin.secrets.environment",
+   "kind": "rule",
+   "near_miss_cases": 21,
+   "origin": "builtin",
+   "path_ops": [],
+   "programs": [
+    "declare",
+    "env",
+    "export",
+    "get-childitem",
+    "get-item",
+    "printenv",
+    "set"
+   ],
+   "reaches": [
+    "Bash",
+    "PowerShell",
+    "mcp__Windows-MCP__PowerShell",
+    "mcp__terminal__run_in_terminal"
+   ],
+   "signals": [
+    "text:command"
+   ],
+   "test_files": [],
+   "text": "Ask before printing the whole environment: its variables hold tokens and keys."
+  },
+  {
+   "area": "secrets",
+   "confirmed": true,
+   "effect": "ask",
+   "exceptable": true,
+   "flag_cases": {
+    "Bash": 65,
+    "Grep": 4,
+    "PowerShell": 21,
+    "Read": 3
+   },
+   "flag_platforms": {
+    "posix": 78,
+    "windows": 92
+   },
+   "flag_shells": {
+    "bash": 65,
+    "cmd": 1,
+    "powershell": 21
+   },
+   "history": false,
+   "id": "builtin.secrets.read",
+   "kind": "rule",
+   "near_miss_cases": 0,
+   "origin": "builtin",
+   "path_ops": [
+    "read"
+   ],
+   "programs": [],
+   "reaches": [
+    "Bash",
+    "Grep",
+    "PowerShell",
+    "Read",
+    "mcp__Windows-MCP__PowerShell",
+    "mcp__terminal__run_in_terminal"
+   ],
+   "signals": [],
+   "test_files": [
+    "tests/ledger/test_cli.py",
+    "tests/ledger/test_exceptions.py",
+    "tests/ledger/test_http.py",
+    "tests/ledger/test_replay.py"
+   ],
+   "text": "Ask before reading, sending, archiving or staging secret files: .env files, private keys and credential files."
+  },
+  {
+   "area": "secrets",
+   "confirmed": true,
+   "effect": "ask",
+   "exceptable": true,
+   "flag_cases": {
+    "Bash": 6,
+    "PowerShell": 5
+   },
+   "flag_platforms": {
+    "posix": 10,
+    "windows": 11
+   },
+   "flag_shells": {
+    "bash": 6,
+    "cmd": 1,
+    "powershell": 3
+   },
+   "history": false,
+   "id": "builtin.secrets.variable",
+   "kind": "rule",
+   "near_miss_cases": 52,
+   "origin": "builtin",
+   "path_ops": [],
+   "programs": [
+    "echo",
+    "get-childitem",
+    "get-item",
+    "out-host",
+    "printenv",
+    "printf",
+    "set",
+    "write-host",
+    "write-information",
+    "write-output",
+    "write-verbose",
+    "write-warning"
+   ],
+   "reaches": [
+    "Bash",
+    "PowerShell",
+    "mcp__Windows-MCP__PowerShell",
+    "mcp__terminal__run_in_terminal"
+   ],
+   "signals": [
+    "text:command"
+   ],
+   "test_files": [],
+   "text": "Ask before printing a variable whose name says it holds a secret (TOKEN, SECRET, PASSWORD, API_KEY, PRIVATE_KEY, ACCESS_KEY, CREDENTIALS); testing whether it is set or how long it is is fine."
+  },
+  {
+   "area": "shell",
+   "confirmed": true,
+   "effect": "ask",
+   "exceptable": true,
+   "flag_cases": {
+    "Bash": 11,
+    "PowerShell": 5
+   },
+   "flag_platforms": {
+    "posix": 11,
+    "windows": 16
+   },
+   "flag_shells": {
+    "bash": 11,
+    "powershell": 6
+   },
+   "history": false,
+   "id": "builtin.shell.download-pipe",
+   "kind": "rule",
+   "near_miss_cases": 0,
+   "origin": "builtin",
+   "path_ops": [],
+   "programs": [],
+   "reaches": [
+    "Bash",
+    "PowerShell",
+    "mcp__Windows-MCP__PowerShell",
+    "mcp__terminal__run_in_terminal"
+   ],
+   "signals": [
+    "dynamic:download_pipe"
+   ],
+   "test_files": [
+    "tests/ledger/test_cli.py",
+    "tests/ledger/test_exceptions.py",
+    "tests/ledger/test_replay.py"
+   ],
+   "text": "Ask before running a download directly in a shell."
+  },
+  {
+   "area": "shell",
+   "confirmed": true,
+   "effect": "ask",
+   "exceptable": true,
+   "flag_cases": {
+    "Bash": 1,
+    "PowerShell": 1
+   },
+   "flag_platforms": {
+    "posix": 2,
+    "windows": 2
+   },
+   "flag_shells": {
+    "bash": 1,
+    "powershell": 1
+   },
+   "history": false,
+   "id": "builtin.shell.unknown-directory",
+   "kind": "rule",
+   "near_miss_cases": 0,
+   "origin": "builtin",
+   "path_ops": [],
+   "programs": [],
+   "reaches": [
+    "Bash",
+    "PowerShell",
+    "mcp__Windows-MCP__PowerShell",
+    "mcp__terminal__run_in_terminal"
+   ],
+   "signals": [
+    "unknown-directory"
+   ],
+   "test_files": [
+    "tests/ledger/test_http_scopes.py",
+    "tests/ledger/test_repo_root.py",
+    "tests/ledger/test_scope_directory.py",
+    "tests/ledger/test_unknown_directory.py"
+   ],
+   "text": "Ask before running a command in a directory the gate could not work out from the command string: a rule scoped to a directory could apply there."
+  },
+  {
+   "area": "shell",
+   "confirmed": true,
+   "effect": "ask",
+   "exceptable": true,
+   "flag_cases": {
+    "Bash": 4,
+    "PowerShell": 3
+   },
+   "flag_platforms": {
+    "posix": 7,
+    "windows": 7
+   },
+   "flag_shells": {
+    "bash": 3,
+    "powershell": 2
+   },
+   "history": false,
+   "id": "builtin.shell.unreadable",
+   "kind": "rule",
+   "near_miss_cases": 0,
+   "origin": "builtin",
+   "path_ops": [],
+   "programs": [],
+   "reaches": [
+    "Bash",
+    "PowerShell",
+    "mcp__Windows-MCP__PowerShell",
+    "mcp__terminal__run_in_terminal"
+   ],
+   "signals": [
+    "dynamic:parse_error,encoded_command"
+   ],
+   "test_files": [
+    "tests/ledger/test_fail_closed.py",
+    "tests/ledger/test_replay.py"
+   ],
+   "text": "Ask before running a shell command the gate could not read in full: the other rules could not be checked against it."
+  },
+  {
+   "area": "sql",
+   "confirmed": true,
+   "effect": "ask",
+   "exceptable": true,
+   "flag_cases": {
+    "Bash": 20,
+    "PowerShell": 3
+   },
+   "flag_platforms": {
+    "posix": 21,
+    "windows": 23
+   },
+   "flag_shells": {
+    "bash": 20,
+    "powershell": 3
+   },
+   "history": false,
+   "id": "builtin.sql.destructive",
+   "kind": "rule",
+   "near_miss_cases": 24,
+   "origin": "builtin",
+   "path_ops": [],
+   "programs": [
+    "bq",
+    "clickhouse-client",
+    "cockroach",
+    "duckdb",
+    "invoke-sqlcmd",
+    "mariadb",
+    "mycli",
+    "mysql",
+    "pgcli",
+    "psql",
+    "snowsql",
+    "sqlcmd",
+    "sqlite3",
+    "sqlplus",
+    "turso",
+    "usql",
+    "wrangler"
+   ],
+   "reaches": [
+    "Bash",
+    "PowerShell",
+    "mcp__Windows-MCP__PowerShell",
+    "mcp__terminal__run_in_terminal"
+   ],
+   "signals": [],
+   "test_files": [],
+   "text": "Ask before DROP, TRUNCATE, or DELETE without WHERE through a database client."
+  },
+  {
+   "area": "system",
+   "confirmed": true,
+   "effect": "ask",
+   "exceptable": true,
+   "flag_cases": {
+    "Bash": 7,
+    "PowerShell": 11
+   },
+   "flag_platforms": {
+    "posix": 12,
+    "windows": 18
+   },
+   "flag_shells": {
+    "bash": 7,
+    "powershell": 11
+   },
+   "history": false,
+   "id": "builtin.system.antivirus-off",
+   "kind": "rule",
+   "near_miss_cases": 6,
+   "origin": "builtin",
+   "path_ops": [],
+   "programs": [
+    "aa-teardown",
+    "add-mppreference",
+    "csrutil",
+    "net",
+    "sc",
+    "set-mppreference",
+    "set-service",
+    "setenforce",
+    "spctl",
+    "stop-service",
+    "systemctl"
+   ],
+   "reaches": [
+    "Bash",
+    "PowerShell",
+    "mcp__Windows-MCP__PowerShell",
+    "mcp__terminal__run_in_terminal"
+   ],
+   "signals": [],
+   "test_files": [],
+   "text": "Ask before turning off antivirus protection or another security control, or adding exclusions."
+  },
+  {
+   "area": "system",
+   "confirmed": true,
+   "effect": "ask",
+   "exceptable": true,
+   "flag_cases": {
+    "Bash": 6,
+    "PowerShell": 9
+   },
+   "flag_platforms": {
+    "posix": 10,
+    "windows": 15
+   },
+   "flag_shells": {
+    "bash": 6,
+    "powershell": 9
+   },
+   "history": false,
+   "id": "builtin.system.disk",
+   "kind": "rule",
+   "near_miss_cases": 7,
+   "origin": "builtin",
+   "path_ops": [],
+   "programs": [
+    "bcdedit",
+    "blkdiscard",
+    "clear-disk",
+    "dd",
+    "diskpart",
+    "diskutil",
+    "format",
+    "format-volume",
+    "initialize-disk",
+    "lvremove",
+    "mke2fs",
+    "mkfs",
+    "mkfs.btrfs",
+    "mkfs.exfat",
+    "mkfs.ext2",
+    "mkfs.ext3",
+    "mkfs.ext4",
+    "mkfs.f2fs",
+    "mkfs.fat",
+    "mkfs.ntfs",
+    "mkfs.vfat",
+    "mkfs.xfs",
+    "mkswap",
+    "remove-partition",
+    "sgdisk",
+    "shred",
+    "vgremove",
+    "wipefs",
+    "zfs",
+    "zpool"
+   ],
+   "reaches": [
+    "Bash",
+    "PowerShell",
+    "mcp__Windows-MCP__PowerShell",
+    "mcp__terminal__run_in_terminal"
+   ],
+   "signals": [],
+   "test_files": [],
+   "text": "Ask before formatting, wiping, repartitioning or changing boot configuration."
+  },
+  {
+   "area": "system",
+   "confirmed": true,
+   "effect": "ask",
+   "exceptable": true,
+   "flag_cases": {
+    "Bash": 12,
+    "PowerShell": 6
+   },
+   "flag_platforms": {
+    "posix": 16,
+    "windows": 15
+   },
+   "flag_shells": {
+    "bash": 12,
+    "powershell": 6
+   },
+   "history": false,
+   "id": "builtin.system.firewall-off",
+   "kind": "rule",
+   "near_miss_cases": 8,
+   "origin": "builtin",
+   "path_ops": [],
+   "programs": [
+    "ip6tables",
+    "iptables",
+    "netsh",
+    "nft",
+    "pfctl",
+    "set-netfirewallprofile",
+    "socketfilterfw",
+    "systemctl",
+    "ufw"
+   ],
+   "reaches": [
+    "Bash",
+    "PowerShell",
+    "mcp__Windows-MCP__PowerShell",
+    "mcp__terminal__run_in_terminal"
+   ],
+   "signals": [],
+   "test_files": [],
+   "text": "Ask before turning off a firewall."
+  },
+  {
+   "area": "system",
+   "confirmed": true,
+   "effect": "ask",
+   "exceptable": true,
+   "flag_cases": {
+    "Bash": 4,
+    "Edit": 2,
+    "PowerShell": 2,
+    "Write": 4
+   },
+   "flag_platforms": {
+    "posix": 9,
+    "windows": 12
+   },
+   "flag_shells": {
+    "bash": 4,
+    "powershell": 2
+   },
+   "history": false,
+   "id": "builtin.system.login-files",
+   "kind": "rule",
+   "near_miss_cases": 0,
+   "origin": "builtin",
+   "path_ops": [
+    "delete",
+    "write"
+   ],
+   "programs": [],
+   "reaches": [
+    "Bash",
+    "Edit",
+    "MultiEdit",
+    "NotebookEdit",
+    "PowerShell",
+    "Write",
+    "mcp__Windows-MCP__PowerShell",
+    "mcp__terminal__run_in_terminal"
+   ],
+   "signals": [],
+   "test_files": [],
+   "text": "Ask before changing SSH authorized keys or shell profile files: they grant access or run at every login."
+  },
+  {
+   "area": "system",
+   "confirmed": true,
+   "effect": "ask",
+   "exceptable": true,
+   "flag_cases": {
+    "Bash": 1,
+    "PowerShell": 3
+   },
+   "flag_platforms": {
+    "posix": 4,
+    "windows": 4
+   },
+   "flag_shells": {
+    "bash": 1,
+    "powershell": 3
+   },
+   "history": false,
+   "id": "builtin.system.registry-defences",
+   "kind": "rule",
+   "near_miss_cases": 3,
+   "origin": "builtin",
+   "path_ops": [],
+   "programs": [
+    "new-item",
+    "new-itemproperty",
+    "reg",
+    "set-itemproperty"
+   ],
+   "reaches": [
+    "Bash",
+    "PowerShell",
+    "mcp__Windows-MCP__PowerShell",
+    "mcp__terminal__run_in_terminal"
+   ],
+   "signals": [],
+   "test_files": [],
+   "text": "Ask before registry changes that switch Defender, the firewall or UAC off."
+  },
+  {
+   "area": "system",
+   "confirmed": true,
+   "effect": "ask",
+   "exceptable": true,
+   "flag_cases": {
+    "Bash": 3,
+    "PowerShell": 6
+   },
+   "flag_platforms": {
+    "posix": 5,
+    "windows": 9
+   },
+   "flag_shells": {
+    "bash": 3,
+    "powershell": 6
+   },
+   "history": false,
+   "id": "builtin.system.registry-delete",
+   "kind": "rule",
+   "near_miss_cases": 35,
+   "origin": "builtin",
+   "path_ops": [],
+   "programs": [
+    "clear-item",
+    "clear-itemproperty",
+    "reg",
+    "remove-item",
+    "remove-itemproperty"
+   ],
+   "reaches": [
+    "Bash",
+    "PowerShell",
+    "mcp__Windows-MCP__PowerShell",
+    "mcp__terminal__run_in_terminal"
+   ],
+   "signals": [],
+   "test_files": [],
+   "text": "Ask before deleting machine-wide registry keys."
+  },
+  {
+   "area": "system",
+   "confirmed": true,
+   "effect": "ask",
+   "exceptable": true,
+   "flag_cases": {
+    "Bash": 8,
+    "PowerShell": 7
+   },
+   "flag_platforms": {
+    "posix": 12,
+    "windows": 13
+   },
+   "flag_shells": {
+    "bash": 8,
+    "powershell": 7
+   },
+   "history": false,
+   "id": "builtin.system.trust-root-cert",
+   "kind": "rule",
+   "near_miss_cases": 9,
+   "origin": "builtin",
+   "path_ops": [],
+   "programs": [
+    "caddy",
+    "certutil",
+    "dotnet",
+    "import-certificate",
+    "import-pfxcertificate",
+    "keytool",
+    "mkcert",
+    "security",
+    "step",
+    "trust",
+    "update-ca-certificates",
+    "update-ca-trust"
+   ],
+   "reaches": [
+    "Bash",
+    "PowerShell",
+    "mcp__Windows-MCP__PowerShell",
+    "mcp__terminal__run_in_terminal"
+   ],
+   "signals": [],
+   "test_files": [],
+   "text": "Ask before adding a certificate to a trusted root store."
+  },
+  {
+   "id": "path:delete",
+   "kind": "path",
+   "name": "delete"
+  },
+  {
+   "id": "path:read",
+   "kind": "path",
+   "name": "read"
+  },
+  {
+   "id": "path:write",
+   "kind": "path",
+   "name": "write"
+  },
+  {
+   "id": "program:aa-teardown",
+   "kind": "program",
+   "name": "aa-teardown"
+  },
+  {
+   "id": "program:add-mppreference",
+   "kind": "program",
+   "name": "add-mppreference"
+  },
+  {
+   "id": "program:aws",
+   "kind": "program",
+   "name": "aws"
+  },
+  {
+   "id": "program:az",
+   "kind": "program",
+   "name": "az"
+  },
+  {
+   "id": "program:bcdedit",
+   "kind": "program",
+   "name": "bcdedit"
+  },
+  {
+   "id": "program:blkdiscard",
+   "kind": "program",
+   "name": "blkdiscard"
+  },
+  {
+   "id": "program:bq",
+   "kind": "program",
+   "name": "bq"
+  },
+  {
+   "id": "program:caddy",
+   "kind": "program",
+   "name": "caddy"
+  },
+  {
+   "id": "program:cdk",
+   "kind": "program",
+   "name": "cdk"
+  },
+  {
+   "id": "program:cdktf",
+   "kind": "program",
+   "name": "cdktf"
+  },
+  {
+   "id": "program:certutil",
+   "kind": "program",
+   "name": "certutil"
+  },
+  {
+   "id": "program:clear-disk",
+   "kind": "program",
+   "name": "clear-disk"
+  },
+  {
+   "id": "program:clear-item",
+   "kind": "program",
+   "name": "clear-item"
+  },
+  {
+   "id": "program:clear-itemproperty",
+   "kind": "program",
+   "name": "clear-itemproperty"
+  },
+  {
+   "id": "program:clickhouse-client",
+   "kind": "program",
+   "name": "clickhouse-client"
+  },
+  {
+   "id": "program:cockroach",
+   "kind": "program",
+   "name": "cockroach"
+  },
+  {
+   "id": "program:csrutil",
+   "kind": "program",
+   "name": "csrutil"
+  },
+  {
+   "id": "program:dd",
+   "kind": "program",
+   "name": "dd"
+  },
+  {
+   "id": "program:declare",
+   "kind": "program",
+   "name": "declare"
+  },
+  {
+   "id": "program:diskpart",
+   "kind": "program",
+   "name": "diskpart"
+  },
+  {
+   "id": "program:diskutil",
+   "kind": "program",
+   "name": "diskutil"
+  },
+  {
+   "id": "program:docker",
+   "kind": "program",
+   "name": "docker"
+  },
+  {
+   "id": "program:docker-compose",
+   "kind": "program",
+   "name": "docker-compose"
+  },
+  {
+   "id": "program:dotnet",
+   "kind": "program",
+   "name": "dotnet"
+  },
+  {
+   "id": "program:duckdb",
+   "kind": "program",
+   "name": "duckdb"
+  },
+  {
+   "id": "program:echo",
+   "kind": "program",
+   "name": "echo"
+  },
+  {
+   "id": "program:ember-gate",
+   "kind": "program",
+   "name": "ember-gate"
+  },
+  {
+   "id": "program:env",
+   "kind": "program",
+   "name": "env"
+  },
+  {
+   "id": "program:export",
+   "kind": "program",
+   "name": "export"
+  },
+  {
+   "id": "program:fly",
+   "kind": "program",
+   "name": "fly"
+  },
+  {
+   "id": "program:flyctl",
+   "kind": "program",
+   "name": "flyctl"
+  },
+  {
+   "id": "program:format",
+   "kind": "program",
+   "name": "format"
+  },
+  {
+   "id": "program:format-volume",
+   "kind": "program",
+   "name": "format-volume"
+  },
+  {
+   "id": "program:gcloud",
+   "kind": "program",
+   "name": "gcloud"
+  },
+  {
+   "id": "program:get-childitem",
+   "kind": "program",
+   "name": "get-childitem"
+  },
+  {
+   "id": "program:get-item",
+   "kind": "program",
+   "name": "get-item"
+  },
+  {
+   "id": "program:gh",
+   "kind": "program",
+   "name": "gh"
+  },
+  {
+   "id": "program:git",
+   "kind": "program",
+   "name": "git"
+  },
+  {
+   "id": "program:gsutil",
+   "kind": "program",
+   "name": "gsutil"
+  },
+  {
+   "id": "program:helm",
+   "kind": "program",
+   "name": "helm"
+  },
+  {
+   "id": "program:heroku",
+   "kind": "program",
+   "name": "heroku"
+  },
+  {
+   "id": "program:import-certificate",
+   "kind": "program",
+   "name": "import-certificate"
+  },
+  {
+   "id": "program:import-pfxcertificate",
+   "kind": "program",
+   "name": "import-pfxcertificate"
+  },
+  {
+   "id": "program:initialize-disk",
+   "kind": "program",
+   "name": "initialize-disk"
+  },
+  {
+   "id": "program:invoke-sqlcmd",
+   "kind": "program",
+   "name": "invoke-sqlcmd"
+  },
+  {
+   "id": "program:ip6tables",
+   "kind": "program",
+   "name": "ip6tables"
+  },
+  {
+   "id": "program:iptables",
+   "kind": "program",
+   "name": "iptables"
+  },
+  {
+   "id": "program:keytool",
+   "kind": "program",
+   "name": "keytool"
+  },
+  {
+   "id": "program:kubectl",
+   "kind": "program",
+   "name": "kubectl"
+  },
+  {
+   "id": "program:lvremove",
+   "kind": "program",
+   "name": "lvremove"
+  },
+  {
+   "id": "program:mariadb",
+   "kind": "program",
+   "name": "mariadb"
+  },
+  {
+   "id": "program:mkcert",
+   "kind": "program",
+   "name": "mkcert"
+  },
+  {
+   "id": "program:mke2fs",
+   "kind": "program",
+   "name": "mke2fs"
+  },
+  {
+   "id": "program:mkfs",
+   "kind": "program",
+   "name": "mkfs"
+  },
+  {
+   "id": "program:mkfs.btrfs",
+   "kind": "program",
+   "name": "mkfs.btrfs"
+  },
+  {
+   "id": "program:mkfs.exfat",
+   "kind": "program",
+   "name": "mkfs.exfat"
+  },
+  {
+   "id": "program:mkfs.ext2",
+   "kind": "program",
+   "name": "mkfs.ext2"
+  },
+  {
+   "id": "program:mkfs.ext3",
+   "kind": "program",
+   "name": "mkfs.ext3"
+  },
+  {
+   "id": "program:mkfs.ext4",
+   "kind": "program",
+   "name": "mkfs.ext4"
+  },
+  {
+   "id": "program:mkfs.f2fs",
+   "kind": "program",
+   "name": "mkfs.f2fs"
+  },
+  {
+   "id": "program:mkfs.fat",
+   "kind": "program",
+   "name": "mkfs.fat"
+  },
+  {
+   "id": "program:mkfs.ntfs",
+   "kind": "program",
+   "name": "mkfs.ntfs"
+  },
+  {
+   "id": "program:mkfs.vfat",
+   "kind": "program",
+   "name": "mkfs.vfat"
+  },
+  {
+   "id": "program:mkfs.xfs",
+   "kind": "program",
+   "name": "mkfs.xfs"
+  },
+  {
+   "id": "program:mkswap",
+   "kind": "program",
+   "name": "mkswap"
+  },
+  {
+   "id": "program:mycli",
+   "kind": "program",
+   "name": "mycli"
+  },
+  {
+   "id": "program:mysql",
+   "kind": "program",
+   "name": "mysql"
+  },
+  {
+   "id": "program:net",
+   "kind": "program",
+   "name": "net"
+  },
+  {
+   "id": "program:netsh",
+   "kind": "program",
+   "name": "netsh"
+  },
+  {
+   "id": "program:new-item",
+   "kind": "program",
+   "name": "new-item"
+  },
+  {
+   "id": "program:new-itemproperty",
+   "kind": "program",
+   "name": "new-itemproperty"
+  },
+  {
+   "id": "program:nft",
+   "kind": "program",
+   "name": "nft"
+  },
+  {
+   "id": "program:npm",
+   "kind": "program",
+   "name": "npm"
+  },
+  {
+   "id": "program:oc",
+   "kind": "program",
+   "name": "oc"
+  },
+  {
+   "id": "program:out-host",
+   "kind": "program",
+   "name": "out-host"
+  },
+  {
+   "id": "program:pfctl",
+   "kind": "program",
+   "name": "pfctl"
+  },
+  {
+   "id": "program:pgcli",
+   "kind": "program",
+   "name": "pgcli"
+  },
+  {
+   "id": "program:pnpm",
+   "kind": "program",
+   "name": "pnpm"
+  },
+  {
+   "id": "program:podman",
+   "kind": "program",
+   "name": "podman"
+  },
+  {
+   "id": "program:printenv",
+   "kind": "program",
+   "name": "printenv"
+  },
+  {
+   "id": "program:printf",
+   "kind": "program",
+   "name": "printf"
+  },
+  {
+   "id": "program:psql",
+   "kind": "program",
+   "name": "psql"
+  },
+  {
+   "id": "program:pulumi",
+   "kind": "program",
+   "name": "pulumi"
+  },
+  {
+   "id": "program:py",
+   "kind": "program",
+   "name": "py"
+  },
+  {
+   "id": "program:python",
+   "kind": "program",
+   "name": "python"
+  },
+  {
+   "id": "program:python3",
+   "kind": "program",
+   "name": "python3"
+  },
+  {
+   "id": "program:reg",
+   "kind": "program",
+   "name": "reg"
+  },
+  {
+   "id": "program:remove-item",
+   "kind": "program",
+   "name": "remove-item"
+  },
+  {
+   "id": "program:remove-itemproperty",
+   "kind": "program",
+   "name": "remove-itemproperty"
+  },
+  {
+   "id": "program:remove-partition",
+   "kind": "program",
+   "name": "remove-partition"
+  },
+  {
+   "id": "program:robocopy",
+   "kind": "program",
+   "name": "robocopy"
+  },
+  {
+   "id": "program:rsync",
+   "kind": "program",
+   "name": "rsync"
+  },
+  {
+   "id": "program:sc",
+   "kind": "program",
+   "name": "sc"
+  },
+  {
+   "id": "program:security",
+   "kind": "program",
+   "name": "security"
+  },
+  {
+   "id": "program:set",
+   "kind": "program",
+   "name": "set"
+  },
+  {
+   "id": "program:set-itemproperty",
+   "kind": "program",
+   "name": "set-itemproperty"
+  },
+  {
+   "id": "program:set-mppreference",
+   "kind": "program",
+   "name": "set-mppreference"
+  },
+  {
+   "id": "program:set-netfirewallprofile",
+   "kind": "program",
+   "name": "set-netfirewallprofile"
+  },
+  {
+   "id": "program:set-service",
+   "kind": "program",
+   "name": "set-service"
+  },
+  {
+   "id": "program:setenforce",
+   "kind": "program",
+   "name": "setenforce"
+  },
+  {
+   "id": "program:sgdisk",
+   "kind": "program",
+   "name": "sgdisk"
+  },
+  {
+   "id": "program:shred",
+   "kind": "program",
+   "name": "shred"
+  },
+  {
+   "id": "program:snowsql",
+   "kind": "program",
+   "name": "snowsql"
+  },
+  {
+   "id": "program:socketfilterfw",
+   "kind": "program",
+   "name": "socketfilterfw"
+  },
+  {
+   "id": "program:spctl",
+   "kind": "program",
+   "name": "spctl"
+  },
+  {
+   "id": "program:sqlcmd",
+   "kind": "program",
+   "name": "sqlcmd"
+  },
+  {
+   "id": "program:sqlite3",
+   "kind": "program",
+   "name": "sqlite3"
+  },
+  {
+   "id": "program:sqlplus",
+   "kind": "program",
+   "name": "sqlplus"
+  },
+  {
+   "id": "program:step",
+   "kind": "program",
+   "name": "step"
+  },
+  {
+   "id": "program:stop-service",
+   "kind": "program",
+   "name": "stop-service"
+  },
+  {
+   "id": "program:supabase",
+   "kind": "program",
+   "name": "supabase"
+  },
+  {
+   "id": "program:systemctl",
+   "kind": "program",
+   "name": "systemctl"
+  },
+  {
+   "id": "program:terraform",
+   "kind": "program",
+   "name": "terraform"
+  },
+  {
+   "id": "program:terragrunt",
+   "kind": "program",
+   "name": "terragrunt"
+  },
+  {
+   "id": "program:tofu",
+   "kind": "program",
+   "name": "tofu"
+  },
+  {
+   "id": "program:trust",
+   "kind": "program",
+   "name": "trust"
+  },
+  {
+   "id": "program:turso",
+   "kind": "program",
+   "name": "turso"
+  },
+  {
+   "id": "program:ufw",
+   "kind": "program",
+   "name": "ufw"
+  },
+  {
+   "id": "program:update-ca-certificates",
+   "kind": "program",
+   "name": "update-ca-certificates"
+  },
+  {
+   "id": "program:update-ca-trust",
+   "kind": "program",
+   "name": "update-ca-trust"
+  },
+  {
+   "id": "program:usql",
+   "kind": "program",
+   "name": "usql"
+  },
+  {
+   "id": "program:vc",
+   "kind": "program",
+   "name": "vc"
+  },
+  {
+   "id": "program:vercel",
+   "kind": "program",
+   "name": "vercel"
+  },
+  {
+   "id": "program:vgremove",
+   "kind": "program",
+   "name": "vgremove"
+  },
+  {
+   "id": "program:wipefs",
+   "kind": "program",
+   "name": "wipefs"
+  },
+  {
+   "id": "program:wrangler",
+   "kind": "program",
+   "name": "wrangler"
+  },
+  {
+   "id": "program:write-host",
+   "kind": "program",
+   "name": "write-host"
+  },
+  {
+   "id": "program:write-information",
+   "kind": "program",
+   "name": "write-information"
+  },
+  {
+   "id": "program:write-output",
+   "kind": "program",
+   "name": "write-output"
+  },
+  {
+   "id": "program:write-verbose",
+   "kind": "program",
+   "name": "write-verbose"
+  },
+  {
+   "id": "program:write-warning",
+   "kind": "program",
+   "name": "write-warning"
+  },
+  {
+   "id": "program:zfs",
+   "kind": "program",
+   "name": "zfs"
+  },
+  {
+   "id": "program:zpool",
+   "kind": "program",
+   "name": "zpool"
+  },
+  {
+   "id": "signal:assigns:EMBER_GATE_MODE,EMBER_LEDGER,EMBER_HOME,EMBER_GATE_BUILTIN,EMBER_GATE_REMIND_INTERVAL",
+   "kind": "signal",
+   "name": "assigns:EMBER_GATE_MODE,EMBER_LEDGER,EMBER_HOME,EMBER_GATE_BUILTIN,EMBER_GATE_REMIND_INTERVAL"
+  },
+  {
+   "id": "signal:dynamic:download_pipe",
+   "kind": "signal",
+   "name": "dynamic:download_pipe"
+  },
+  {
+   "id": "signal:dynamic:parse_error,encoded_command",
+   "kind": "signal",
+   "name": "dynamic:parse_error,encoded_command"
+  },
+  {
+   "id": "signal:text:command",
+   "kind": "signal",
+   "name": "text:command"
+  },
+  {
+   "id": "signal:unknown-directory",
+   "kind": "signal",
+   "name": "unknown-directory"
+  },
+  {
+   "id": "tool:Agent",
+   "kind": "tool",
+   "watched": false
+  },
+  {
+   "id": "tool:Bash",
+   "kind": "tool",
+   "watched": true
+  },
+  {
+   "id": "tool:Edit",
+   "kind": "tool",
+   "watched": true
+  },
+  {
+   "id": "tool:Glob",
+   "kind": "tool",
+   "watched": false
+  },
+  {
+   "id": "tool:Grep",
+   "kind": "tool",
+   "watched": true
+  },
+  {
+   "id": "tool:MultiEdit",
+   "kind": "tool",
+   "watched": true
+  },
+  {
+   "id": "tool:NotebookEdit",
+   "kind": "tool",
+   "watched": true
+  },
+  {
+   "id": "tool:PowerShell",
+   "kind": "tool",
+   "watched": true
+  },
+  {
+   "id": "tool:Read",
+   "kind": "tool",
+   "watched": true
+  },
+  {
+   "id": "tool:WebFetch",
+   "kind": "tool",
+   "watched": false
+  },
+  {
+   "id": "tool:WebSearch",
+   "kind": "tool",
+   "watched": false
+  },
+  {
+   "id": "tool:Write",
+   "kind": "tool",
+   "watched": true
+  },
+  {
+   "id": "tool:mcp__* (other MCP tools)",
+   "kind": "tool",
+   "watched": false
+  },
+  {
+   "id": "tool:mcp__Windows-MCP__PowerShell",
+   "kind": "tool",
+   "watched": true
+  },
+  {
+   "id": "tool:mcp__terminal__run_in_terminal",
+   "kind": "tool",
+   "watched": true
+  }
+ ],
+ "summary": {
+  "areas": {
+   "cloud": 9,
+   "delete": 5,
+   "gate": 4,
+   "git": 9,
+   "secrets": 3,
+   "shell": 3,
+   "sql": 1,
+   "system": 7
+  },
+  "corpus_problems": [],
+  "effects": {
+   "ask": 38,
+   "deny": 2,
+   "warn": 1
+  },
+  "must_flag_entries": 675,
+  "must_not_flag_entries": 622,
+  "rules": 41,
+  "tools_unwatched": [
+   "Agent",
+   "Glob",
+   "WebFetch",
+   "WebSearch",
+   "mcp__* (other MCP tools)"
+  ],
+  "tools_watched": [
+   "Bash",
+   "Edit",
+   "Grep",
+   "MultiEdit",
+   "NotebookEdit",
+   "PowerShell",
+   "Read",
+   "Write",
+   "mcp__Windows-MCP__PowerShell",
+   "mcp__terminal__run_in_terminal"
+  ]
+ }
+}

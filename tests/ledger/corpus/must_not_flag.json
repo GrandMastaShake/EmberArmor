@@ -2661,5 +2661,70 @@
   "tool": "PowerShell",
   "command": "try { cd C:\\srv\\repo } catch { Write-Host gone }; git status",
   "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "git push origin feature",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "git checkout -- src\\app.py",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "git restore src\\app.py",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "git stash list",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "git stash pop",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "git reflog",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "git gc",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "gh repo view owner/repo",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "docker system df",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "aws s3 ls s3://bucket/data",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "az group show --name my-rg",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "npm unpublish --help",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "npm publish",
+  "platform": "windows"
  }
 ]

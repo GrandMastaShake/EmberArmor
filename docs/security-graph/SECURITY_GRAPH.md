@@ -7,7 +7,7 @@ when this file or security_graph.json no longer matches the rules and corpus.
 
 - Rules: 41 (ask 38, deny 2, warn 1)
 - Areas: cloud 9, delete 5, gate 4, git 9, secrets 3, shell 3, sql 1, system 7
-- Corpus: 675 must-flag, 622 must-not-flag entries
+- Corpus: 688 must-flag, 635 must-not-flag entries
 - Tools the rules can reach: Bash, Edit, Grep, MultiEdit, NotebookEdit, PowerShell, Read, Write, mcp__Windows-MCP__PowerShell, mcp__terminal__run_in_terminal
 - Tools no rule looks at: Agent, Glob, WebFetch, WebSearch, mcp__* (other MCP tools)
 
@@ -74,15 +74,7 @@ but every must-flag case for it is a shell command.
 No must-flag case runs the rule through PowerShell. Some of these watch
 Unix-only programs, where that is expected.
 
-- builtin.git.force-push-lease (git)
-- builtin.git.discard-worktree (git)
-- builtin.git.stash-drop (git)
-- builtin.git.history-prune (git)
-- builtin.cloud.gh-repo-delete (gh)
-- builtin.cloud.docker-prune (docker, podman)
-- builtin.cloud.aws-s3-delete (aws)
-- builtin.cloud.resource-delete (aws, az, cdk, cdktf, fly, flyctl +7)
-- builtin.cloud.npm-unpublish (npm, pnpm)
+- none
 
 ### Program rules with no near-miss case
 
@@ -105,13 +97,13 @@ Fixed: no exception can drop the rule.
 
 | Rule | Effect | Watches | Cases | Shells | Near | Tests | Fixed |
 |---|---|---|---|---|---|---|---|
-| builtin.cloud.aws-s3-delete | ask | aws | Bash 4 | bash 4 | 6 | 0 |  |
-| builtin.cloud.docker-prune | ask | docker, podman | Bash 3 | bash 3 | 3 | 0 |  |
+| builtin.cloud.aws-s3-delete | ask | aws | Bash 4, PowerShell 1 | bash 4, powershell 1 | 7 | 0 |  |
+| builtin.cloud.docker-prune | ask | docker, podman | Bash 3, PowerShell 1 | bash 3, powershell 1 | 4 | 0 |  |
 | builtin.cloud.docker-volume-rm | ask | docker, docker-compose, podman | Bash 5, PowerShell 1 | bash 5, powershell 1 | 5 | 0 |  |
-| builtin.cloud.gh-repo-delete | ask | gh | Bash 1 | bash 1 | 3 | 0 |  |
+| builtin.cloud.gh-repo-delete | ask | gh | Bash 1, PowerShell 1 | bash 1, powershell 1 | 4 | 0 |  |
 | builtin.cloud.kubectl-delete | ask | kubectl, oc | Bash 5, PowerShell 1 | bash 5, powershell 1 | 1 | 0 |  |
-| builtin.cloud.npm-unpublish | ask | npm, pnpm | Bash 1 | bash 1 | 2 | 0 |  |
-| builtin.cloud.resource-delete | ask | aws, az, cdk, cdktf, fly +8 | Bash 14 | bash 14 | 10 | 0 |  |
+| builtin.cloud.npm-unpublish | ask | npm, pnpm | Bash 1, PowerShell 2 | bash 1, powershell 2 | 3 | 0 |  |
+| builtin.cloud.resource-delete | ask | aws, az, cdk, cdktf, fly +8 | Bash 14, PowerShell 1 | bash 14, powershell 1 | 12 | 0 |  |
 | builtin.cloud.terraform-destroy | ask | terraform, terragrunt, tofu | Bash 7, PowerShell 2 | bash 7, powershell 2 | 4 | 0 |  |
 | builtin.cloud.vercel-remove | ask | vc, vercel | Bash 10, PowerShell 3 | bash 10, powershell 3 | 3 | 0 |  |
 
@@ -140,13 +132,13 @@ Fixed: no exception can drop the rule.
 |---|---|---|---|---|---|---|---|
 | builtin.git.branch-force-delete | ask | git | Bash 4, PowerShell 1 | bash 4, powershell 1 | 4 | 0 |  |
 | builtin.git.clean | ask | git | Bash 9, PowerShell 2 | bash 9, powershell 2 | 3 | 2 |  |
-| builtin.git.discard-worktree | ask | git | Bash 13 | bash 13 | 12 | 0 |  |
-| builtin.git.force-push | ask | git | Bash 12, PowerShell 5 | bash 13, powershell 4 | 12 | 13 |  |
-| builtin.git.force-push-lease | warn | git | Bash 2 | bash 2 | 12 | 1 |  |
-| builtin.git.history-prune | ask | git | Bash 3 | bash 3 | 3 | 0 |  |
-| builtin.git.remote-delete | ask | git | Bash 3, PowerShell 1 | bash 3, powershell 1 | 12 | 0 |  |
+| builtin.git.discard-worktree | ask | git | Bash 13, PowerShell 2 | bash 13, powershell 2 | 14 | 0 |  |
+| builtin.git.force-push | ask | git | Bash 12, PowerShell 5 | bash 13, powershell 4 | 13 | 13 |  |
+| builtin.git.force-push-lease | warn | git | Bash 2, PowerShell 1 | bash 2, powershell 1 | 13 | 1 |  |
+| builtin.git.history-prune | ask | git | Bash 3, PowerShell 2 | bash 3, powershell 2 | 5 | 0 |  |
+| builtin.git.remote-delete | ask | git | Bash 3, PowerShell 1 | bash 3, powershell 1 | 13 | 0 |  |
 | builtin.git.reset-hard | ask | git | Bash 34, PowerShell 26 | bash 35, cmd 8, powershell 25 | 3 | 3 |  |
-| builtin.git.stash-drop | ask | git | Bash 2 | bash 2 | 3 | 0 |  |
+| builtin.git.stash-drop | ask | git | Bash 2, PowerShell 2 | bash 2, powershell 2 | 5 | 0 |  |
 
 ### secrets
 

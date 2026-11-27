@@ -294,6 +294,12 @@
    "to": "tool:Bash"
   },
   {
+   "cases": 1,
+   "from": "rule:builtin.git.force-push-lease",
+   "kind": "proven_on",
+   "to": "tool:PowerShell"
+  },
+  {
    "from": "area:git",
    "kind": "contains",
    "to": "rule:builtin.git.remote-delete"
@@ -456,6 +462,12 @@
    "to": "tool:Bash"
   },
   {
+   "cases": 2,
+   "from": "rule:builtin.git.discard-worktree",
+   "kind": "proven_on",
+   "to": "tool:PowerShell"
+  },
+  {
    "from": "area:git",
    "kind": "contains",
    "to": "rule:builtin.git.stash-drop"
@@ -492,6 +504,12 @@
    "to": "tool:Bash"
   },
   {
+   "cases": 2,
+   "from": "rule:builtin.git.stash-drop",
+   "kind": "proven_on",
+   "to": "tool:PowerShell"
+  },
+  {
    "from": "area:git",
    "kind": "contains",
    "to": "rule:builtin.git.history-prune"
@@ -526,6 +544,12 @@
    "from": "rule:builtin.git.history-prune",
    "kind": "proven_on",
    "to": "tool:Bash"
+  },
+  {
+   "cases": 2,
+   "from": "rule:builtin.git.history-prune",
+   "kind": "proven_on",
+   "to": "tool:PowerShell"
   },
   {
    "from": "area:git",
@@ -728,6 +752,12 @@
    "to": "tool:Bash"
   },
   {
+   "cases": 1,
+   "from": "rule:builtin.cloud.gh-repo-delete",
+   "kind": "proven_on",
+   "to": "tool:PowerShell"
+  },
+  {
    "from": "area:cloud",
    "kind": "contains",
    "to": "rule:builtin.cloud.vercel-remove"
@@ -915,6 +945,12 @@
    "to": "tool:Bash"
   },
   {
+   "cases": 1,
+   "from": "rule:builtin.cloud.docker-prune",
+   "kind": "proven_on",
+   "to": "tool:PowerShell"
+  },
+  {
    "from": "area:cloud",
    "kind": "contains",
    "to": "rule:builtin.cloud.docker-volume-rm"
@@ -1001,6 +1037,12 @@
    "from": "rule:builtin.cloud.aws-s3-delete",
    "kind": "proven_on",
    "to": "tool:Bash"
+  },
+  {
+   "cases": 1,
+   "from": "rule:builtin.cloud.aws-s3-delete",
+   "kind": "proven_on",
+   "to": "tool:PowerShell"
   },
   {
    "from": "area:cloud",
@@ -1099,6 +1141,12 @@
    "to": "tool:Bash"
   },
   {
+   "cases": 1,
+   "from": "rule:builtin.cloud.resource-delete",
+   "kind": "proven_on",
+   "to": "tool:PowerShell"
+  },
+  {
    "from": "area:cloud",
    "kind": "contains",
    "to": "rule:builtin.cloud.npm-unpublish"
@@ -1138,6 +1186,12 @@
    "from": "rule:builtin.cloud.npm-unpublish",
    "kind": "proven_on",
    "to": "tool:Bash"
+  },
+  {
+   "cases": 2,
+   "from": "rule:builtin.cloud.npm-unpublish",
+   "kind": "proven_on",
+   "to": "tool:PowerShell"
   },
   {
    "from": "area:system",
@@ -2449,76 +2503,7 @@
  "gaps": {
   "file_reach_without_file_case": [],
   "no_near_miss_case": [],
-  "no_powershell_case": [
-   {
-    "programs": [
-     "git"
-    ],
-    "rule": "builtin.git.force-push-lease"
-   },
-   {
-    "programs": [
-     "git"
-    ],
-    "rule": "builtin.git.discard-worktree"
-   },
-   {
-    "programs": [
-     "git"
-    ],
-    "rule": "builtin.git.stash-drop"
-   },
-   {
-    "programs": [
-     "git"
-    ],
-    "rule": "builtin.git.history-prune"
-   },
-   {
-    "programs": [
-     "gh"
-    ],
-    "rule": "builtin.cloud.gh-repo-delete"
-   },
-   {
-    "programs": [
-     "docker",
-     "podman"
-    ],
-    "rule": "builtin.cloud.docker-prune"
-   },
-   {
-    "programs": [
-     "aws"
-    ],
-    "rule": "builtin.cloud.aws-s3-delete"
-   },
-   {
-    "programs": [
-     "aws",
-     "az",
-     "cdk",
-     "cdktf",
-     "fly",
-     "flyctl",
-     "gcloud",
-     "gsutil",
-     "helm",
-     "heroku",
-     "pulumi",
-     "supabase",
-     "wrangler"
-    ],
-    "rule": "builtin.cloud.resource-delete"
-   },
-   {
-    "programs": [
-     "npm",
-     "pnpm"
-    ],
-    "rule": "builtin.cloud.npm-unpublish"
-   }
-  ],
+  "no_powershell_case": [],
   "no_proof": [],
   "unconfirmed": [],
   "unwatched_tools": [
@@ -2576,19 +2561,21 @@
    "effect": "ask",
    "exceptable": true,
    "flag_cases": {
-    "Bash": 4
+    "Bash": 4,
+    "PowerShell": 1
    },
    "flag_platforms": {
     "posix": 4,
-    "windows": 4
+    "windows": 5
    },
    "flag_shells": {
-    "bash": 4
+    "bash": 4,
+    "powershell": 1
    },
    "history": false,
    "id": "builtin.cloud.aws-s3-delete",
    "kind": "rule",
-   "near_miss_cases": 6,
+   "near_miss_cases": 7,
    "origin": "builtin",
    "path_ops": [],
    "programs": [
@@ -2610,19 +2597,21 @@
    "effect": "ask",
    "exceptable": true,
    "flag_cases": {
-    "Bash": 3
+    "Bash": 3,
+    "PowerShell": 1
    },
    "flag_platforms": {
     "posix": 3,
-    "windows": 3
+    "windows": 4
    },
    "flag_shells": {
-    "bash": 3
+    "bash": 3,
+    "powershell": 1
    },
    "history": false,
    "id": "builtin.cloud.docker-prune",
    "kind": "rule",
-   "near_miss_cases": 3,
+   "near_miss_cases": 4,
    "origin": "builtin",
    "path_ops": [],
    "programs": [
@@ -2683,19 +2672,21 @@
    "effect": "ask",
    "exceptable": true,
    "flag_cases": {
-    "Bash": 1
+    "Bash": 1,
+    "PowerShell": 1
    },
    "flag_platforms": {
     "posix": 1,
-    "windows": 1
+    "windows": 2
    },
    "flag_shells": {
-    "bash": 1
+    "bash": 1,
+    "powershell": 1
    },
    "history": false,
    "id": "builtin.cloud.gh-repo-delete",
    "kind": "rule",
-   "near_miss_cases": 3,
+   "near_miss_cases": 4,
    "origin": "builtin",
    "path_ops": [],
    "programs": [
@@ -2754,19 +2745,21 @@
    "effect": "ask",
    "exceptable": true,
    "flag_cases": {
-    "Bash": 1
+    "Bash": 1,
+    "PowerShell": 2
    },
    "flag_platforms": {
     "posix": 1,
-    "windows": 1
+    "windows": 3
    },
    "flag_shells": {
-    "bash": 1
+    "bash": 1,
+    "powershell": 2
    },
    "history": false,
    "id": "builtin.cloud.npm-unpublish",
    "kind": "rule",
-   "near_miss_cases": 2,
+   "near_miss_cases": 3,
    "origin": "builtin",
    "path_ops": [],
    "programs": [
@@ -2789,19 +2782,21 @@
    "effect": "ask",
    "exceptable": true,
    "flag_cases": {
-    "Bash": 14
+    "Bash": 14,
+    "PowerShell": 1
    },
    "flag_platforms": {
     "posix": 14,
-    "windows": 14
+    "windows": 15
    },
    "flag_shells": {
-    "bash": 14
+    "bash": 14,
+    "powershell": 1
    },
    "history": false,
    "id": "builtin.cloud.resource-delete",
    "kind": "rule",
-   "near_miss_cases": 10,
+   "near_miss_cases": 12,
    "origin": "builtin",
    "path_ops": [],
    "programs": [
@@ -3365,19 +3360,21 @@
    "effect": "ask",
    "exceptable": true,
    "flag_cases": {
-    "Bash": 13
+    "Bash": 13,
+    "PowerShell": 2
    },
    "flag_platforms": {
     "posix": 13,
-    "windows": 13
+    "windows": 15
    },
    "flag_shells": {
-    "bash": 13
+    "bash": 13,
+    "powershell": 2
    },
    "history": false,
    "id": "builtin.git.discard-worktree",
    "kind": "rule",
-   "near_miss_cases": 12,
+   "near_miss_cases": 14,
    "origin": "builtin",
    "path_ops": [],
    "programs": [
@@ -3413,7 +3410,7 @@
    "history": false,
    "id": "builtin.git.force-push",
    "kind": "rule",
-   "near_miss_cases": 12,
+   "near_miss_cases": 13,
    "origin": "builtin",
    "path_ops": [],
    "programs": [
@@ -3449,19 +3446,21 @@
    "effect": "warn",
    "exceptable": true,
    "flag_cases": {
-    "Bash": 2
+    "Bash": 2,
+    "PowerShell": 1
    },
    "flag_platforms": {
     "posix": 2,
-    "windows": 2
+    "windows": 3
    },
    "flag_shells": {
-    "bash": 2
+    "bash": 2,
+    "powershell": 1
    },
    "history": false,
    "id": "builtin.git.force-push-lease",
    "kind": "rule",
-   "near_miss_cases": 12,
+   "near_miss_cases": 13,
    "origin": "builtin",
    "path_ops": [],
    "programs": [
@@ -3485,19 +3484,21 @@
    "effect": "ask",
    "exceptable": true,
    "flag_cases": {
-    "Bash": 3
+    "Bash": 3,
+    "PowerShell": 2
    },
    "flag_platforms": {
     "posix": 3,
-    "windows": 3
+    "windows": 5
    },
    "flag_shells": {
-    "bash": 3
+    "bash": 3,
+    "powershell": 2
    },
    "history": false,
    "id": "builtin.git.history-prune",
    "kind": "rule",
-   "near_miss_cases": 3,
+   "near_miss_cases": 5,
    "origin": "builtin",
    "path_ops": [],
    "programs": [
@@ -3533,7 +3534,7 @@
    "history": false,
    "id": "builtin.git.remote-delete",
    "kind": "rule",
-   "near_miss_cases": 12,
+   "near_miss_cases": 13,
    "origin": "builtin",
    "path_ops": [],
    "programs": [
@@ -3596,19 +3597,21 @@
    "effect": "ask",
    "exceptable": true,
    "flag_cases": {
-    "Bash": 2
+    "Bash": 2,
+    "PowerShell": 2
    },
    "flag_platforms": {
     "posix": 2,
-    "windows": 2
+    "windows": 4
    },
    "flag_shells": {
-    "bash": 2
+    "bash": 2,
+    "powershell": 2
    },
    "history": false,
    "id": "builtin.git.stash-drop",
    "kind": "rule",
-   "near_miss_cases": 3,
+   "near_miss_cases": 5,
    "origin": "builtin",
    "path_ops": [],
    "programs": [
@@ -5059,8 +5062,8 @@
    "deny": 2,
    "warn": 1
   },
-  "must_flag_entries": 675,
-  "must_not_flag_entries": 622,
+  "must_flag_entries": 688,
+  "must_not_flag_entries": 635,
   "rules": 41,
   "tools_unwatched": [
    "Agent",

@@ -4324,5 +4324,96 @@
     "confirmed": true
    }
   ]
+ },
+ {
+  "tool": "PowerShell",
+  "command": "git push --force-with-lease origin feature",
+  "effect": "warn",
+  "rule": "builtin.git.force-push-lease",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "git checkout -- .",
+  "effect": "ask",
+  "rule": "builtin.git.discard-worktree",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "Set-Location C:\\work\\app; git restore .",
+  "effect": "ask",
+  "rule": "builtin.git.discard-worktree",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "git stash drop 'stash@{0}'",
+  "effect": "ask",
+  "rule": "builtin.git.stash-drop",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "git stash clear",
+  "effect": "ask",
+  "rule": "builtin.git.stash-drop",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "git reflog expire --expire=now --all",
+  "effect": "ask",
+  "rule": "builtin.git.history-prune",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "git gc --prune=now",
+  "effect": "ask",
+  "rule": "builtin.git.history-prune",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "gh repo delete owner/repo --yes",
+  "effect": "ask",
+  "rule": "builtin.cloud.gh-repo-delete",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "docker system prune -af",
+  "effect": "ask",
+  "rule": "builtin.cloud.docker-prune",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "aws s3 rm s3://bucket/data --recursive",
+  "effect": "ask",
+  "rule": "builtin.cloud.aws-s3-delete",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "az group delete --name my-rg --yes",
+  "effect": "ask",
+  "rule": "builtin.cloud.resource-delete",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "npm unpublish my-pkg@1.0.0",
+  "effect": "ask",
+  "rule": "builtin.cloud.npm-unpublish",
+  "platform": "windows"
+ },
+ {
+  "tool": "PowerShell",
+  "command": "pnpm unpublish my-pkg@1.0.0",
+  "effect": "ask",
+  "rule": "builtin.cloud.npm-unpublish",
+  "platform": "windows"
  }
 ]
